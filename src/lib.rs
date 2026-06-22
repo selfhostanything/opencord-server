@@ -4,5 +4,7 @@ pub mod db;
 pub mod domain;
 pub mod http;
 pub mod models;
+pub mod repositories;
 pub mod routes;
+pub mod state;
 pub mod version;

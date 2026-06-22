@@ -1,26 +1,26 @@
 use axum::{Json, extract::State};
 
-use crate::config::AppConfig;
 use crate::models::responses::{CapabilitiesResponse, VersionResponse, WellKnownResponse};
+use crate::state::AppState;
 
-pub async fn well_known(State(config): State<AppConfig>) -> Json<WellKnownResponse> {
+pub async fn well_known(State(state): State<AppState>) -> Json<WellKnownResponse> {
     Json(WellKnownResponse {
         server: "opencord",
-        version: config.version,
-        api_base_url: format!("{}/api", config.public_url),
-        realtime_url: realtime_url(&config.public_url),
+        version: state.config.version,
+        api_base_url: format!("{}/api", state.config.public_url),
+        realtime_url: realtime_url(&state.config.public_url),
     })
 }
 
-pub async fn version(State(config): State<AppConfig>) -> Json<VersionResponse> {
+pub async fn version(State(state): State<AppState>) -> Json<VersionResponse> {
     Json(VersionResponse {
-        version: config.version,
+        version: state.config.version,
     })
 }
 
 pub async fn capabilities() -> Json<CapabilitiesResponse> {
     Json(CapabilitiesResponse {
-        capabilities: vec!["openapi", "health", "server_discovery", "uuidv7"],
+        capabilities: vec!["openapi", "health", "server_discovery", "uuidv7", "auth"],
     })
 }
 

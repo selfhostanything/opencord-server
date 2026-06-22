@@ -107,4 +107,10 @@ async fn cors_preflight_supports_browser_clients() {
 
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     assert_eq!(response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+    assert!(
+        response.headers()[header::ACCESS_CONTROL_ALLOW_METHODS]
+            .to_str()
+            .unwrap()
+            .contains("POST")
+    );
 }

@@ -22,7 +22,7 @@ compose-config:
 	docker compose -f $(COMPOSE_FILE) config
 
 dev-api:
-	OPENCORD_PUBLIC_URL=http://localhost:8080 cargo run --bin api
+	DATABASE_URL="$(DATABASE_URL)" OPENCORD_PUBLIC_URL=http://localhost:8080 cargo run --bin api
 
 dev-realtime:
 	cargo run --bin realtime

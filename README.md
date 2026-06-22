@@ -20,7 +20,8 @@ src/bin/migrate.rs    SeaORM migration runner
 src/controllers       HTTP controllers
 src/models            response/request DTOs
 src/routes.rs         Axum route composition
-src/domain            domain helpers such as UUIDv7 IDs
+src/domain            auth service and domain helpers such as UUIDv7 IDs
+src/repositories      in-memory and Postgres persistence adapters
 src/db/migrations     SeaORM migrations
 ```
 
@@ -73,6 +74,16 @@ GET /healthz
 GET /.well-known/opencord
 GET /api/version
 GET /api/capabilities
+POST /auth/register
+POST /auth/login
+POST /auth/logout
+GET /me
+```
+
+Auth endpoints use bearer session tokens:
+
+```text
+Authorization: Bearer <session token>
 ```
 
 ## License
