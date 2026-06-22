@@ -1,0 +1,29 @@
+openapi: 3.1.0
+info:
+  title: OpenCord Server API
+  version: 0.0.0-dev
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Server is healthy
+  /.well-known/opencord:
+    get:
+      summary: OpenCord server discovery metadata
+      responses:
+        "200":
+          description: Discovery metadata
+  /api/version:
+    get:
+      summary: Server version
+      responses:
+        "200":
+          description: Version metadata
+  /api/capabilities:
+    get:
+      summary: Server capabilities
+      responses:
+        "200":
+          description: Capability list
