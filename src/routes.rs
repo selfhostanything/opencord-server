@@ -5,6 +5,7 @@ use axum::routing::{get, post};
 use crate::config::AppConfig;
 use crate::controllers::{
     auth_controller, discovery_controller, health_controller, organization_controller,
+    space_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -33,6 +34,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/organizations/{organization_id}",
             get(organization_controller::get),
+        )
+        .route(
+            "/organizations/{organization_id}/spaces",
+            post(space_controller::create).get(space_controller::list),
         )
         .layer(middleware::from_fn(browser_cors))
         .with_state(state)

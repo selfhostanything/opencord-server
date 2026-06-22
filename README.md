@@ -81,6 +81,8 @@ GET /me
 POST /organizations
 GET /organizations
 GET /organizations/{organization_id}
+POST /organizations/{organization_id}/spaces
+GET /organizations/{organization_id}/spaces
 ```
 
 Auth endpoints use bearer session tokens:

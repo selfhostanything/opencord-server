@@ -145,6 +145,59 @@ paths:
           description: Missing or invalid bearer session
         "404":
           description: Organization not found for this user
+  /organizations/{organization_id}/spaces:
+    post:
+      summary: Create a space inside an organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSpaceRequest"
+      responses:
+        "201":
+          description: Created space and owner membership
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaceMembershipResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Organization not found for this user
+        "409":
+          description: Space slug already exists in this organization
+    get:
+      summary: List spaces for the current user inside an organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Spaces visible to the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaceListResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Organization not found for this user
 components:
   securitySchemes:
     bearerAuth:
@@ -280,3 +333,57 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Organization"
+    CreateSpaceRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+    Space:
+      type: object
+      required:
+        - id
+        - organization_id
+        - slug
+        - name
+        - role
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+          enum:
+            - owner
+            - admin
+            - member
+            - guest
+    SpaceMembershipResponse:
+      type: object
+      required:
+        - space
+        - membership
+      properties:
+        space:
+          $ref: "#/components/schemas/Space"
+        membership:
+          $ref: "#/components/schemas/Membership"
+    SpaceListResponse:
+      type: object
+      required:
+        - spaces
+      properties:
+        spaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/Space"

@@ -1,0 +1,112 @@
+use axum::Json;
+use axum::extract::{Path, State};
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use uuid::Uuid;
+
+use crate::domain::auth::AuthError;
+use crate::domain::organization::OrganizationError;
+use crate::domain::space::{SpaceError, SpaceMembership};
+use crate::http::session::bearer_token;
+use crate::models::auth::{ErrorDetail, ErrorResponse};
+use crate::models::space::{
+    CreateSpaceRequest, SpaceListResponse, SpaceMembershipResponse, SpaceResponse,
+};
+use crate::state::AppState;
+
+pub async fn create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization_id): Path<Uuid>,
+    Json(request): Json<CreateSpaceRequest>,
+) -> Result<impl IntoResponse, SpaceApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    state
+        .organizations
+        .get_for_user(user.id, organization_id)
+        .await?;
+
+    let space = state
+        .spaces
+        .create(user, organization_id, request.name)
+        .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(SpaceMembershipResponse::from(space)),
+    ))
+}
+
+pub async fn list(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization_id): Path<Uuid>,
+) -> Result<Json<SpaceListResponse>, SpaceApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    state
+        .organizations
+        .get_for_user(user.id, organization_id)
+        .await?;
+
+    let spaces = state.spaces.list_for_user(user.id, organization_id).await?;
+
+    Ok(Json(SpaceListResponse {
+        spaces: spaces.into_iter().map(SpaceResponse::from).collect(),
+    }))
+}
+
+#[derive(Debug)]
+pub enum SpaceApiError {
+    Auth(AuthError),
+    Organization(OrganizationError),
+    Space(SpaceError),
+}
+
+impl From<AuthError> for SpaceApiError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+
+impl From<OrganizationError> for SpaceApiError {
+    fn from(error: OrganizationError) -> Self {
+        Self::Organization(error)
+    }
+}
+
+impl From<SpaceError> for SpaceApiError {
+    fn from(error: SpaceError) -> Self {
+        Self::Space(error)
+    }
+}
+
+impl IntoResponse for SpaceApiError {
+    fn into_response(self) -> Response {
+        let (status, code, message) = match self {
+            Self::Auth(error) => (error.status_code(), error.code(), error.message()),
+            Self::Organization(error) => (error.status_code(), error.code(), error.message()),
+            Self::Space(error) => (error.status_code(), error.code(), error.message()),
+        };
+
+        (
+            status,
+            Json(ErrorResponse {
+                error: ErrorDetail { code, message },
+            }),
+        )
+            .into_response()
+    }
+}
+
+impl From<SpaceMembership> for SpaceMembershipResponse {
+    fn from(membership: SpaceMembership) -> Self {
+        Self {
+            space: SpaceResponse::from(membership.clone()),
+            membership: crate::models::space::SpaceMemberResponse {
+                role: membership.role,
+            },
+        }
+    }
+}
