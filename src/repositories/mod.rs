@@ -1,5 +1,7 @@
 pub mod auth_memory;
 pub mod auth_postgres;
+pub mod channel_memory;
+pub mod channel_postgres;
 pub mod organization_memory;
 pub mod organization_postgres;
 pub mod space_memory;

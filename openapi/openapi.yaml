@@ -198,6 +198,90 @@ paths:
           description: Missing or invalid bearer session
         "404":
           description: Organization not found for this user
+  /spaces/{space_id}/channels:
+    post:
+      summary: Create a text channel inside a space
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChannelRequest"
+      responses:
+        "201":
+          description: Created channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Space not found for this user
+        "409":
+          description: Channel slug already exists in this space
+    get:
+      summary: List text channels inside a space
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Channels visible to the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelListResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Space not found for this user
+  /channels/{channel_id}:
+    patch:
+      summary: Update a text channel
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchChannelRequest"
+      responses:
+        "200":
+          description: Updated channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Channel or parent space not found for this user
+        "409":
+          description: Channel slug already exists in this space
 components:
   securitySchemes:
     bearerAuth:
@@ -387,3 +471,85 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Space"
+    CreateChannelRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        topic:
+          type: string
+          maxLength: 1024
+        is_private:
+          type: boolean
+    PatchChannelRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        topic:
+          type: string
+          maxLength: 1024
+        position:
+          type: integer
+          minimum: 0
+        is_private:
+          type: boolean
+    Channel:
+      type: object
+      required:
+        - id
+        - organization_id
+        - space_id
+        - kind
+        - name
+        - slug
+        - position
+        - is_private
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        space_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum:
+            - text
+        name:
+          type: string
+        slug:
+          type: string
+        position:
+          type: integer
+        topic:
+          type:
+            - string
+            - "null"
+        is_private:
+          type: boolean
+    ChannelResourceResponse:
+      type: object
+      required:
+        - channel
+      properties:
+        channel:
+          $ref: "#/components/schemas/Channel"
+    ChannelListResponse:
+      type: object
+      required:
+        - channels
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/Channel"

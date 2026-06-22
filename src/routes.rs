@@ -1,11 +1,11 @@
 use axum::Router;
 use axum::middleware;
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 
 use crate::config::AppConfig;
 use crate::controllers::{
-    auth_controller, discovery_controller, health_controller, organization_controller,
-    space_controller,
+    auth_controller, channel_controller, discovery_controller, health_controller,
+    organization_controller, space_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -39,6 +39,11 @@ pub fn api_router_with_state(state: AppState) -> Router {
             "/organizations/{organization_id}/spaces",
             post(space_controller::create).get(space_controller::list),
         )
+        .route(
+            "/spaces/{space_id}/channels",
+            post(channel_controller::create).get(channel_controller::list),
+        )
+        .route("/channels/{channel_id}", patch(channel_controller::update))
         .layer(middleware::from_fn(browser_cors))
         .with_state(state)
 }

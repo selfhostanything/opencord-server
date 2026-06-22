@@ -28,6 +28,7 @@ pub async fn capabilities() -> Json<CapabilitiesResponse> {
             "auth",
             "organizations",
             "spaces",
+            "channels",
         ],
     })
 }

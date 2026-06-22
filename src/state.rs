@@ -4,10 +4,13 @@ use sea_orm::DatabaseConnection;
 
 use crate::config::AppConfig;
 use crate::domain::auth::{AuthService, AuthStore};
+use crate::domain::channel::{ChannelService, ChannelStore};
 use crate::domain::organization::{OrganizationService, OrganizationStore};
 use crate::domain::space::{SpaceService, SpaceStore};
 use crate::repositories::auth_memory::MemoryAuthStore;
 use crate::repositories::auth_postgres::PostgresAuthStore;
+use crate::repositories::channel_memory::MemoryChannelStore;
+use crate::repositories::channel_postgres::PostgresChannelStore;
 use crate::repositories::organization_memory::MemoryOrganizationStore;
 use crate::repositories::organization_postgres::PostgresOrganizationStore;
 use crate::repositories::space_memory::MemorySpaceStore;
@@ -19,6 +22,7 @@ pub struct AppState {
     pub auth: Arc<AuthService>,
     pub organizations: Arc<OrganizationService>,
     pub spaces: Arc<SpaceService>,
+    pub channels: Arc<ChannelService>,
 }
 
 impl AppState {
@@ -28,6 +32,7 @@ impl AppState {
             Arc::new(MemoryAuthStore::default()),
             Arc::new(MemoryOrganizationStore::default()),
             Arc::new(MemorySpaceStore::default()),
+            Arc::new(MemoryChannelStore::default()),
         )
     }
 
@@ -36,7 +41,8 @@ impl AppState {
             config,
             Arc::new(PostgresAuthStore::new(db.clone())),
             Arc::new(PostgresOrganizationStore::new(db.clone())),
-            Arc::new(PostgresSpaceStore::new(db)),
+            Arc::new(PostgresSpaceStore::new(db.clone())),
+            Arc::new(PostgresChannelStore::new(db)),
         )
     }
 
@@ -45,12 +51,14 @@ impl AppState {
         auth_store: Arc<dyn AuthStore>,
         organization_store: Arc<dyn OrganizationStore>,
         space_store: Arc<dyn SpaceStore>,
+        channel_store: Arc<dyn ChannelStore>,
     ) -> Self {
         Self {
             config,
             auth: Arc::new(AuthService::new(auth_store)),
             organizations: Arc::new(OrganizationService::new(organization_store)),
             spaces: Arc::new(SpaceService::new(space_store)),
+            channels: Arc::new(ChannelService::new(channel_store)),
         }
     }
 }

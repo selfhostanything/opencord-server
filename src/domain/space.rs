@@ -34,6 +34,7 @@ pub struct SpaceMembership {
 pub enum SpaceError {
     InvalidInput(&'static str),
     SlugAlreadyExists,
+    NotFound,
     StoreUnavailable,
 }
 
@@ -42,6 +43,7 @@ impl SpaceError {
         match self {
             Self::InvalidInput(_) => StatusCode::BAD_REQUEST,
             Self::SlugAlreadyExists => StatusCode::CONFLICT,
+            Self::NotFound => StatusCode::NOT_FOUND,
             Self::StoreUnavailable => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -50,6 +52,7 @@ impl SpaceError {
         match self {
             Self::InvalidInput(_) => "invalid_request",
             Self::SlugAlreadyExists => "space_slug_already_exists",
+            Self::NotFound => "space_not_found",
             Self::StoreUnavailable => "store_unavailable",
         }
     }
@@ -58,6 +61,7 @@ impl SpaceError {
         match self {
             Self::InvalidInput(message) => message,
             Self::SlugAlreadyExists => "space slug already exists in this organization",
+            Self::NotFound => "space was not found",
             Self::StoreUnavailable => "space store is unavailable",
         }
     }
@@ -76,6 +80,12 @@ pub trait SpaceStore: Send + Sync {
         user_id: Uuid,
         organization_id: Uuid,
     ) -> Result<Vec<SpaceMembership>, SpaceError>;
+
+    async fn get_for_user(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+    ) -> Result<Option<SpaceMembership>, SpaceError>;
 }
 
 #[derive(Clone)]
@@ -127,6 +137,17 @@ impl SpaceService {
         organization_id: Uuid,
     ) -> Result<Vec<SpaceMembership>, SpaceError> {
         self.store.list_for_user(user_id, organization_id).await
+    }
+
+    pub async fn get_for_user(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+    ) -> Result<SpaceMembership, SpaceError> {
+        self.store
+            .get_for_user(user_id, space_id)
+            .await?
+            .ok_or(SpaceError::NotFound)
     }
 }
 

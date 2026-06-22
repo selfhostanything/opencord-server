@@ -75,4 +75,33 @@ impl SpaceStore for MemorySpaceStore {
         spaces.sort_by(|left, right| left.name.cmp(&right.name));
         Ok(spaces)
     }
+
+    async fn get_for_user(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+    ) -> Result<Option<SpaceMembership>, SpaceError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+        let Some(member) = state.members_by_space_user.get(&(space_id, user_id)) else {
+            return Ok(None);
+        };
+
+        if member.status != "active" {
+            return Ok(None);
+        }
+
+        Ok(state
+            .spaces_by_id
+            .get(&space_id)
+            .map(|space| SpaceMembership {
+                id: space.id,
+                organization_id: space.organization_id,
+                slug: space.slug.clone(),
+                name: space.name.clone(),
+                role: member.role.clone(),
+            }))
+    }
 }

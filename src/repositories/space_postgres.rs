@@ -104,6 +104,33 @@ impl SpaceStore for PostgresSpaceStore {
             .map(space_from_row)
             .collect::<Result<Vec<_>, _>>()
     }
+
+    async fn get_for_user(
+        &self,
+        user_id: Uuid,
+        space_id: Uuid,
+    ) -> Result<Option<SpaceMembership>, SpaceError> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT spaces.id::text, spaces.organization_id::text, spaces.slug,
+                       spaces.name, space_members.role
+                FROM space_members
+                INNER JOIN spaces ON spaces.id = space_members.space_id
+                WHERE space_members.user_id = $1::uuid
+                  AND space_members.status = 'active'
+                  AND spaces.id = $2::uuid
+                  AND spaces.archived_at IS NULL
+                "#,
+                values(vec![user_id.to_string(), space_id.to_string()]),
+            ))
+            .await
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+
+        row.map(space_from_row).transpose()
+    }
 }
 
 fn space_from_row(row: sea_orm::QueryResult) -> Result<SpaceMembership, SpaceError> {

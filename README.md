@@ -83,6 +83,9 @@ GET /organizations
 GET /organizations/{organization_id}
 POST /organizations/{organization_id}/spaces
 GET /organizations/{organization_id}/spaces
+POST /spaces/{space_id}/channels
+GET /spaces/{space_id}/channels
+PATCH /channels/{channel_id}
 ```
 
 Auth endpoints use bearer session tokens:
