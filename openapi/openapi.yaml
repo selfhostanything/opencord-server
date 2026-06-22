@@ -9,6 +9,25 @@ paths:
       responses:
         "200":
           description: Server is healthy
+  /ws:
+    get:
+      summary: WebSocket realtime gateway
+      description: >
+        Upgrades to a WebSocket connection. Browser clients may pass the bearer
+        session token as a `token` query parameter. The gateway emits realtime
+        event envelopes such as `message.created`, `typing.started`, and
+        `typing.stopped`.
+      parameters:
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "101":
+          description: WebSocket protocol switch
+        "401":
+          description: Missing or invalid bearer session
   /.well-known/opencord:
     get:
       summary: OpenCord server discovery metadata

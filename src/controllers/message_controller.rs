@@ -2,12 +2,14 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::domain::auth::AuthError;
 use crate::domain::channel::ChannelError;
 use crate::domain::message::{Message, MessageError};
 use crate::domain::permission::{Permission, PermissionError};
+use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::SpaceError;
 use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
@@ -42,12 +44,18 @@ pub async fn create(
             request.content,
         )
         .await?;
+    let message = MessageResponse::from(message);
+    state.realtime.publish(RealtimeEvent::channel(
+        "message.created",
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        json!({ "message": message.clone() }),
+    ));
 
     Ok((
         StatusCode::CREATED,
-        Json(MessageResourceResponse {
-            message: MessageResponse::from(message),
-        }),
+        Json(MessageResourceResponse { message }),
     ))
 }
 

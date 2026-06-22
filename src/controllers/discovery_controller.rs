@@ -31,6 +31,8 @@ pub async fn capabilities() -> Json<CapabilitiesResponse> {
             "channels",
             "messages",
             "permissions",
+            "realtime",
+            "websocket",
         ],
     })
 }

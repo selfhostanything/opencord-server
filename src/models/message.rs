@@ -10,7 +10,7 @@ pub struct PatchMessageRequest {
     pub content: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct MessageResponse {
     pub id: String,
     pub organization_id: String,

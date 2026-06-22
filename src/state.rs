@@ -8,6 +8,7 @@ use crate::domain::channel::{ChannelService, ChannelStore};
 use crate::domain::message::{MessageService, MessageStore};
 use crate::domain::organization::{OrganizationService, OrganizationStore};
 use crate::domain::permission::{PermissionService, PermissionStore};
+use crate::domain::realtime::RealtimeHub;
 use crate::domain::space::{SpaceService, SpaceStore};
 use crate::repositories::auth_memory::MemoryAuthStore;
 use crate::repositories::auth_postgres::PostgresAuthStore;
@@ -31,6 +32,7 @@ pub struct AppState {
     pub channels: Arc<ChannelService>,
     pub messages: Arc<MessageService>,
     pub permissions: Arc<PermissionService>,
+    pub realtime: Arc<RealtimeHub>,
 }
 
 impl AppState {
@@ -75,6 +77,7 @@ impl AppState {
             channels: Arc::new(ChannelService::new(channel_store)),
             messages: Arc::new(MessageService::new(message_store)),
             permissions: Arc::new(PermissionService::new(permission_store)),
+            realtime: Arc::new(RealtimeHub::default()),
         }
     }
 }

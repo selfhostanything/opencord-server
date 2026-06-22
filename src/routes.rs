@@ -5,7 +5,8 @@ use axum::routing::{get, patch, post};
 use crate::config::AppConfig;
 use crate::controllers::{
     auth_controller, channel_controller, discovery_controller, health_controller,
-    message_controller, organization_controller, permission_controller, space_controller,
+    message_controller, organization_controller, permission_controller, realtime_controller,
+    space_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -17,6 +18,7 @@ pub fn api_router(config: AppConfig) -> Router {
 pub fn api_router_with_state(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health_controller::health))
+        .route("/ws", get(realtime_controller::websocket))
         .route(
             "/.well-known/opencord",
             get(discovery_controller::well_known),
@@ -77,4 +79,12 @@ pub fn health_router(config: AppConfig) -> Router {
         .route("/healthz", get(health_controller::health))
         .layer(middleware::from_fn(browser_cors))
         .with_state(AppState::in_memory(config))
+}
+
+pub fn realtime_router_with_state(state: AppState) -> Router {
+    Router::new()
+        .route("/healthz", get(health_controller::health))
+        .route("/ws", get(realtime_controller::websocket))
+        .layer(middleware::from_fn(browser_cors))
+        .with_state(state)
 }
