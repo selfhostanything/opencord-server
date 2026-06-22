@@ -6,5 +6,7 @@ pub mod message_memory;
 pub mod message_postgres;
 pub mod organization_memory;
 pub mod organization_postgres;
+pub mod permission_memory;
+pub mod permission_postgres;
 pub mod space_memory;
 pub mod space_postgres;

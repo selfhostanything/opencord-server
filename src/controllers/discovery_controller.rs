@@ -30,6 +30,7 @@ pub async fn capabilities() -> Json<CapabilitiesResponse> {
             "spaces",
             "channels",
             "messages",
+            "permissions",
         ],
     })
 }

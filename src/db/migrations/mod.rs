@@ -6,6 +6,7 @@ mod m20260623013800_organizations;
 mod m20260623015000_spaces;
 mod m20260623020400_channels;
 mod m20260623022000_messages;
+mod m20260623023500_permissions;
 
 pub struct Migrator;
 
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623015000_spaces::Migration),
             Box::new(m20260623020400_channels::Migration),
             Box::new(m20260623022000_messages::Migration),
+            Box::new(m20260623023500_permissions::Migration),
         ]
     }
 }

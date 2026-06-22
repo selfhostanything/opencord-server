@@ -131,6 +131,36 @@ impl SpaceStore for PostgresSpaceStore {
 
         row.map(space_from_row).transpose()
     }
+
+    async fn add_member(&self, member: StoredSpaceMember) -> Result<SpaceMembership, SpaceError> {
+        self.db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO space_members (space_id, user_id, role, status)
+                VALUES ($1::uuid, $2::uuid, $3, $4)
+                ON CONFLICT (space_id, user_id)
+                DO UPDATE SET
+                    role = CASE
+                        WHEN space_members.role = 'owner' THEN space_members.role
+                        ELSE EXCLUDED.role
+                    END,
+                    status = 'active'
+                "#,
+                values(vec![
+                    member.space_id.to_string(),
+                    member.user_id.to_string(),
+                    member.role,
+                    member.status,
+                ]),
+            ))
+            .await
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+
+        self.get_for_user(member.user_id, member.space_id)
+            .await?
+            .ok_or(SpaceError::NotFound)
+    }
 }
 
 fn space_from_row(row: sea_orm::QueryResult) -> Result<SpaceMembership, SpaceError> {

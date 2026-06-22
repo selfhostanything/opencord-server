@@ -225,6 +225,8 @@ paths:
                 $ref: "#/components/schemas/ChannelResourceResponse"
         "401":
           description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_CHANNELS permission
         "404":
           description: Space not found for this user
         "409":
@@ -251,6 +253,107 @@ paths:
           description: Missing or invalid bearer session
         "404":
           description: Space not found for this user
+  /spaces/{space_id}/members:
+    post:
+      summary: Add a registered user to a space
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddSpaceMemberRequest"
+      responses:
+        "201":
+          description: Added or reactivated space member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaceMemberResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing INVITE_MEMBERS permission
+        "404":
+          description: Space not found for this user
+  /spaces/{space_id}/roles:
+    post:
+      summary: Create a space role
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRoleRequest"
+      responses:
+        "201":
+          description: Created role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_ROLES permission
+        "404":
+          description: Space not found for this user
+        "409":
+          description: Role name already exists in this space
+  /spaces/{space_id}/roles/{role_id}/assignments:
+    post:
+      summary: Assign a space role to a member
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: role_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRoleRequest"
+      responses:
+        "201":
+          description: Assigned role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleAssignmentResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_ROLES permission
+        "404":
+          description: Space, target member, or role not found
   /channels/{channel_id}:
     patch:
       summary: Update a text channel
@@ -278,10 +381,43 @@ paths:
                 $ref: "#/components/schemas/ChannelResourceResponse"
         "401":
           description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_CHANNELS permission
         "404":
           description: Channel or parent space not found for this user
         "409":
           description: Channel slug already exists in this space
+  /channels/{channel_id}/permission-overrides:
+    post:
+      summary: Set a member or role permission override for a channel
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetChannelPermissionOverrideRequest"
+      responses:
+        "200":
+          description: Upserted channel permission override
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelPermissionOverrideResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_CHANNELS permission
+        "404":
+          description: Channel or parent space not found for this user
   /channels/{channel_id}/messages:
     post:
       summary: Send a message to a channel
@@ -309,6 +445,8 @@ paths:
                 $ref: "#/components/schemas/MessageResourceResponse"
         "401":
           description: Missing or invalid bearer session
+        "403":
+          description: Missing SEND_MESSAGES permission
         "404":
           description: Channel or parent space not found for this user
     get:
@@ -331,6 +469,8 @@ paths:
                 $ref: "#/components/schemas/MessageListResponse"
         "401":
           description: Missing or invalid bearer session
+        "403":
+          description: Missing VIEW_CHANNEL permission
         "404":
           description: Channel or parent space not found for this user
   /messages/{message_id}:
@@ -360,6 +500,8 @@ paths:
                 $ref: "#/components/schemas/MessageResourceResponse"
         "401":
           description: Missing or invalid bearer session
+        "403":
+          description: Missing SEND_MESSAGES or MANAGE_MESSAGES permission
         "404":
           description: Message or parent channel not found for this user
     delete:
@@ -378,6 +520,8 @@ paths:
           description: Message soft-deleted
         "401":
           description: Missing or invalid bearer session
+        "403":
+          description: Missing SEND_MESSAGES or MANAGE_MESSAGES permission
         "404":
           description: Message or parent channel not found for this user
 components:
@@ -569,6 +713,214 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Space"
+    AddSpaceMemberRequest:
+      type: object
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - member
+            - guest
+    SpaceMember:
+      type: object
+      required:
+        - space_id
+        - user_id
+        - role
+        - status
+      properties:
+        space_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - owner
+            - member
+            - guest
+        status:
+          type: string
+          enum:
+            - active
+    SpaceMemberResourceResponse:
+      type: object
+      required:
+        - member
+      properties:
+        member:
+          $ref: "#/components/schemas/SpaceMember"
+    PermissionName:
+      type: string
+      enum:
+        - VIEW_CHANNEL
+        - SEND_MESSAGES
+        - MANAGE_MESSAGES
+        - MANAGE_CHANNELS
+        - MANAGE_ROLES
+        - INVITE_MEMBERS
+        - MANAGE_SPACE
+    CreateRoleRequest:
+      type: object
+      required:
+        - name
+        - permissions
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        color:
+          type:
+            - string
+            - "null"
+          pattern: "^#[0-9a-fA-F]{6}$"
+        position:
+          type: integer
+          minimum: 0
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionName"
+    Role:
+      type: object
+      required:
+        - id
+        - organization_id
+        - space_id
+        - name
+        - position
+        - permissions
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        space_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        color:
+          type:
+            - string
+            - "null"
+        position:
+          type: integer
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionName"
+    RoleResourceResponse:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          $ref: "#/components/schemas/Role"
+    AssignRoleRequest:
+      type: object
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: string
+          format: uuid
+    RoleAssignment:
+      type: object
+      required:
+        - space_id
+        - role_id
+        - user_id
+        - assigned_by_user_id
+      properties:
+        space_id:
+          type: string
+          format: uuid
+        role_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        assigned_by_user_id:
+          type: string
+          format: uuid
+    RoleAssignmentResourceResponse:
+      type: object
+      required:
+        - assignment
+      properties:
+        assignment:
+          $ref: "#/components/schemas/RoleAssignment"
+    SetChannelPermissionOverrideRequest:
+      type: object
+      required:
+        - target_kind
+        - target_id
+        - allow
+        - deny
+      properties:
+        target_kind:
+          type: string
+          enum:
+            - role
+            - member
+        target_id:
+          type: string
+          format: uuid
+        allow:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionName"
+        deny:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionName"
+    ChannelPermissionOverride:
+      type: object
+      required:
+        - channel_id
+        - target_kind
+        - target_id
+        - allow
+        - deny
+      properties:
+        channel_id:
+          type: string
+          format: uuid
+        target_kind:
+          type: string
+          enum:
+            - role
+            - member
+        target_id:
+          type: string
+          format: uuid
+        allow:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionName"
+        deny:
+          type: array
+          items:
+            $ref: "#/components/schemas/PermissionName"
+    ChannelPermissionOverrideResourceResponse:
+      type: object
+      required:
+        - permission_override
+      properties:
+        permission_override:
+          $ref: "#/components/schemas/ChannelPermissionOverride"
     CreateChannelRequest:
       type: object
       required:

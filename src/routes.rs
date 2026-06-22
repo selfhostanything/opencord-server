@@ -5,7 +5,7 @@ use axum::routing::{get, patch, post};
 use crate::config::AppConfig;
 use crate::controllers::{
     auth_controller, channel_controller, discovery_controller, health_controller,
-    message_controller, organization_controller, space_controller,
+    message_controller, organization_controller, permission_controller, space_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -43,7 +43,23 @@ pub fn api_router_with_state(state: AppState) -> Router {
             "/spaces/{space_id}/channels",
             post(channel_controller::create).get(channel_controller::list),
         )
+        .route(
+            "/spaces/{space_id}/members",
+            post(permission_controller::add_space_member),
+        )
+        .route(
+            "/spaces/{space_id}/roles",
+            post(permission_controller::create_role),
+        )
+        .route(
+            "/spaces/{space_id}/roles/{role_id}/assignments",
+            post(permission_controller::assign_role),
+        )
         .route("/channels/{channel_id}", patch(channel_controller::update))
+        .route(
+            "/channels/{channel_id}/permission-overrides",
+            post(permission_controller::set_channel_override),
+        )
         .route(
             "/channels/{channel_id}/messages",
             post(message_controller::create).get(message_controller::list),

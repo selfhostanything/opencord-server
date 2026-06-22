@@ -104,4 +104,39 @@ impl SpaceStore for MemorySpaceStore {
                 role: member.role.clone(),
             }))
     }
+
+    async fn add_member(&self, member: StoredSpaceMember) -> Result<SpaceMembership, SpaceError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+        let Some(space) = state.spaces_by_id.get(&member.space_id).cloned() else {
+            return Err(SpaceError::NotFound);
+        };
+        let key = (member.space_id, member.user_id);
+
+        state
+            .members_by_space_user
+            .entry(key)
+            .and_modify(|existing| {
+                if existing.role != "owner" {
+                    existing.role = member.role.clone();
+                }
+                existing.status = "active".to_owned();
+            })
+            .or_insert(member.clone());
+
+        let stored_member = state
+            .members_by_space_user
+            .get(&(member.space_id, member.user_id))
+            .ok_or(SpaceError::StoreUnavailable)?;
+
+        Ok(SpaceMembership {
+            id: space.id,
+            organization_id: space.organization_id,
+            slug: space.slug,
+            name: space.name,
+            role: stored_member.role.clone(),
+        })
+    }
 }

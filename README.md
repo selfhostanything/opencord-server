@@ -85,7 +85,11 @@ POST /organizations/{organization_id}/spaces
 GET /organizations/{organization_id}/spaces
 POST /spaces/{space_id}/channels
 GET /spaces/{space_id}/channels
+POST /spaces/{space_id}/members
+POST /spaces/{space_id}/roles
+POST /spaces/{space_id}/roles/{role_id}/assignments
 PATCH /channels/{channel_id}
+POST /channels/{channel_id}/permission-overrides
 POST /channels/{channel_id}/messages
 GET /channels/{channel_id}/messages
 PATCH /messages/{message_id}

@@ -111,4 +111,31 @@ impl OrganizationStore for MemoryOrganizationStore {
                 role: member.role.clone(),
             }))
     }
+
+    async fn add_member_if_missing(
+        &self,
+        member: StoredOrganizationMember,
+    ) -> Result<(), OrganizationError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+
+        if !state
+            .organizations_by_id
+            .contains_key(&member.organization_id)
+        {
+            return Err(OrganizationError::NotFound);
+        }
+
+        state
+            .members_by_org_user
+            .entry((member.organization_id, member.user_id))
+            .and_modify(|existing| {
+                existing.status = "active".to_owned();
+            })
+            .or_insert(member);
+
+        Ok(())
+    }
 }

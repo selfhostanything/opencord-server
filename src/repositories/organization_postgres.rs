@@ -132,6 +132,32 @@ impl OrganizationStore for PostgresOrganizationStore {
 
         row.map(organization_from_row).transpose()
     }
+
+    async fn add_member_if_missing(
+        &self,
+        member: StoredOrganizationMember,
+    ) -> Result<(), OrganizationError> {
+        self.db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO organization_members (organization_id, user_id, role, status)
+                VALUES ($1::uuid, $2::uuid, $3, $4)
+                ON CONFLICT (organization_id, user_id)
+                DO UPDATE SET status = 'active'
+                "#,
+                values(vec![
+                    member.organization_id.to_string(),
+                    member.user_id.to_string(),
+                    member.role,
+                    member.status,
+                ]),
+            ))
+            .await
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+
+        Ok(())
+    }
 }
 
 fn organization_from_row(

@@ -82,6 +82,11 @@ pub trait OrganizationStore: Send + Sync {
         user_id: Uuid,
         organization_id: Uuid,
     ) -> Result<Option<OrganizationMembership>, OrganizationError>;
+
+    async fn add_member_if_missing(
+        &self,
+        member: StoredOrganizationMember,
+    ) -> Result<(), OrganizationError>;
 }
 
 #[derive(Clone)]
@@ -142,6 +147,22 @@ impl OrganizationService {
             .await?
             .ok_or(OrganizationError::NotFound)
     }
+
+    pub async fn add_member_if_missing(
+        &self,
+        organization_id: Uuid,
+        user_id: Uuid,
+        role: String,
+    ) -> Result<(), OrganizationError> {
+        self.store
+            .add_member_if_missing(StoredOrganizationMember {
+                organization_id,
+                user_id,
+                role: normalize_member_role(role)?,
+                status: "active".to_owned(),
+            })
+            .await
+    }
 }
 
 fn normalize_name(name: String) -> Result<String, OrganizationError> {
@@ -179,5 +200,14 @@ fn slugify(name: &str) -> Result<String, OrganizationError> {
         ))
     } else {
         Ok(slug)
+    }
+}
+
+fn normalize_member_role(role: String) -> Result<String, OrganizationError> {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "owner" | "admin" | "member" | "guest" => Ok(role.trim().to_ascii_lowercase()),
+        _ => Err(OrganizationError::InvalidInput(
+            "organization member role must be owner, admin, member, or guest",
+        )),
     }
 }

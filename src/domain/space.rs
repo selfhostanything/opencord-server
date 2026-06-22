@@ -86,6 +86,8 @@ pub trait SpaceStore: Send + Sync {
         user_id: Uuid,
         space_id: Uuid,
     ) -> Result<Option<SpaceMembership>, SpaceError>;
+
+    async fn add_member(&self, member: StoredSpaceMember) -> Result<SpaceMembership, SpaceError>;
 }
 
 #[derive(Clone)]
@@ -149,6 +151,22 @@ impl SpaceService {
             .await?
             .ok_or(SpaceError::NotFound)
     }
+
+    pub async fn add_member(
+        &self,
+        space_id: Uuid,
+        user_id: Uuid,
+        role: String,
+    ) -> Result<SpaceMembership, SpaceError> {
+        self.store
+            .add_member(StoredSpaceMember {
+                space_id,
+                user_id,
+                role: normalize_member_role(role)?,
+                status: "active".to_owned(),
+            })
+            .await
+    }
 }
 
 fn normalize_name(name: String) -> Result<String, SpaceError> {
@@ -186,5 +204,14 @@ fn slugify(name: &str) -> Result<String, SpaceError> {
         ))
     } else {
         Ok(slug)
+    }
+}
+
+fn normalize_member_role(role: String) -> Result<String, SpaceError> {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "member" | "guest" => Ok(role.trim().to_ascii_lowercase()),
+        _ => Err(SpaceError::InvalidInput(
+            "space member role must be member or guest",
+        )),
     }
 }

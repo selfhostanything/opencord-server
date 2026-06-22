@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::domain::auth::AuthError;
 use crate::domain::channel::ChannelError;
 use crate::domain::message::{Message, MessageError};
+use crate::domain::permission::{Permission, PermissionError};
 use crate::domain::space::SpaceError;
 use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
@@ -25,7 +26,11 @@ pub async fn create(
     let token = bearer_token(&headers)?;
     let user = state.auth.user_for_token(token).await?;
     let channel = state.channels.get(channel_id).await?;
-    state.spaces.get_for_user(user.id, channel.space_id).await?;
+    let space = state.spaces.get_for_user(user.id, channel.space_id).await?;
+    state
+        .permissions
+        .require_channel(user.id, &space, &channel, Permission::SendMessages)
+        .await?;
 
     let message = state
         .messages
@@ -54,7 +59,11 @@ pub async fn list(
     let token = bearer_token(&headers)?;
     let user = state.auth.user_for_token(token).await?;
     let channel = state.channels.get(channel_id).await?;
-    state.spaces.get_for_user(user.id, channel.space_id).await?;
+    let space = state.spaces.get_for_user(user.id, channel.space_id).await?;
+    state
+        .permissions
+        .require_channel(user.id, &space, &channel, Permission::ViewChannel)
+        .await?;
 
     let messages = state.messages.list_for_channel(channel_id).await?;
 
@@ -73,10 +82,18 @@ pub async fn update(
     let user = state.auth.user_for_token(token).await?;
     let message = state.messages.get(message_id).await?;
     let channel = state.channels.get(message.channel_id).await?;
-    state.spaces.get_for_user(user.id, channel.space_id).await?;
+    let space = state.spaces.get_for_user(user.id, channel.space_id).await?;
 
     if message.author_user_id != user.id {
-        return Err(MessageError::NotFound.into());
+        state
+            .permissions
+            .require_channel(user.id, &space, &channel, Permission::ManageMessages)
+            .await?;
+    } else {
+        state
+            .permissions
+            .require_channel(user.id, &space, &channel, Permission::SendMessages)
+            .await?;
     }
 
     let message = state.messages.update(message, request.content).await?;
@@ -95,10 +112,18 @@ pub async fn delete(
     let user = state.auth.user_for_token(token).await?;
     let message = state.messages.get(message_id).await?;
     let channel = state.channels.get(message.channel_id).await?;
-    state.spaces.get_for_user(user.id, channel.space_id).await?;
+    let space = state.spaces.get_for_user(user.id, channel.space_id).await?;
 
     if message.author_user_id != user.id {
-        return Err(MessageError::NotFound.into());
+        state
+            .permissions
+            .require_channel(user.id, &space, &channel, Permission::ManageMessages)
+            .await?;
+    } else {
+        state
+            .permissions
+            .require_channel(user.id, &space, &channel, Permission::SendMessages)
+            .await?;
     }
 
     state.messages.delete(message).await?;
@@ -112,6 +137,7 @@ pub enum MessageApiError {
     Channel(ChannelError),
     Space(SpaceError),
     Message(MessageError),
+    Permission(PermissionError),
 }
 
 impl From<AuthError> for MessageApiError {
@@ -138,6 +164,12 @@ impl From<MessageError> for MessageApiError {
     }
 }
 
+impl From<PermissionError> for MessageApiError {
+    fn from(error: PermissionError) -> Self {
+        Self::Permission(error)
+    }
+}
+
 impl IntoResponse for MessageApiError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
@@ -145,6 +177,7 @@ impl IntoResponse for MessageApiError {
             Self::Channel(error) => (error.status_code(), error.code(), error.message()),
             Self::Space(error) => (error.status_code(), error.code(), error.message()),
             Self::Message(error) => (error.status_code(), error.code(), error.message()),
+            Self::Permission(error) => (error.status_code(), error.code(), error.message()),
         };
 
         (
