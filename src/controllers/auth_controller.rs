@@ -1,8 +1,9 @@
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, extract::State};
 
 use crate::domain::auth::{AuthError, AuthUser};
+use crate::http::session::bearer_token;
 use crate::models::auth::{
     AuthResponse, ErrorDetail, ErrorResponse, LoginRequest, MeResponse, RegisterRequest,
     SessionResponse, UserResponse,
@@ -50,19 +51,6 @@ pub async fn me(
     Ok(Json(MeResponse {
         user: UserResponse::from(user),
     }))
-}
-
-fn bearer_token(headers: &HeaderMap) -> Result<&str, AuthError> {
-    let Some(value) = headers.get(header::AUTHORIZATION) else {
-        return Err(AuthError::Unauthorized);
-    };
-
-    let value = value.to_str().map_err(|_| AuthError::Unauthorized)?;
-    value
-        .strip_prefix("Bearer ")
-        .filter(|token| !token.trim().is_empty())
-        .map(str::trim)
-        .ok_or(AuthError::Unauthorized)
 }
 
 #[derive(Debug)]

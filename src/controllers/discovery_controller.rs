@@ -20,7 +20,14 @@ pub async fn version(State(state): State<AppState>) -> Json<VersionResponse> {
 
 pub async fn capabilities() -> Json<CapabilitiesResponse> {
     Json(CapabilitiesResponse {
-        capabilities: vec!["openapi", "health", "server_discovery", "uuidv7", "auth"],
+        capabilities: vec![
+            "openapi",
+            "health",
+            "server_discovery",
+            "uuidv7",
+            "auth",
+            "organizations",
+        ],
     })
 }
 

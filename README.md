@@ -78,6 +78,9 @@ POST /auth/register
 POST /auth/login
 POST /auth/logout
 GET /me
+POST /organizations
+GET /organizations
+GET /organizations/{organization_id}
 ```
 
 Auth endpoints use bearer session tokens:

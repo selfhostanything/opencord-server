@@ -2,6 +2,7 @@ use sea_orm_migration::prelude::*;
 
 mod m20260622173149_baseline;
 mod m20260623012400_auth;
+mod m20260623013800_organizations;
 
 pub struct Migrator;
 
@@ -11,6 +12,7 @@ impl MigratorTrait for Migrator {
         vec![
             Box::new(m20260622173149_baseline::Migration),
             Box::new(m20260623012400_auth::Migration),
+            Box::new(m20260623013800_organizations::Migration),
         ]
     }
 }
