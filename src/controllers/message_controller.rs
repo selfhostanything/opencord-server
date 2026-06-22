@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -5,6 +7,7 @@ use axum::response::{IntoResponse, Response};
 use serde_json::json;
 use uuid::Uuid;
 
+use crate::domain::attachment::{Attachment, AttachmentError};
 use crate::domain::auth::AuthError;
 use crate::domain::channel::ChannelError;
 use crate::domain::message::{Message, MessageError};
@@ -12,6 +15,7 @@ use crate::domain::permission::{Permission, PermissionError};
 use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::SpaceError;
 use crate::http::session::bearer_token;
+use crate::models::attachment::AttachmentResponse;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
 use crate::models::message::{
     CreateMessageRequest, MessageListResponse, MessageResourceResponse, MessageResponse,
@@ -34,6 +38,19 @@ pub async fn create(
         .require_channel(user.id, &space, &channel, Permission::SendMessages)
         .await?;
 
+    state
+        .attachments
+        .validate_for_message(
+            channel.organization_id,
+            channel.space_id,
+            channel.id,
+            user.id,
+            &request.attachment_ids,
+        )
+        .await?;
+
+    let attachment_ids = request.attachment_ids;
+    let allow_empty_content = !attachment_ids.is_empty();
     let message = state
         .messages
         .create(
@@ -42,9 +59,14 @@ pub async fn create(
             channel.id,
             user.id,
             request.content,
+            allow_empty_content,
         )
         .await?;
-    let message = MessageResponse::from(message);
+    let attachments = state
+        .attachments
+        .link_to_message(message.id, &attachment_ids)
+        .await?;
+    let message = message_response(message, attachments, &state.config.public_url);
     state.realtime.publish(RealtimeEvent::channel(
         "message.created",
         channel.organization_id,
@@ -74,9 +96,23 @@ pub async fn list(
         .await?;
 
     let messages = state.messages.list_for_channel(channel_id).await?;
+    let message_ids = messages
+        .iter()
+        .map(|message| message.id)
+        .collect::<Vec<_>>();
+    let attachments = state.attachments.list_for_message_ids(&message_ids).await?;
+    let mut attachments_by_message_id = attachments_by_message_id(attachments);
 
     Ok(Json(MessageListResponse {
-        messages: messages.into_iter().map(MessageResponse::from).collect(),
+        messages: messages
+            .into_iter()
+            .map(|message| {
+                let attachments = attachments_by_message_id
+                    .remove(&message.id)
+                    .unwrap_or_default();
+                message_response(message, attachments, &state.config.public_url)
+            })
+            .collect(),
     }))
 }
 
@@ -105,9 +141,13 @@ pub async fn update(
     }
 
     let message = state.messages.update(message, request.content).await?;
+    let attachments = state
+        .attachments
+        .list_for_message_ids(&[message.id])
+        .await?;
 
     Ok(Json(MessageResourceResponse {
-        message: MessageResponse::from(message),
+        message: message_response(message, attachments, &state.config.public_url),
     }))
 }
 
@@ -145,6 +185,7 @@ pub enum MessageApiError {
     Channel(ChannelError),
     Space(SpaceError),
     Message(MessageError),
+    Attachment(AttachmentError),
     Permission(PermissionError),
 }
 
@@ -172,6 +213,12 @@ impl From<MessageError> for MessageApiError {
     }
 }
 
+impl From<AttachmentError> for MessageApiError {
+    fn from(error: AttachmentError) -> Self {
+        Self::Attachment(error)
+    }
+}
+
 impl From<PermissionError> for MessageApiError {
     fn from(error: PermissionError) -> Self {
         Self::Permission(error)
@@ -185,6 +232,7 @@ impl IntoResponse for MessageApiError {
             Self::Channel(error) => (error.status_code(), error.code(), error.message()),
             Self::Space(error) => (error.status_code(), error.code(), error.message()),
             Self::Message(error) => (error.status_code(), error.code(), error.message()),
+            Self::Attachment(error) => (error.status_code(), error.code(), error.message()),
             Self::Permission(error) => (error.status_code(), error.code(), error.message()),
         };
 
@@ -198,18 +246,57 @@ impl IntoResponse for MessageApiError {
     }
 }
 
-impl From<Message> for MessageResponse {
-    fn from(message: Message) -> Self {
-        Self {
-            id: message.id.to_string(),
-            organization_id: message.organization_id.to_string(),
-            space_id: message.space_id.map(|id| id.to_string()),
-            channel_id: message.channel_id.to_string(),
-            author_user_id: message.author_user_id.to_string(),
-            content: message.content,
-            content_format: message.content_format,
-            edited_at: message.edited_at,
-            deleted_at: message.deleted_at,
+fn message_response(
+    message: Message,
+    attachments: Vec<Attachment>,
+    public_url: &str,
+) -> MessageResponse {
+    MessageResponse {
+        id: message.id.to_string(),
+        organization_id: message.organization_id.to_string(),
+        space_id: message.space_id.map(|id| id.to_string()),
+        channel_id: message.channel_id.to_string(),
+        author_user_id: message.author_user_id.to_string(),
+        content: message.content,
+        content_format: message.content_format,
+        edited_at: message.edited_at,
+        deleted_at: message.deleted_at,
+        attachments: attachments
+            .into_iter()
+            .map(|attachment| attachment_response(attachment, public_url))
+            .collect(),
+    }
+}
+
+fn attachments_by_message_id(attachments: Vec<Attachment>) -> HashMap<Uuid, Vec<Attachment>> {
+    let mut attachments_by_message_id = HashMap::new();
+    for attachment in attachments {
+        if let Some(message_id) = attachment.message_id {
+            attachments_by_message_id
+                .entry(message_id)
+                .or_insert_with(Vec::new)
+                .push(attachment);
         }
     }
+    attachments_by_message_id
+}
+
+pub(crate) fn attachment_response(attachment: Attachment, public_url: &str) -> AttachmentResponse {
+    AttachmentResponse {
+        id: attachment.id.to_string(),
+        organization_id: attachment.organization_id.to_string(),
+        space_id: attachment.space_id.to_string(),
+        channel_id: attachment.channel_id.to_string(),
+        message_id: attachment.message_id.map(|id| id.to_string()),
+        uploader_user_id: attachment.uploader_user_id.to_string(),
+        file_name: attachment.file_name,
+        content_type: attachment.content_type,
+        size_bytes: attachment.size_bytes,
+        status: attachment.status.as_str().to_owned(),
+        download_url: attachment_download_url(public_url, attachment.id),
+    }
+}
+
+pub(crate) fn attachment_download_url(public_url: &str, attachment_id: Uuid) -> String {
+    format!("{public_url}/attachments/{attachment_id}/content")
 }

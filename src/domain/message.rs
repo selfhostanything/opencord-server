@@ -75,6 +75,7 @@ impl MessageService {
         channel_id: Uuid,
         author_user_id: Uuid,
         content: String,
+        allow_empty_content: bool,
     ) -> Result<Message, MessageError> {
         let message = Message {
             id: ids::new_uuid_v7(),
@@ -82,7 +83,7 @@ impl MessageService {
             space_id,
             channel_id,
             author_user_id,
-            content: normalize_content(content)?,
+            content: normalize_content(content, allow_empty_content)?,
             content_format: "plain".to_owned(),
             edited_at: None,
             deleted_at: None,
@@ -109,7 +110,7 @@ impl MessageService {
         mut message: Message,
         content: String,
     ) -> Result<Message, MessageError> {
-        message.content = normalize_content(content)?;
+        message.content = normalize_content(content, false)?;
         message.edited_at = Some("now".to_owned());
 
         self.store.update_message(message).await
@@ -121,13 +122,14 @@ impl MessageService {
     }
 }
 
-fn normalize_content(content: String) -> Result<String, MessageError> {
+fn normalize_content(content: String, allow_empty: bool) -> Result<String, MessageError> {
     let content = content.trim().to_owned();
-    if (1..=4000).contains(&content.len()) {
+    let min_len = if allow_empty { 0 } else { 1 };
+    if (min_len..=4000).contains(&content.len()) {
         Ok(content)
     } else {
         Err(MessageError::InvalidInput(
-            "message content must be between 1 and 4000 characters",
+            "message content must be between 1 and 4000 characters unless attachments are present",
         ))
     }
 }

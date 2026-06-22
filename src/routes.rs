@@ -1,12 +1,12 @@
 use axum::Router;
 use axum::middleware;
-use axum::routing::{get, patch, post};
+use axum::routing::{get, patch, post, put};
 
 use crate::config::AppConfig;
 use crate::controllers::{
-    auth_controller, channel_controller, discovery_controller, health_controller,
-    message_controller, organization_controller, permission_controller, realtime_controller,
-    space_controller,
+    attachment_controller, auth_controller, channel_controller, discovery_controller,
+    health_controller, message_controller, organization_controller, permission_controller,
+    realtime_controller, space_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -65,6 +65,11 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/channels/{channel_id}/messages",
             post(message_controller::create).get(message_controller::list),
+        )
+        .route("/attachments/presign", post(attachment_controller::presign))
+        .route(
+            "/attachments/{attachment_id}/content",
+            put(attachment_controller::upload_content).get(attachment_controller::download_content),
         )
         .route(
             "/messages/{message_id}",

@@ -492,6 +492,91 @@ paths:
           description: Missing VIEW_CHANNEL permission
         "404":
           description: Channel or parent space not found for this user
+  /attachments/presign:
+    post:
+      summary: Create a pending attachment and return an upload URL
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PresignAttachmentRequest"
+      responses:
+        "201":
+          description: Pending attachment and upload directive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttachmentPresignResponse"
+        "400":
+          description: Invalid attachment metadata
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing SEND_MESSAGES permission
+        "404":
+          description: Channel or parent space not found for this user
+  /attachments/{attachment_id}/content:
+    put:
+      summary: Upload attachment bytes for a pending attachment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: attachment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Uploaded attachment metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttachmentResourceResponse"
+        "400":
+          description: Upload body does not match the pending attachment
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing SEND_MESSAGES permission
+        "404":
+          description: Attachment or parent channel not found for this user
+    get:
+      summary: Download attachment bytes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: attachment_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Attachment content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing VIEW_CHANNEL permission
+        "404":
+          description: Attachment or parent channel not found for this user
   /messages/{message_id}:
     patch:
       summary: Edit one of the current user's messages
@@ -1029,8 +1114,15 @@ components:
       properties:
         content:
           type: string
-          minLength: 1
+          minLength: 0
           maxLength: 4000
+          description: Required unless at least one uploaded attachment ID is supplied.
+        attachment_ids:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+            format: uuid
     PatchMessageRequest:
       type: object
       required:
@@ -1049,6 +1141,7 @@ components:
         - author_user_id
         - content
         - content_format
+        - attachments
       properties:
         id:
           type: string
@@ -1081,6 +1174,111 @@ components:
           type:
             - string
             - "null"
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Attachment"
+    PresignAttachmentRequest:
+      type: object
+      required:
+        - channel_id
+        - file_name
+        - content_type
+        - size_bytes
+      properties:
+        channel_id:
+          type: string
+          format: uuid
+        file_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        content_type:
+          type: string
+          maxLength: 120
+        size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 10485760
+    Attachment:
+      type: object
+      required:
+        - id
+        - organization_id
+        - space_id
+        - channel_id
+        - uploader_user_id
+        - file_name
+        - content_type
+        - size_bytes
+        - status
+        - download_url
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        space_id:
+          type: string
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        message_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        uploader_user_id:
+          type: string
+          format: uuid
+        file_name:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+        status:
+          type: string
+          enum:
+            - pending
+            - uploaded
+            - linked
+        download_url:
+          type: string
+          format: uri
+    AttachmentUpload:
+      type: object
+      required:
+        - method
+        - url
+      properties:
+        method:
+          type: string
+          enum:
+            - PUT
+        url:
+          type: string
+          format: uri
+    AttachmentPresignResponse:
+      type: object
+      required:
+        - attachment
+        - upload
+      properties:
+        attachment:
+          $ref: "#/components/schemas/Attachment"
+        upload:
+          $ref: "#/components/schemas/AttachmentUpload"
+    AttachmentResourceResponse:
+      type: object
+      required:
+        - attachment
+      properties:
+        attachment:
+          $ref: "#/components/schemas/Attachment"
     MessageResourceResponse:
       type: object
       required:

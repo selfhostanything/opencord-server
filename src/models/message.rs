@@ -1,8 +1,13 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+use crate::models::attachment::AttachmentResponse;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateMessageRequest {
     pub content: String,
+    #[serde(default)]
+    pub attachment_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -21,6 +26,7 @@ pub struct MessageResponse {
     pub content_format: String,
     pub edited_at: Option<String>,
     pub deleted_at: Option<String>,
+    pub attachments: Vec<AttachmentResponse>,
 }
 
 #[derive(Debug, Serialize)]

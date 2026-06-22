@@ -18,7 +18,7 @@ pub async fn browser_cors(request: Request<Body>, next: Next) -> Response {
     );
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_METHODS,
-        HeaderValue::from_static("DELETE, GET, OPTIONS, PATCH, POST"),
+        HeaderValue::from_static("DELETE, GET, OPTIONS, PATCH, POST, PUT"),
     );
     headers.insert(
         header::ACCESS_CONTROL_ALLOW_HEADERS,

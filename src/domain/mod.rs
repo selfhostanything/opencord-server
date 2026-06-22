@@ -1,3 +1,4 @@
+pub mod attachment;
 pub mod auth;
 pub mod channel;
 pub mod ids;

@@ -93,6 +93,9 @@ PATCH /channels/{channel_id}
 POST /channels/{channel_id}/permission-overrides
 POST /channels/{channel_id}/messages
 GET /channels/{channel_id}/messages
+POST /attachments/presign
+PUT /attachments/{attachment_id}/content
+GET /attachments/{attachment_id}/content
 PATCH /messages/{message_id}
 DELETE /messages/{message_id}
 ```

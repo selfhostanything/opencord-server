@@ -3,6 +3,7 @@ use std::sync::Arc;
 use sea_orm::DatabaseConnection;
 
 use crate::config::AppConfig;
+use crate::domain::attachment::{AttachmentService, AttachmentStore};
 use crate::domain::auth::{AuthService, AuthStore};
 use crate::domain::channel::{ChannelService, ChannelStore};
 use crate::domain::message::{MessageService, MessageStore};
@@ -10,6 +11,8 @@ use crate::domain::organization::{OrganizationService, OrganizationStore};
 use crate::domain::permission::{PermissionService, PermissionStore};
 use crate::domain::realtime::RealtimeHub;
 use crate::domain::space::{SpaceService, SpaceStore};
+use crate::repositories::attachment_memory::MemoryAttachmentStore;
+use crate::repositories::attachment_postgres::PostgresAttachmentStore;
 use crate::repositories::auth_memory::MemoryAuthStore;
 use crate::repositories::auth_postgres::PostgresAuthStore;
 use crate::repositories::channel_memory::MemoryChannelStore;
@@ -31,6 +34,7 @@ pub struct AppState {
     pub spaces: Arc<SpaceService>,
     pub channels: Arc<ChannelService>,
     pub messages: Arc<MessageService>,
+    pub attachments: Arc<AttachmentService>,
     pub permissions: Arc<PermissionService>,
     pub realtime: Arc<RealtimeHub>,
 }
@@ -39,45 +43,54 @@ impl AppState {
     pub fn in_memory(config: AppConfig) -> Self {
         Self::with_stores(
             config,
-            Arc::new(MemoryAuthStore::default()),
-            Arc::new(MemoryOrganizationStore::default()),
-            Arc::new(MemorySpaceStore::default()),
-            Arc::new(MemoryChannelStore::default()),
-            Arc::new(MemoryMessageStore::default()),
-            Arc::new(MemoryPermissionStore::default()),
+            AppStores {
+                auth: Arc::new(MemoryAuthStore::default()),
+                organizations: Arc::new(MemoryOrganizationStore::default()),
+                spaces: Arc::new(MemorySpaceStore::default()),
+                channels: Arc::new(MemoryChannelStore::default()),
+                messages: Arc::new(MemoryMessageStore::default()),
+                attachments: Arc::new(MemoryAttachmentStore::default()),
+                permissions: Arc::new(MemoryPermissionStore::default()),
+            },
         )
     }
 
     pub fn with_database(config: AppConfig, db: DatabaseConnection) -> Self {
         Self::with_stores(
             config,
-            Arc::new(PostgresAuthStore::new(db.clone())),
-            Arc::new(PostgresOrganizationStore::new(db.clone())),
-            Arc::new(PostgresSpaceStore::new(db.clone())),
-            Arc::new(PostgresChannelStore::new(db.clone())),
-            Arc::new(PostgresMessageStore::new(db.clone())),
-            Arc::new(PostgresPermissionStore::new(db)),
+            AppStores {
+                auth: Arc::new(PostgresAuthStore::new(db.clone())),
+                organizations: Arc::new(PostgresOrganizationStore::new(db.clone())),
+                spaces: Arc::new(PostgresSpaceStore::new(db.clone())),
+                channels: Arc::new(PostgresChannelStore::new(db.clone())),
+                messages: Arc::new(PostgresMessageStore::new(db.clone())),
+                attachments: Arc::new(PostgresAttachmentStore::new(db.clone())),
+                permissions: Arc::new(PostgresPermissionStore::new(db)),
+            },
         )
     }
 
-    pub fn with_stores(
-        config: AppConfig,
-        auth_store: Arc<dyn AuthStore>,
-        organization_store: Arc<dyn OrganizationStore>,
-        space_store: Arc<dyn SpaceStore>,
-        channel_store: Arc<dyn ChannelStore>,
-        message_store: Arc<dyn MessageStore>,
-        permission_store: Arc<dyn PermissionStore>,
-    ) -> Self {
+    pub fn with_stores(config: AppConfig, stores: AppStores) -> Self {
         Self {
             config,
-            auth: Arc::new(AuthService::new(auth_store)),
-            organizations: Arc::new(OrganizationService::new(organization_store)),
-            spaces: Arc::new(SpaceService::new(space_store)),
-            channels: Arc::new(ChannelService::new(channel_store)),
-            messages: Arc::new(MessageService::new(message_store)),
-            permissions: Arc::new(PermissionService::new(permission_store)),
+            auth: Arc::new(AuthService::new(stores.auth)),
+            organizations: Arc::new(OrganizationService::new(stores.organizations)),
+            spaces: Arc::new(SpaceService::new(stores.spaces)),
+            channels: Arc::new(ChannelService::new(stores.channels)),
+            messages: Arc::new(MessageService::new(stores.messages)),
+            attachments: Arc::new(AttachmentService::new(stores.attachments)),
+            permissions: Arc::new(PermissionService::new(stores.permissions)),
             realtime: Arc::new(RealtimeHub::default()),
         }
     }
+}
+
+pub struct AppStores {
+    pub auth: Arc<dyn AuthStore>,
+    pub organizations: Arc<dyn OrganizationStore>,
+    pub spaces: Arc<dyn SpaceStore>,
+    pub channels: Arc<dyn ChannelStore>,
+    pub messages: Arc<dyn MessageStore>,
+    pub attachments: Arc<dyn AttachmentStore>,
+    pub permissions: Arc<dyn PermissionStore>,
 }

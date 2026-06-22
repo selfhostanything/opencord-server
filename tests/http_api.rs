@@ -88,6 +88,13 @@ async fn discovery_endpoints_return_basic_metadata() {
             .iter()
             .any(|capability| capability == "uuidv7")
     );
+    assert!(
+        body["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|capability| capability == "attachments")
+    );
 }
 
 #[tokio::test]
@@ -112,5 +119,11 @@ async fn cors_preflight_supports_browser_clients() {
             .to_str()
             .unwrap()
             .contains("POST")
+    );
+    assert!(
+        response.headers()[header::ACCESS_CONTROL_ALLOW_METHODS]
+            .to_str()
+            .unwrap()
+            .contains("PUT")
     );
 }
