@@ -86,6 +86,10 @@ GET /organizations/{organization_id}/spaces
 POST /spaces/{space_id}/channels
 GET /spaces/{space_id}/channels
 PATCH /channels/{channel_id}
+POST /channels/{channel_id}/messages
+GET /channels/{channel_id}/messages
+PATCH /messages/{message_id}
+DELETE /messages/{message_id}
 ```
 
 Auth endpoints use bearer session tokens:

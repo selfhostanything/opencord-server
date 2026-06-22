@@ -282,6 +282,104 @@ paths:
           description: Channel or parent space not found for this user
         "409":
           description: Channel slug already exists in this space
+  /channels/{channel_id}/messages:
+    post:
+      summary: Send a message to a channel
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMessageRequest"
+      responses:
+        "201":
+          description: Created message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Channel or parent space not found for this user
+    get:
+      summary: List messages in a channel
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Messages visible to the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageListResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Channel or parent space not found for this user
+  /messages/{message_id}:
+    patch:
+      summary: Edit one of the current user's messages
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchMessageRequest"
+      responses:
+        "200":
+          description: Updated message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Message or parent channel not found for this user
+    delete:
+      summary: Soft-delete one of the current user's messages
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Message soft-deleted
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Message or parent channel not found for this user
 components:
   securitySchemes:
     bearerAuth:
@@ -553,3 +651,78 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Channel"
+    CreateMessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+    PatchMessageRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+    Message:
+      type: object
+      required:
+        - id
+        - organization_id
+        - channel_id
+        - author_user_id
+        - content
+        - content_format
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        space_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        author_user_id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        content_format:
+          type: string
+          enum:
+            - plain
+        edited_at:
+          type:
+            - string
+            - "null"
+        deleted_at:
+          type:
+            - string
+            - "null"
+    MessageResourceResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          $ref: "#/components/schemas/Message"
+    MessageListResponse:
+      type: object
+      required:
+        - messages
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"

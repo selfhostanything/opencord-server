@@ -5,7 +5,7 @@ use axum::routing::{get, patch, post};
 use crate::config::AppConfig;
 use crate::controllers::{
     auth_controller, channel_controller, discovery_controller, health_controller,
-    organization_controller, space_controller,
+    message_controller, organization_controller, space_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -44,6 +44,14 @@ pub fn api_router_with_state(state: AppState) -> Router {
             post(channel_controller::create).get(channel_controller::list),
         )
         .route("/channels/{channel_id}", patch(channel_controller::update))
+        .route(
+            "/channels/{channel_id}/messages",
+            post(message_controller::create).get(message_controller::list),
+        )
+        .route(
+            "/messages/{message_id}",
+            patch(message_controller::update).delete(message_controller::delete),
+        )
         .layer(middleware::from_fn(browser_cors))
         .with_state(state)
 }

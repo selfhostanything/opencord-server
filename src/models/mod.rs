@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod channel;
+pub mod message;
 pub mod organization;
 pub mod responses;
 pub mod space;

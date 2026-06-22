@@ -5,12 +5,15 @@ use sea_orm::DatabaseConnection;
 use crate::config::AppConfig;
 use crate::domain::auth::{AuthService, AuthStore};
 use crate::domain::channel::{ChannelService, ChannelStore};
+use crate::domain::message::{MessageService, MessageStore};
 use crate::domain::organization::{OrganizationService, OrganizationStore};
 use crate::domain::space::{SpaceService, SpaceStore};
 use crate::repositories::auth_memory::MemoryAuthStore;
 use crate::repositories::auth_postgres::PostgresAuthStore;
 use crate::repositories::channel_memory::MemoryChannelStore;
 use crate::repositories::channel_postgres::PostgresChannelStore;
+use crate::repositories::message_memory::MemoryMessageStore;
+use crate::repositories::message_postgres::PostgresMessageStore;
 use crate::repositories::organization_memory::MemoryOrganizationStore;
 use crate::repositories::organization_postgres::PostgresOrganizationStore;
 use crate::repositories::space_memory::MemorySpaceStore;
@@ -23,6 +26,7 @@ pub struct AppState {
     pub organizations: Arc<OrganizationService>,
     pub spaces: Arc<SpaceService>,
     pub channels: Arc<ChannelService>,
+    pub messages: Arc<MessageService>,
 }
 
 impl AppState {
@@ -33,6 +37,7 @@ impl AppState {
             Arc::new(MemoryOrganizationStore::default()),
             Arc::new(MemorySpaceStore::default()),
             Arc::new(MemoryChannelStore::default()),
+            Arc::new(MemoryMessageStore::default()),
         )
     }
 
@@ -42,7 +47,8 @@ impl AppState {
             Arc::new(PostgresAuthStore::new(db.clone())),
             Arc::new(PostgresOrganizationStore::new(db.clone())),
             Arc::new(PostgresSpaceStore::new(db.clone())),
-            Arc::new(PostgresChannelStore::new(db)),
+            Arc::new(PostgresChannelStore::new(db.clone())),
+            Arc::new(PostgresMessageStore::new(db)),
         )
     }
 
@@ -52,6 +58,7 @@ impl AppState {
         organization_store: Arc<dyn OrganizationStore>,
         space_store: Arc<dyn SpaceStore>,
         channel_store: Arc<dyn ChannelStore>,
+        message_store: Arc<dyn MessageStore>,
     ) -> Self {
         Self {
             config,
@@ -59,6 +66,7 @@ impl AppState {
             organizations: Arc::new(OrganizationService::new(organization_store)),
             spaces: Arc::new(SpaceService::new(space_store)),
             channels: Arc::new(ChannelService::new(channel_store)),
+            messages: Arc::new(MessageService::new(message_store)),
         }
     }
 }
