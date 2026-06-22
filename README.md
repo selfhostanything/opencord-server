@@ -108,4 +108,4 @@ Authorization: Bearer <session token>
 
 ## License
 
-OpenCord Server License 1.0 placeholder. Legal review required before production release.
+Elastic License 2.0 (`Elastic-2.0`).
