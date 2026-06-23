@@ -20,5 +20,7 @@ pub mod permission_memory;
 pub mod permission_postgres;
 pub mod push_memory;
 pub mod push_postgres;
+pub mod scim_memory;
+pub mod scim_postgres;
 pub mod space_memory;
 pub mod space_postgres;

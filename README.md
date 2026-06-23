@@ -107,10 +107,14 @@ GET /organizations/{organization_id}
 GET /organizations/{organization_id}/usage
 GET /organizations/{organization_id}/oidc
 PUT /organizations/{organization_id}/oidc
+POST /organizations/{organization_id}/scim/token
 POST /organizations/{organization_id}/custom-domains
 GET /organizations/{organization_id}/custom-domains
 POST /organizations/{organization_id}/custom-domains/{custom_domain_id}/verify
 GET /custom-domains/resolve
+POST /scim/v2/Users
+GET /scim/v2/Users/{external_id}
+PATCH /scim/v2/Users/{external_id}
 POST /organizations/{organization_id}/spaces
 GET /organizations/{organization_id}/spaces
 POST /organizations/{organization_id}/meetings
@@ -162,6 +166,21 @@ reuses the local user, links the OIDC identity, creates a bearer session, and
 auto-joins the configured organization. The current local assertion signature is
 a testable development boundary; production OIDC code/JWKS exchange remains a
 future hardening step.
+
+## SCIM
+
+`POST /organizations/{organization_id}/scim/token` rotates a SCIM bearer token
+for an organization owner/admin. The token is shown once and should be stored in
+the external identity provider.
+
+`POST /scim/v2/Users` accepts a SCIM-like user payload with `externalId`,
+`userName`, optional `name.formatted`, and `active`. It creates or reuses a
+local user, links the external ID, and adds the user to the token's organization.
+
+`GET /scim/v2/Users/{external_id}` returns the provisioned user for the SCIM
+token's organization. `PATCH /scim/v2/Users/{external_id}` supports a SCIM
+PatchOp that replaces `active` with a boolean and updates organization
+membership status.
 
 ## Cloud Tenants
 

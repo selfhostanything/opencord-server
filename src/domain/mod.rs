@@ -15,5 +15,6 @@ pub mod permission;
 pub mod push;
 pub mod realtime;
 pub mod reminder;
+pub mod scim;
 pub mod space;
 pub mod usage;

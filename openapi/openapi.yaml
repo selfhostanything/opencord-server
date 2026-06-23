@@ -575,6 +575,31 @@ paths:
           description: Organization admin permission is required
         "404":
           description: Organization not found for this user
+  /organizations/{organization_id}/scim/token:
+    post:
+      summary: Rotate organization SCIM bearer token
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: New SCIM bearer token, shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScimTokenEnvelope"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization not found for this user
   /organizations/{organization_id}/custom-domains:
     post:
       summary: Create a custom domain mapping for an organization
@@ -693,6 +718,79 @@ paths:
           description: Missing or invalid Host header
         "404":
           description: No active tenant found for this host
+  /scim/v2/Users:
+    post:
+      summary: Provision a user through SCIM
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScimCreateUserRequest"
+      responses:
+        "201":
+          description: Provisioned SCIM user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScimUser"
+        "400":
+          description: Invalid SCIM payload
+        "401":
+          description: Missing or invalid SCIM bearer token
+  /scim/v2/Users/{external_id}:
+    get:
+      summary: Return one SCIM user by external ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: external_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SCIM user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScimUser"
+        "401":
+          description: Missing or invalid SCIM bearer token
+        "404":
+          description: SCIM user not found
+    patch:
+      summary: Update SCIM user active status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: external_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScimPatchUserRequest"
+      responses:
+        "200":
+          description: Updated SCIM user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScimUser"
+        "400":
+          description: Invalid SCIM patch
+        "401":
+          description: Missing or invalid SCIM bearer token
+        "404":
+          description: SCIM user not found
   /organizations/{organization_id}/spaces:
     post:
       summary: Create a space inside an organization
@@ -1620,6 +1718,97 @@ components:
       properties:
         provider:
           $ref: "#/components/schemas/OidcProvider"
+    ScimToken:
+      type: object
+      required:
+        - organization_id
+        - token
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        token:
+          type: string
+    ScimTokenEnvelope:
+      type: object
+      required:
+        - scim_token
+      properties:
+        scim_token:
+          $ref: "#/components/schemas/ScimToken"
+    ScimCreateUserRequest:
+      type: object
+      required:
+        - externalId
+        - userName
+      properties:
+        externalId:
+          type: string
+        userName:
+          type: string
+          format: email
+        name:
+          type: object
+          properties:
+            formatted:
+              type: string
+        active:
+          type: boolean
+    ScimPatchUserRequest:
+      type: object
+      required:
+        - Operations
+      properties:
+        Operations:
+          type: array
+          items:
+            type: object
+            required:
+              - op
+              - path
+              - value
+            properties:
+              op:
+                type: string
+                enum:
+                  - replace
+              path:
+                type: string
+                enum:
+                  - active
+              value:
+                type: boolean
+    ScimUser:
+      type: object
+      required:
+        - schemas
+        - id
+        - externalId
+        - userName
+        - name
+        - active
+      properties:
+        schemas:
+          type: array
+          items:
+            type: string
+        id:
+          type: string
+          format: uuid
+        externalId:
+          type: string
+        userName:
+          type: string
+          format: email
+        name:
+          type: object
+          required:
+            - formatted
+          properties:
+            formatted:
+              type: string
+        active:
+          type: boolean
     MeResponse:
       type: object
       required:

@@ -8,7 +8,7 @@ use crate::controllers::{
     calendar_controller, channel_controller, discovery_controller, health_controller,
     media_controller, meeting_controller, message_controller, metrics_controller,
     organization_controller, permission_controller, push_controller, realtime_controller,
-    space_controller, usage_controller, voice_controller,
+    scim_controller, space_controller, usage_controller, voice_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -89,6 +89,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
                 .put(organization_controller::configure_oidc_provider),
         )
         .route(
+            "/organizations/{organization_id}/scim/token",
+            post(scim_controller::rotate_token),
+        )
+        .route(
             "/organizations/{organization_id}/custom-domains",
             post(organization_controller::create_custom_domain)
                 .get(organization_controller::list_custom_domains),
@@ -100,6 +104,11 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/custom-domains/resolve",
             get(organization_controller::resolve_custom_domain),
+        )
+        .route("/scim/v2/Users", post(scim_controller::create_user))
+        .route(
+            "/scim/v2/Users/{external_id}",
+            get(scim_controller::get_user).patch(scim_controller::patch_user),
         )
         .route(
             "/organizations/{organization_id}/spaces",

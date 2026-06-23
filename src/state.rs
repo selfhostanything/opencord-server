@@ -20,6 +20,7 @@ use crate::domain::organization::{OrganizationService, OrganizationStore};
 use crate::domain::permission::{PermissionService, PermissionStore};
 use crate::domain::push::{PushService, PushTokenStore};
 use crate::domain::realtime::RealtimeHub;
+use crate::domain::scim::{ScimService, ScimStore};
 use crate::domain::space::{SpaceService, SpaceStore};
 use crate::domain::usage::UsageService;
 use crate::repositories::attachment_memory::MemoryAttachmentStore;
@@ -44,6 +45,8 @@ use crate::repositories::permission_memory::MemoryPermissionStore;
 use crate::repositories::permission_postgres::PostgresPermissionStore;
 use crate::repositories::push_memory::MemoryPushTokenStore;
 use crate::repositories::push_postgres::PostgresPushTokenStore;
+use crate::repositories::scim_memory::MemoryScimStore;
+use crate::repositories::scim_postgres::PostgresScimStore;
 use crate::repositories::space_memory::MemorySpaceStore;
 use crate::repositories::space_postgres::PostgresSpaceStore;
 
@@ -66,6 +69,7 @@ pub struct AppState {
     pub realtime: Arc<RealtimeHub>,
     pub usage: Arc<UsageService>,
     pub billing: Arc<BillingService>,
+    pub scim: Arc<ScimService>,
 }
 
 impl AppState {
@@ -85,6 +89,7 @@ impl AppState {
                 permissions: Arc::new(MemoryPermissionStore::default()),
                 push: Arc::new(MemoryPushTokenStore::default()),
                 billing: Arc::new(MemoryBillingStore::default()),
+                scim: Arc::new(MemoryScimStore::default()),
             },
         )
     }
@@ -105,6 +110,7 @@ impl AppState {
                 permissions: Arc::new(PostgresPermissionStore::new(db.clone())),
                 push: Arc::new(PostgresPushTokenStore::new(db.clone())),
                 billing: Arc::new(PostgresBillingStore::new(db.clone())),
+                scim: Arc::new(PostgresScimStore::new(db.clone())),
             },
         )
     }
@@ -117,6 +123,11 @@ impl AppState {
         ));
         let billing = Arc::new(BillingService::new(
             stores.billing.clone(),
+            stores.organizations.clone(),
+        ));
+        let scim = Arc::new(ScimService::new(
+            stores.scim.clone(),
+            stores.auth.clone(),
             stores.organizations.clone(),
         ));
 
@@ -143,6 +154,7 @@ impl AppState {
             realtime: Arc::new(RealtimeHub::default()),
             usage,
             billing,
+            scim,
         }
     }
 }
@@ -160,4 +172,5 @@ pub struct AppStores {
     pub permissions: Arc<dyn PermissionStore>,
     pub push: Arc<dyn PushTokenStore>,
     pub billing: Arc<dyn BillingStore>,
+    pub scim: Arc<dyn ScimStore>,
 }

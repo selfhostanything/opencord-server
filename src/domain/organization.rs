@@ -148,6 +148,13 @@ pub trait OrganizationStore: Send + Sync {
         member: StoredOrganizationMember,
     ) -> Result<(), OrganizationError>;
 
+    async fn set_member_status(
+        &self,
+        organization_id: Uuid,
+        user_id: Uuid,
+        status: String,
+    ) -> Result<(), OrganizationError>;
+
     async fn create_custom_domain(
         &self,
         custom_domain: StoredCustomDomain,
@@ -299,6 +306,17 @@ impl OrganizationService {
             .await
     }
 
+    pub async fn set_member_status(
+        &self,
+        organization_id: Uuid,
+        user_id: Uuid,
+        status: String,
+    ) -> Result<(), OrganizationError> {
+        self.store
+            .set_member_status(organization_id, user_id, normalize_member_status(status)?)
+            .await
+    }
+
     pub async fn create_custom_domain(
         &self,
         user_id: Uuid,
@@ -424,6 +442,15 @@ fn normalize_member_role(role: String) -> Result<String, OrganizationError> {
         "owner" | "admin" | "member" | "guest" => Ok(role.trim().to_ascii_lowercase()),
         _ => Err(OrganizationError::InvalidInput(
             "organization member role must be owner, admin, member, or guest",
+        )),
+    }
+}
+
+fn normalize_member_status(status: String) -> Result<String, OrganizationError> {
+    match status.trim().to_ascii_lowercase().as_str() {
+        "active" | "inactive" => Ok(status.trim().to_ascii_lowercase()),
+        _ => Err(OrganizationError::InvalidInput(
+            "organization member status must be active or inactive",
         )),
     }
 }

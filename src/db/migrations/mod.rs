@@ -17,6 +17,7 @@ mod m20260623045000_caldav_calendar_sync;
 mod m20260623050000_billing;
 mod m20260623051000_custom_domains;
 mod m20260623052000_oidc_identity;
+mod m20260623053000_scim;
 
 pub struct Migrator;
 
@@ -41,6 +42,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623050000_billing::Migration),
             Box::new(m20260623051000_custom_domains::Migration),
             Box::new(m20260623052000_oidc_identity::Migration),
+            Box::new(m20260623053000_scim::Migration),
         ]
     }
 }

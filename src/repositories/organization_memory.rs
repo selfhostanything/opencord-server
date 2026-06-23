@@ -187,6 +187,27 @@ impl OrganizationStore for MemoryOrganizationStore {
         Ok(())
     }
 
+    async fn set_member_status(
+        &self,
+        organization_id: Uuid,
+        user_id: Uuid,
+        status: String,
+    ) -> Result<(), OrganizationError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+        let Some(member) = state
+            .members_by_org_user
+            .get_mut(&(organization_id, user_id))
+        else {
+            return Err(OrganizationError::NotFound);
+        };
+
+        member.status = status;
+        Ok(())
+    }
+
     async fn create_custom_domain(
         &self,
         custom_domain: StoredCustomDomain,

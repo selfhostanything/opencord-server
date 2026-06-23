@@ -223,6 +223,38 @@ impl OrganizationStore for PostgresOrganizationStore {
         Ok(())
     }
 
+    async fn set_member_status(
+        &self,
+        organization_id: Uuid,
+        user_id: Uuid,
+        status: String,
+    ) -> Result<(), OrganizationError> {
+        let result = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                UPDATE organization_members
+                SET status = $3
+                WHERE organization_id = $1::uuid
+                  AND user_id = $2::uuid
+                "#,
+                values(vec![
+                    organization_id.to_string(),
+                    user_id.to_string(),
+                    status,
+                ]),
+            ))
+            .await
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+
+        if result.rows_affected() == 0 {
+            Err(OrganizationError::NotFound)
+        } else {
+            Ok(())
+        }
+    }
+
     async fn create_custom_domain(
         &self,
         custom_domain: StoredCustomDomain,
