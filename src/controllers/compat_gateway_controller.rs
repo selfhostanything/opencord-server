@@ -950,18 +950,25 @@ fn compat_message_from_value(
         .map(Box::new);
     let mentions = compat_mentions_from_event(message.get("mentions"));
     let mention_roles = compat_mention_roles_from_event(message.get("mention_roles"));
+    let webhook_username = message
+        .get("webhook_username")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let author_username = if let Some(username) = webhook_username {
+        username
+    } else if author_is_current_bot {
+        current_bot.name.clone()
+    } else {
+        "OpenCord User".to_owned()
+    };
 
     Some(CompatMessageResponse {
         id: message.get("id")?.as_str()?.to_owned(),
         channel_id: message.get("channel_id")?.as_str()?.to_owned(),
         author: CompatUserResponse {
             id: author_user_id,
-            username: if author_is_current_bot {
-                current_bot.name.clone()
-            } else {
-                "OpenCord User".to_owned()
-            },
-            bot: author_is_current_bot,
+            username: author_username,
+            bot: author_is_current_bot || message.get("webhook_username").is_some(),
         },
         content: message.get("content")?.as_str()?.to_owned(),
         timestamp: message.get("created_at")?.as_str()?.to_owned(),

@@ -3513,46 +3513,31 @@ components:
           maxLength: 80
     ExecuteIncomingWebhookRequest:
       type: object
-      required:
-        - content
+      description: Content is required unless at least one embed is supplied.
       properties:
         content:
           type: string
-          minLength: 1
+          minLength: 0
           maxLength: 4000
-        allowed_mentions:
-          type: object
-          description: Recomputes compatibility mention expansion for the edited content.
-          properties:
-            parse:
-              type: array
-              items:
-                type: string
-                enum:
-                  - users
-                  - roles
-                  - everyone
-            users:
-              type: array
-              items:
-                type: string
-                format: uuid
-            roles:
-              type: array
-              items:
-                type: string
-                format: uuid
+        embeds:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+          description: Basic Discord-shaped embeds are persisted and returned without field-level rendering guarantees.
         username:
           type:
             - string
             - "null"
-          description: Accepted for Discord-style compatibility; ignored in Phase 07.
+          maxLength: 80
+          description: Optional webhook author username override persisted on the created message.
         avatar_url:
           type:
             - string
             - "null"
           format: uri
-          description: Accepted for Discord-style compatibility; ignored in Phase 07.
+          maxLength: 2048
+          description: Optional webhook author avatar URL override persisted on the created message.
     IncomingWebhook:
       type: object
       required:
@@ -5491,6 +5476,8 @@ components:
         - author_user_id
         - content
         - content_format
+        - embeds
+        - components
         - created_at
         - attachments
       properties:
@@ -5517,6 +5504,21 @@ components:
           type: string
           enum:
             - plain
+        embeds:
+          type: array
+          items:
+            type: object
+        components:
+          type: array
+          items:
+            type: object
+        webhook_username:
+          type: string
+          description: Present when an incoming webhook supplied a username override.
+        webhook_avatar_url:
+          type: string
+          format: uri
+          description: Present when an incoming webhook supplied an avatar URL override.
         edited_at:
           type:
             - string

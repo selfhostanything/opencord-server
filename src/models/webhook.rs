@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use serde_json::Value;
+
 #[derive(Debug, Deserialize)]
 pub struct CreateIncomingWebhookRequest {
     pub name: String,
@@ -7,7 +9,10 @@ pub struct CreateIncomingWebhookRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct ExecuteIncomingWebhookRequest {
-    pub content: String,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub embeds: Vec<Value>,
     pub username: Option<String>,
     pub avatar_url: Option<String>,
 }

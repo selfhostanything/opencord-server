@@ -17,6 +17,8 @@ pub struct Message {
     pub content_format: String,
     pub embeds: Vec<Value>,
     pub components: Vec<Value>,
+    pub webhook_username: Option<String>,
+    pub webhook_avatar_url: Option<String>,
     pub mention_user_ids: Vec<Uuid>,
     pub mention_role_ids: Vec<Uuid>,
     pub mention_everyone: bool,
@@ -35,6 +37,8 @@ pub struct CreateMessageInput {
     pub allow_empty_content: bool,
     pub embeds: Vec<Value>,
     pub components: Vec<Value>,
+    pub webhook_username: Option<String>,
+    pub webhook_avatar_url: Option<String>,
     pub mention_user_ids: Vec<Uuid>,
     pub mention_role_ids: Vec<Uuid>,
     pub mention_everyone: bool,
@@ -124,6 +128,8 @@ impl MessageService {
             allow_empty_content,
             embeds: Vec::new(),
             components: Vec::new(),
+            webhook_username: None,
+            webhook_avatar_url: None,
             mention_user_ids: Vec::new(),
             mention_role_ids: Vec::new(),
             mention_everyone: false,
@@ -145,6 +151,8 @@ impl MessageService {
             allow_empty_content,
             embeds,
             components,
+            webhook_username,
+            webhook_avatar_url,
             mention_user_ids,
             mention_role_ids,
             mention_everyone,
@@ -162,6 +170,8 @@ impl MessageService {
             content_format: "plain".to_owned(),
             embeds,
             components,
+            webhook_username: normalize_webhook_username(webhook_username)?,
+            webhook_avatar_url: normalize_webhook_avatar_url(webhook_avatar_url)?,
             mention_user_ids: normalize_mention_ids(mention_user_ids),
             mention_role_ids: normalize_mention_ids(mention_role_ids),
             mention_everyone,
@@ -270,6 +280,44 @@ fn normalize_components(components: Vec<Value>) -> Result<Vec<Value>, MessageErr
     }
 
     Ok(components)
+}
+
+fn normalize_webhook_username(username: Option<String>) -> Result<Option<String>, MessageError> {
+    let Some(username) = username else {
+        return Ok(None);
+    };
+    let username = username.trim().to_owned();
+    if username.is_empty() {
+        return Ok(None);
+    }
+    if username.len() > 80 {
+        return Err(MessageError::InvalidInput(
+            "webhook username must be 80 characters or fewer",
+        ));
+    }
+
+    Ok(Some(username))
+}
+
+fn normalize_webhook_avatar_url(
+    avatar_url: Option<String>,
+) -> Result<Option<String>, MessageError> {
+    let Some(avatar_url) = avatar_url else {
+        return Ok(None);
+    };
+    let avatar_url = avatar_url.trim().to_owned();
+    if avatar_url.is_empty() {
+        return Ok(None);
+    }
+    if avatar_url.len() > 2048
+        || !(avatar_url.starts_with("https://") || avatar_url.starts_with("http://"))
+    {
+        return Err(MessageError::InvalidInput(
+            "webhook avatar_url must be an HTTP or HTTPS URL up to 2048 characters",
+        ));
+    }
+
+    Ok(Some(avatar_url))
 }
 
 fn normalize_mention_ids(ids: Vec<Uuid>) -> Vec<Uuid> {

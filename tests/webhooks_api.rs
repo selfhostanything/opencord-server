@@ -189,6 +189,11 @@ async fn channel_manager_can_create_and_execute_incoming_webhook() {
     );
     assert!(raw_token.starts_with("ocw_"));
 
+    let embed = json!({
+        "title": "Production deploy",
+        "description": "Build 2026.06.23 shipped",
+        "color": 5763719
+    });
     let executed = app
         .clone()
         .oneshot(json_request(
@@ -196,7 +201,9 @@ async fn channel_manager_can_create_and_execute_incoming_webhook() {
             &format!("/api/webhooks/{webhook_id}/{raw_token}"),
             json!({
                 "content": "deployment shipped",
-                "username": "ignored compatibility field"
+                "embeds": [embed.clone()],
+                "username": "Deploy Bot",
+                "avatar_url": "https://chat.example.com/assets/deploy-bot.png"
             }),
         ))
         .await
@@ -209,6 +216,12 @@ async fn channel_manager_can_create_and_execute_incoming_webhook() {
     assert_eq!(body["message"]["channel_id"], channel_id);
     assert_eq!(body["message"]["author_user_id"], bot_user_id);
     assert_eq!(body["message"]["content"], "deployment shipped");
+    assert_eq!(body["message"]["embeds"], json!([embed]));
+    assert_eq!(body["message"]["webhook_username"], "Deploy Bot");
+    assert_eq!(
+        body["message"]["webhook_avatar_url"],
+        "https://chat.example.com/assets/deploy-bot.png"
+    );
     assert!(
         body["message"]["attachments"]
             .as_array()
@@ -230,6 +243,12 @@ async fn channel_manager_can_create_and_execute_incoming_webhook() {
     let body = response_json(listed).await;
     assert_eq!(body["messages"].as_array().unwrap().len(), 1);
     assert_eq!(body["messages"][0]["author_user_id"], bot_user_id);
+    assert_eq!(body["messages"][0]["embeds"], json!([embed]));
+    assert_eq!(body["messages"][0]["webhook_username"], "Deploy Bot");
+    assert_eq!(
+        body["messages"][0]["webhook_avatar_url"],
+        "https://chat.example.com/assets/deploy-bot.png"
+    );
 }
 
 #[tokio::test]

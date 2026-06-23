@@ -9,7 +9,7 @@ use crate::controllers::message_controller::message_response;
 use crate::domain::audit::{AuditError, NewAuditEvent};
 use crate::domain::auth::AuthError;
 use crate::domain::channel::{Channel, ChannelError};
-use crate::domain::message::MessageError;
+use crate::domain::message::{CreateMessageInput, MessageError};
 use crate::domain::permission::{Permission, PermissionError};
 use crate::domain::rate_limit::RateLimitDecision;
 use crate::domain::realtime::RealtimeEvent;
@@ -159,17 +159,26 @@ pub async fn execute(
     let webhook = state.webhooks.verify(webhook_id, &webhook_token).await?;
     let channel = state.channels.get(webhook.channel_id).await?;
     ensure_webhook_matches_channel(&webhook, &channel)?;
+    let allow_empty_content = !request.embeds.is_empty();
 
     let message = state
         .messages
-        .create(
-            webhook.organization_id,
-            Some(webhook.space_id),
-            webhook.channel_id,
-            webhook.bot_user_id,
-            request.content,
-            false,
-        )
+        .create_with_embeds(CreateMessageInput {
+            organization_id: webhook.organization_id,
+            space_id: Some(webhook.space_id),
+            channel_id: webhook.channel_id,
+            author_user_id: webhook.bot_user_id,
+            content: request.content.unwrap_or_default(),
+            allow_empty_content,
+            embeds: request.embeds,
+            components: Vec::new(),
+            webhook_username: request.username,
+            webhook_avatar_url: request.avatar_url,
+            mention_user_ids: Vec::new(),
+            mention_role_ids: Vec::new(),
+            mention_everyone: false,
+            reply_to_message_id: None,
+        })
         .await?;
     let message = message_response(message, Vec::new(), &state.config.public_url);
     state.realtime.publish(RealtimeEvent::channel(

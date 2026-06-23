@@ -24,6 +24,12 @@ pub struct MessageResponse {
     pub author_user_id: String,
     pub content: String,
     pub content_format: String,
+    pub embeds: Vec<serde_json::Value>,
+    pub components: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_avatar_url: Option<String>,
     pub reply_to_message_id: Option<String>,
     pub edited_at: Option<String>,
     pub deleted_at: Option<String>,

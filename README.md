@@ -399,7 +399,11 @@ checks as human users.
 webhook for a text channel. The server creates an internal webhook bot user and
 returns a shown-once `ocw_` token plus an execute URL. `POST
 /api/webhooks/{webhook_id}/{webhook_token}` accepts a Discord-style webhook
-payload with `content` and posts the message as the webhook bot user.
+payload with `content`, up to 10 basic `embeds`, and optional `username` and
+`avatar_url` overrides, then posts the message as the webhook bot user. Webhook
+embeds and overrides are persisted on the created message and returned by
+message list/detail responses; compatibility payloads use the override username
+for webhook-authored messages.
 `GET /channels/{channel_id}/webhooks` lists active channel webhooks without raw
 token material. `POST
 /channels/{channel_id}/webhooks/{webhook_id}/token/rotate` returns a replacement

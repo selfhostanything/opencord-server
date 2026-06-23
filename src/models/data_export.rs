@@ -28,6 +28,12 @@ pub struct DataExportMessageResponse {
     pub author_user_id: String,
     pub content: String,
     pub content_format: String,
+    pub embeds: Vec<serde_json::Value>,
+    pub components: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub webhook_avatar_url: Option<String>,
     pub edited_at: Option<String>,
     pub deleted_at: Option<String>,
     pub created_at: String,
@@ -60,6 +66,10 @@ impl From<Message> for DataExportMessageResponse {
             author_user_id: message.author_user_id.to_string(),
             content: message.content,
             content_format: message.content_format,
+            embeds: message.embeds,
+            components: message.components,
+            webhook_username: message.webhook_username,
+            webhook_avatar_url: message.webhook_avatar_url,
             edited_at: message.edited_at,
             deleted_at: message.deleted_at,
             created_at: message.created_at,

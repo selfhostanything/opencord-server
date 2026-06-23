@@ -30,6 +30,7 @@ mod m20260623070000_deferred_interactions;
 mod m20260623071000_interaction_response_messages;
 mod m20260623072000_compat_gateway_sessions;
 mod m20260623073000_compat_gateway_replay_events;
+mod m20260623074000_message_webhook_overrides;
 
 pub struct Migrator;
 
@@ -67,6 +68,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623071000_interaction_response_messages::Migration),
             Box::new(m20260623072000_compat_gateway_sessions::Migration),
             Box::new(m20260623073000_compat_gateway_replay_events::Migration),
+            Box::new(m20260623074000_message_webhook_overrides::Migration),
         ]
     }
 }

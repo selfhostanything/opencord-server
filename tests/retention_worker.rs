@@ -261,6 +261,8 @@ fn test_message(
         content_format: "plain".to_owned(),
         embeds: Vec::new(),
         components: Vec::new(),
+        webhook_username: None,
+        webhook_avatar_url: None,
         mention_user_ids: Vec::new(),
         mention_role_ids: Vec::new(),
         mention_everyone: false,

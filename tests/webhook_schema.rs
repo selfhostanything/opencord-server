@@ -33,3 +33,23 @@ fn webhook_schema_migration_defines_incoming_webhooks() {
     assert!(migrator.contains("mod m20260623060000_incoming_webhooks;"));
     assert!(migrator.contains("Box::new(m20260623060000_incoming_webhooks::Migration)"));
 }
+
+#[test]
+fn webhook_message_override_migration_extends_messages() {
+    let migration = repo_file("src/db/migrations/m20260623074000_message_webhook_overrides.rs");
+
+    for expected in [
+        "ALTER TABLE messages",
+        "ADD COLUMN IF NOT EXISTS webhook_username text NULL",
+        "ADD COLUMN IF NOT EXISTS webhook_avatar_url text NULL",
+    ] {
+        assert!(
+            migration.contains(expected),
+            "message webhook override migration should contain {expected}"
+        );
+    }
+
+    let migrator = repo_file("src/db/migrations/mod.rs");
+    assert!(migrator.contains("mod m20260623074000_message_webhook_overrides;"));
+    assert!(migrator.contains("Box::new(m20260623074000_message_webhook_overrides::Migration)"));
+}

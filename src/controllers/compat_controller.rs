@@ -151,6 +151,8 @@ pub async fn create_message(
             allow_empty_content,
             embeds,
             components,
+            webhook_username: None,
+            webhook_avatar_url: None,
             mention_user_ids: mention_ids.user_ids,
             mention_role_ids: mention_ids.role_ids,
             mention_everyone: mention_ids.everyone,
@@ -779,18 +781,27 @@ fn compat_message_response(
     public_url: &str,
 ) -> CompatMessageResponse {
     let author_is_current_bot = message.author_user_id == current_bot.bot_user_id;
+    let author_id = message.author_user_id.to_string();
+    let author = if let Some(webhook_username) = message.webhook_username.clone() {
+        CompatUserResponse {
+            id: author_id,
+            username: webhook_username,
+            bot: true,
+        }
+    } else if author_is_current_bot {
+        compat_user_response(current_bot)
+    } else {
+        CompatUserResponse {
+            id: author_id,
+            username: "OpenCord User".to_owned(),
+            bot: false,
+        }
+    };
+
     CompatMessageResponse {
         id: message.id.to_string(),
         channel_id: message.channel_id.to_string(),
-        author: if author_is_current_bot {
-            compat_user_response(current_bot)
-        } else {
-            CompatUserResponse {
-                id: message.author_user_id.to_string(),
-                username: "OpenCord User".to_owned(),
-                bot: false,
-            }
-        },
+        author,
         content: message.content,
         timestamp: message.created_at,
         edited_timestamp: message.edited_at,
