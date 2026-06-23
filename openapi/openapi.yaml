@@ -3334,6 +3334,18 @@ components:
         allowed_mentions:
           type: object
           description: Accepted for SDK compatibility; mention expansion is not implemented yet.
+        message_reference:
+          type: object
+          description: Reply metadata for creating a message that references an existing message in the same channel.
+          required:
+            - message_id
+          properties:
+            message_id:
+              type: string
+              format: uuid
+            channel_id:
+              type: string
+              format: uuid
         tts:
           type: boolean
           description: Accepted for compatibility; ignored in Phase 07.
@@ -3513,6 +3525,21 @@ components:
           type: array
           items:
             type: object
+        message_reference:
+          type: object
+          required:
+            - message_id
+            - channel_id
+          properties:
+            message_id:
+              type: string
+              format: uuid
+            channel_id:
+              type: string
+              format: uuid
+            guild_id:
+              type: string
+              format: uuid
         pinned:
           type: boolean
         type:
@@ -4789,6 +4816,11 @@ components:
           type: string
           enum:
             - plain
+        reply_to_message_id:
+          type:
+            - string
+            - "null"
+          format: uuid
         edited_at:
           type:
             - string

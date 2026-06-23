@@ -260,6 +260,7 @@ fn test_message(
         content: content.to_owned(),
         content_format: "plain".to_owned(),
         embeds: Vec::new(),
+        reply_to_message_id: None,
         edited_at: None,
         deleted_at: deleted_at.map(str::to_owned),
         created_at: created_at.to_owned(),

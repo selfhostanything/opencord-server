@@ -259,6 +259,7 @@ pub(crate) fn message_response(
         author_user_id: message.author_user_id.to_string(),
         content: message.content,
         content_format: message.content_format,
+        reply_to_message_id: message.reply_to_message_id.map(|id| id.to_string()),
         edited_at: message.edited_at,
         deleted_at: message.deleted_at,
         created_at: message.created_at,

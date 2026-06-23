@@ -17,8 +17,9 @@ use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::{SpaceError, SpaceMembership};
 use crate::http::rate_limit::rate_limit_headers;
 use crate::models::compat::{
-    CompatChannelResponse, CompatErrorResponse, CompatGuildResponse, CompatMessageResponse,
-    CompatRoleResponse, CompatUserResponse, CreateCompatMessageRequest, PatchCompatMessageRequest,
+    CompatChannelResponse, CompatErrorResponse, CompatGuildResponse, CompatMessageReferenceRequest,
+    CompatMessageReferenceResponse, CompatMessageResponse, CompatRoleResponse, CompatUserResponse,
+    CreateCompatMessageRequest, PatchCompatMessageRequest,
 };
 use crate::state::AppState;
 
@@ -117,8 +118,12 @@ pub async fn create_message(
         content,
         embeds,
         allowed_mentions: _,
+        message_reference,
         tts: _,
     } = request;
+    let reply_to_message_id = validate_message_reference(&state, channel.id, message_reference)
+        .await?
+        .map(|message| message.id);
     let allow_empty_content = !embeds.is_empty();
     let message = state
         .messages
@@ -130,6 +135,7 @@ pub async fn create_message(
             content: content.unwrap_or_default(),
             allow_empty_content,
             embeds,
+            reply_to_message_id,
         })
         .await?;
     state.realtime.publish(RealtimeEvent::channel(
@@ -452,6 +458,13 @@ fn compat_message_response(
             .map(|attachment| compat_attachment_response(attachment, public_url))
             .collect(),
         embeds: message.embeds,
+        message_reference: message.reply_to_message_id.map(|reply_to_message_id| {
+            CompatMessageReferenceResponse {
+                message_id: reply_to_message_id.to_string(),
+                channel_id: message.channel_id.to_string(),
+                guild_id: message.space_id.map(|space_id| space_id.to_string()),
+            }
+        }),
         pinned: false,
         kind: 0,
     }
@@ -490,6 +503,27 @@ fn realtime_message_with_embeds(message: Message, public_url: &str) -> serde_jso
         object.insert("embeds".to_owned(), serde_json::Value::Array(embeds));
     }
     value
+}
+
+async fn validate_message_reference(
+    state: &AppState,
+    channel_id: Uuid,
+    message_reference: Option<CompatMessageReferenceRequest>,
+) -> Result<Option<Message>, CompatApiError> {
+    let Some(message_reference) = message_reference else {
+        return Ok(None);
+    };
+
+    if message_reference
+        .channel_id
+        .is_some_and(|referenced_channel_id| referenced_channel_id != channel_id)
+    {
+        return Err(MessageError::NotFound.into());
+    }
+
+    Ok(Some(
+        message_in_channel(state, message_reference.message_id, channel_id).await?,
+    ))
 }
 
 fn compat_user_response(bot: &AuthenticatedBot) -> CompatUserResponse {

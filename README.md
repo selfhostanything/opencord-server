@@ -180,8 +180,9 @@ Discord compatibility message creation accepts `content`, basic `embeds`, and
 Embed JSON is persisted and returned through compatibility message responses
 and gateway `MESSAGE_CREATE` dispatches. Linked native attachments are returned
 as Discord-shaped attachment metadata in compatibility list responses and
-gateway dispatches; compatibility file upload, mention expansion, replies, and
-components remain future work.
+gateway dispatches. Compatibility message create accepts same-channel
+`message_reference` replies and returns reply metadata through REST and gateway;
+compatibility file upload, mention expansion, and components remain future work.
 
 ## Enterprise OIDC
 

@@ -15,6 +15,7 @@ pub struct Message {
     pub content: String,
     pub content_format: String,
     pub embeds: Vec<Value>,
+    pub reply_to_message_id: Option<Uuid>,
     pub edited_at: Option<String>,
     pub deleted_at: Option<String>,
     pub created_at: String,
@@ -28,6 +29,7 @@ pub struct CreateMessageInput {
     pub content: String,
     pub allow_empty_content: bool,
     pub embeds: Vec<Value>,
+    pub reply_to_message_id: Option<Uuid>,
 }
 
 #[derive(Debug)]
@@ -112,6 +114,7 @@ impl MessageService {
             content,
             allow_empty_content,
             embeds: Vec::new(),
+            reply_to_message_id: None,
         })
         .await
     }
@@ -128,6 +131,7 @@ impl MessageService {
             content,
             allow_empty_content,
             embeds,
+            reply_to_message_id,
         } = input;
         let embeds = normalize_embeds(embeds)?;
         let message = Message {
@@ -139,6 +143,7 @@ impl MessageService {
             content: normalize_content(content, allow_empty_content)?,
             content_format: "plain".to_owned(),
             embeds,
+            reply_to_message_id,
             edited_at: None,
             deleted_at: None,
             created_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),

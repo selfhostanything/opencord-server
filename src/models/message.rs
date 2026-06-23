@@ -24,6 +24,7 @@ pub struct MessageResponse {
     pub author_user_id: String,
     pub content: String,
     pub content_format: String,
+    pub reply_to_message_id: Option<String>,
     pub edited_at: Option<String>,
     pub deleted_at: Option<String>,
     pub created_at: String,

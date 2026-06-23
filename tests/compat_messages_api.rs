@@ -339,6 +339,69 @@ async fn bot_can_send_list_edit_and_delete_messages_through_compat_routes() {
 }
 
 #[tokio::test]
+async fn bot_can_create_and_list_reply_messages_through_compat_routes() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "compat-reply-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "replies").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id, "member").await;
+
+    let base = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({ "content": "base message" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(base.status(), StatusCode::OK);
+    let base_message_id = response_json(base).await["id"].as_str().unwrap().to_owned();
+
+    let reply = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({
+                "content": "reply message",
+                "message_reference": {
+                    "message_id": base_message_id,
+                    "channel_id": channel_id
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(reply.status(), StatusCode::OK);
+    let body = response_json(reply).await;
+    let reply_message_id = body["id"].as_str().unwrap();
+    assert_eq!(body["content"], "reply message");
+    assert_eq!(body["message_reference"]["message_id"], base_message_id);
+    assert_eq!(body["message_reference"]["channel_id"], channel_id);
+
+    let listed = app
+        .clone()
+        .oneshot(bot_request(
+            Method::GET,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert_eq!(body.as_array().unwrap().len(), 2);
+    assert_eq!(body[1]["id"], reply_message_id);
+    assert_eq!(body[1]["message_reference"]["message_id"], base_message_id);
+    assert_eq!(body[1]["message_reference"]["channel_id"], channel_id);
+}
+
+#[tokio::test]
 async fn bot_can_list_native_message_attachments_through_compat_routes() {
     let app = test_app();
     let (owner_token, owner_id) = register(&app, "compat-attachment-owner@example.com").await;

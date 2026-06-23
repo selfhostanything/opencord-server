@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCompatMessageRequest {
@@ -7,7 +8,14 @@ pub struct CreateCompatMessageRequest {
     #[serde(default)]
     pub embeds: Vec<serde_json::Value>,
     pub allowed_mentions: Option<serde_json::Value>,
+    pub message_reference: Option<CompatMessageReferenceRequest>,
     pub tts: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CompatMessageReferenceRequest {
+    pub message_id: Uuid,
+    pub channel_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,9 +75,19 @@ pub struct CompatMessageResponse {
     pub mention_roles: Vec<String>,
     pub attachments: Vec<serde_json::Value>,
     pub embeds: Vec<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_reference: Option<CompatMessageReferenceResponse>,
     pub pinned: bool,
     #[serde(rename = "type")]
     pub kind: i32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CompatMessageReferenceResponse {
+    pub message_id: String,
+    pub channel_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guild_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

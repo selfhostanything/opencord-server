@@ -235,6 +235,7 @@ fn compat_message_from_event(
         .cloned()
         .unwrap_or_default();
     let attachments = compat_attachments_from_event(message.get("attachments"));
+    let message_reference = compat_message_reference_from_event(message);
 
     Some(CompatMessageResponse {
         id: message.get("id")?.as_str()?.to_owned(),
@@ -260,8 +261,23 @@ fn compat_message_from_event(
         mention_roles: Vec::new(),
         attachments,
         embeds,
+        message_reference,
         pinned: false,
         kind: 0,
+    })
+}
+
+fn compat_message_reference_from_event(
+    message: &Value,
+) -> Option<crate::models::compat::CompatMessageReferenceResponse> {
+    let reply_to_message_id = message.get("reply_to_message_id")?.as_str()?;
+    Some(crate::models::compat::CompatMessageReferenceResponse {
+        message_id: reply_to_message_id.to_owned(),
+        channel_id: message.get("channel_id")?.as_str()?.to_owned(),
+        guild_id: message
+            .get("space_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
     })
 }
 
