@@ -15,6 +15,7 @@ use crate::state::AppState;
 const OP_DISPATCH: i32 = 0;
 const OP_HEARTBEAT: i32 = 1;
 const OP_IDENTIFY: i32 = 2;
+const OP_RESUME: i32 = 6;
 const OP_INVALID_SESSION: i32 = 9;
 const OP_HELLO: i32 = 10;
 const OP_HEARTBEAT_ACK: i32 = 11;
@@ -30,6 +31,13 @@ struct GatewayMessage {
 struct IdentifyPayload {
     token: String,
     intents: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResumePayload {
+    token: String,
+    session_id: String,
+    seq: Option<i64>,
 }
 
 pub async fn gateway(
@@ -59,6 +67,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
 
     let mut events = state.realtime.subscribe();
     let mut identified_bot: Option<AuthenticatedBot> = None;
+    let mut active_session_id: Option<String> = None;
     let mut sequence: i64 = 0;
 
     loop {
@@ -68,7 +77,14 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     break;
                 };
 
-                if !handle_client_message(&state, &mut socket, message, &mut identified_bot, &mut sequence).await {
+                if !handle_client_message(
+                    &state,
+                    &mut socket,
+                    message,
+                    &mut identified_bot,
+                    &mut active_session_id,
+                    &mut sequence
+                ).await {
                     break;
                 }
             }
@@ -90,6 +106,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "MESSAGE_CREATE", sequence, message).await.is_err() {
                         break;
                     }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "interaction.created"
                     && can_bot_receive_event(&state, bot, &event).await
                 {
@@ -100,6 +117,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "INTERACTION_CREATE", sequence, interaction).await.is_err() {
                         break;
                     }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 }
             }
         }
@@ -111,6 +129,7 @@ async fn handle_client_message(
     socket: &mut WebSocket,
     message: WebSocketMessage,
     identified_bot: &mut Option<AuthenticatedBot>,
+    active_session_id: &mut Option<String>,
     sequence: &mut i64,
 ) -> bool {
     match message {
@@ -125,7 +144,26 @@ async fn handle_client_message(
                     .await
                     .is_ok(),
                 OP_IDENTIFY => {
-                    identify_bot(state, socket, message.d, identified_bot, sequence).await
+                    identify_bot(
+                        state,
+                        socket,
+                        message.d,
+                        identified_bot,
+                        active_session_id,
+                        sequence,
+                    )
+                    .await
+                }
+                OP_RESUME => {
+                    resume_bot(
+                        state,
+                        socket,
+                        message.d,
+                        identified_bot,
+                        active_session_id,
+                        sequence,
+                    )
+                    .await
                 }
                 _ => {
                     let _ = send_invalid_session(socket).await;
@@ -150,6 +188,7 @@ async fn identify_bot(
     socket: &mut WebSocket,
     payload: Option<Value>,
     identified_bot: &mut Option<AuthenticatedBot>,
+    active_session_id: &mut Option<String>,
     sequence: &mut i64,
 ) -> bool {
     let Some(payload) = payload else {
@@ -167,9 +206,10 @@ async fn identify_bot(
     };
 
     *sequence += 1;
+    let session_id = format!("gw_{}", ids::new_uuid_v7());
     let ready = json!({
         "v": 10,
-        "session_id": format!("gw_{}", ids::new_uuid_v7()),
+        "session_id": session_id.clone(),
         "resume_gateway_url": "/api/compat/discord/gateway",
         "user": {
             "id": bot.bot_user_id.to_string(),
@@ -183,11 +223,73 @@ async fn identify_bot(
         "intents": payload.intents.unwrap_or_default()
     });
 
+    state
+        .compat_gateway_sessions
+        .create(session_id.clone(), &bot, *sequence);
     *identified_bot = Some(bot);
+    *active_session_id = Some(session_id);
 
     send_dispatch(socket, "READY", *sequence, ready)
         .await
         .is_ok()
+}
+
+async fn resume_bot(
+    state: &AppState,
+    socket: &mut WebSocket,
+    payload: Option<Value>,
+    identified_bot: &mut Option<AuthenticatedBot>,
+    active_session_id: &mut Option<String>,
+    sequence: &mut i64,
+) -> bool {
+    let Some(payload) = payload else {
+        let _ = send_invalid_session(socket).await;
+        return true;
+    };
+    let Ok(payload) = serde_json::from_value::<ResumePayload>(payload) else {
+        let _ = send_invalid_session(socket).await;
+        return true;
+    };
+
+    let Ok(bot) = state.bots.authenticate_token(&payload.token).await else {
+        let _ = send_invalid_session(socket).await;
+        return false;
+    };
+
+    let Some(session) = state.compat_gateway_sessions.resume(
+        &payload.session_id,
+        &bot,
+        payload.seq.unwrap_or_default(),
+    ) else {
+        let _ = send_invalid_session(socket).await;
+        return true;
+    };
+
+    *sequence = session.sequence + 1;
+    state
+        .compat_gateway_sessions
+        .update_sequence(&session.session_id, *sequence);
+    *identified_bot = Some(bot);
+    *active_session_id = Some(session.session_id.clone());
+
+    send_dispatch(
+        socket,
+        "RESUMED",
+        *sequence,
+        json!({
+            "session_id": session.session_id
+        }),
+    )
+    .await
+    .is_ok()
+}
+
+fn update_active_session_sequence(state: &AppState, session_id: Option<&str>, sequence: i64) {
+    if let Some(session_id) = session_id {
+        state
+            .compat_gateway_sessions
+            .update_sequence(session_id, sequence);
+    }
 }
 
 async fn can_bot_receive_event(

@@ -14,6 +14,7 @@ use crate::domain::calendar_sync::{
 };
 use crate::domain::channel::{ChannelService, ChannelStore};
 use crate::domain::command::{CommandService, CommandStore};
+use crate::domain::compat_gateway::CompatGatewaySessions;
 use crate::domain::data_export::DataExportService;
 use crate::domain::media::MediaControlService;
 use crate::domain::meeting::{MeetingService, MeetingStore};
@@ -90,6 +91,7 @@ pub struct AppState {
     pub webhooks: Arc<IncomingWebhookService>,
     pub webhook_execution_rate_limits: Arc<FixedWindowRateLimiter>,
     pub compat_rest_rate_limits: Arc<FixedWindowRateLimiter>,
+    pub compat_gateway_sessions: Arc<CompatGatewaySessions>,
     pub commands: Arc<CommandService>,
 }
 
@@ -202,6 +204,7 @@ impl AppState {
                 FixedWindowRateLimiter::public_webhook_execution(),
             ),
             compat_rest_rate_limits: Arc::new(FixedWindowRateLimiter::compat_rest_bot()),
+            compat_gateway_sessions: Arc::new(CompatGatewaySessions::default()),
             commands,
         }
     }

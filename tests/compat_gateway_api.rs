@@ -1101,6 +1101,102 @@ async fn compat_gateway_identify_ready_heartbeat_and_message_create() {
 }
 
 #[tokio::test]
+async fn compat_gateway_resumes_existing_session_and_sequence() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, owner_id) = register(&app, "compat-gateway-resume-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "resume").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+    assert_eq!(ready["s"], 1);
+    let session_id = ready["d"]["session_id"].as_str().unwrap().to_owned();
+
+    let first_message_id = send_message(&app, &owner_token, &channel_id, "before resume").await;
+    let first_event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("first message create dispatch");
+    assert_eq!(first_event["t"], "MESSAGE_CREATE");
+    assert_eq!(first_event["s"], 2);
+    assert_eq!(first_event["d"]["id"], first_message_id);
+
+    socket
+        .close(None)
+        .await
+        .expect("close first gateway socket");
+
+    let (mut resumed_socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect resumed compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut resumed_socket))
+        .await
+        .expect("resumed gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    resumed_socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 6,
+                "d": {
+                    "token": bot_token,
+                    "session_id": session_id,
+                    "seq": 2
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send resume");
+    let resumed = timeout(Duration::from_secs(2), next_json(&mut resumed_socket))
+        .await
+        .expect("resumed dispatch");
+    assert_eq!(resumed["op"], 0);
+    assert_eq!(resumed["t"], "RESUMED");
+    assert_eq!(resumed["s"], 3);
+    assert_eq!(resumed["d"]["session_id"], session_id);
+
+    let second_message_id = send_message(&app, &owner_token, &channel_id, "after resume").await;
+    let second_event = timeout(Duration::from_secs(2), next_json(&mut resumed_socket))
+        .await
+        .expect("second message create dispatch");
+    assert_eq!(second_event["op"], 0);
+    assert_eq!(second_event["t"], "MESSAGE_CREATE");
+    assert_eq!(second_event["s"], 4);
+    assert_eq!(second_event["d"]["id"], second_message_id);
+    assert_eq!(second_event["d"]["author"]["id"], owner_id);
+    assert_eq!(second_event["d"]["content"], "after resume");
+}
+
+#[tokio::test]
 async fn compat_gateway_dispatches_interaction_create_for_visible_command() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;
@@ -1165,6 +1261,46 @@ async fn compat_gateway_dispatches_interaction_create_for_visible_command() {
     assert_eq!(event["d"]["data"]["type"], 1);
     assert_eq!(event["d"]["data"]["options"][0]["name"], "version");
     assert_eq!(event["d"]["data"]["options"][0]["value"], "1.2.3");
+}
+
+#[tokio::test]
+async fn compat_gateway_rejects_unknown_resume_session() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-resume-invalid-owner@example.com").await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "resume-invalid").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 6,
+                "d": {
+                    "token": bot_token,
+                    "session_id": "gw_missing",
+                    "seq": 0
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send invalid resume");
+    let invalid_session = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("invalid session event");
+    assert_eq!(invalid_session["op"], 9);
+    assert_eq!(invalid_session["d"], false);
 }
 
 #[tokio::test]
