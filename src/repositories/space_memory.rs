@@ -139,4 +139,20 @@ impl SpaceStore for MemorySpaceStore {
             role: stored_member.role.clone(),
         })
     }
+
+    async fn remove_member(&self, space_id: Uuid, user_id: Uuid) -> Result<(), SpaceError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+        let Some(member) = state.members_by_space_user.get_mut(&(space_id, user_id)) else {
+            return Err(SpaceError::NotFound);
+        };
+        if member.status != "active" {
+            return Err(SpaceError::NotFound);
+        }
+
+        member.status = "inactive".to_owned();
+        Ok(())
+    }
 }

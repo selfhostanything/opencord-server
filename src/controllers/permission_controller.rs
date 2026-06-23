@@ -102,6 +102,54 @@ pub async fn add_space_member(
     ))
 }
 
+pub async fn remove_space_member(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((space_id, user_id)): Path<(Uuid, Uuid)>,
+) -> Result<StatusCode, PermissionApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let space = state.spaces.get_for_user(user.id, space_id).await?;
+    state
+        .permissions
+        .require_space(user.id, &space, Permission::ManageSpace)
+        .await?;
+
+    let removed_user = state.auth.user_by_id(user_id).await?;
+    let removed_member = state.spaces.remove_member(space.id, user_id).await?;
+    state
+        .audit
+        .record(NewAuditEvent {
+            organization_id: space.organization_id,
+            space_id: space.id,
+            actor_user_id: user.id,
+            action: "space.member.removed",
+            target_type: "user",
+            target_id: user_id,
+            metadata: json!({ "role": removed_member.role }),
+        })
+        .await?;
+    state.realtime.publish(RealtimeEvent::space(
+        "space.member.removed",
+        space.organization_id,
+        space.id,
+        json!({
+            "member": {
+                "guild_id": space.id.to_string(),
+                "user": {
+                    "id": user_id.to_string(),
+                    "username": removed_user
+                        .map(|user| user.display_name)
+                        .unwrap_or_else(|| "OpenCord User".to_owned()),
+                    "bot": false
+                }
+            }
+        }),
+    ));
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn create_role(
     State(state): State<AppState>,
     headers: HeaderMap,

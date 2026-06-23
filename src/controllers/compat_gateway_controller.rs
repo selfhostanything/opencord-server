@@ -194,6 +194,18 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                         break;
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                } else if event.event_type == "space.member.removed"
+                    && has_intent(active_intents, INTENT_GUILD_MEMBERS)
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(member) = compat_guild_member_from_event(&event) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "GUILD_MEMBER_REMOVE", sequence, member).await.is_err() {
+                        break;
+                    }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "interaction.created"
                     && can_bot_receive_event(&state, bot, &event).await
                 {

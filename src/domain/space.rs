@@ -88,6 +88,7 @@ pub trait SpaceStore: Send + Sync {
     ) -> Result<Option<SpaceMembership>, SpaceError>;
 
     async fn add_member(&self, member: StoredSpaceMember) -> Result<SpaceMembership, SpaceError>;
+    async fn remove_member(&self, space_id: Uuid, user_id: Uuid) -> Result<(), SpaceError>;
 }
 
 #[derive(Clone)]
@@ -166,6 +167,20 @@ impl SpaceService {
                 status: "active".to_owned(),
             })
             .await
+    }
+
+    pub async fn remove_member(
+        &self,
+        space_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<SpaceMembership, SpaceError> {
+        let membership = self.get_for_user(user_id, space_id).await?;
+        if membership.role == "owner" {
+            return Err(SpaceError::InvalidInput("space owner cannot be removed"));
+        }
+
+        self.store.remove_member(space_id, user_id).await?;
+        Ok(membership)
     }
 }
 

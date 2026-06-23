@@ -233,6 +233,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             post(permission_controller::add_space_member),
         )
         .route(
+            "/spaces/{space_id}/members/{user_id}",
+            delete(permission_controller::remove_space_member),
+        )
+        .route(
             "/spaces/{space_id}/audit-events",
             get(audit_controller::list_for_space),
         )

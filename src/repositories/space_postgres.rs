@@ -161,6 +161,30 @@ impl SpaceStore for PostgresSpaceStore {
             .await?
             .ok_or(SpaceError::NotFound)
     }
+
+    async fn remove_member(&self, space_id: Uuid, user_id: Uuid) -> Result<(), SpaceError> {
+        let result = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                UPDATE space_members
+                SET status = 'inactive'
+                WHERE space_id = $1::uuid
+                  AND user_id = $2::uuid
+                  AND status = 'active'
+                "#,
+                values(vec![space_id.to_string(), user_id.to_string()]),
+            ))
+            .await
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+
+        if result.rows_affected() == 0 {
+            Err(SpaceError::NotFound)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 fn space_from_row(row: sea_orm::QueryResult) -> Result<SpaceMembership, SpaceError> {

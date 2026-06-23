@@ -1429,6 +1429,72 @@ async fn compat_gateway_suppresses_guild_member_add_without_guild_members_intent
 }
 
 #[tokio::test]
+async fn compat_gateway_suppresses_guild_member_remove_without_guild_members_intent() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(
+        &app,
+        "compat-gateway-member-remove-intents-owner@example.com",
+    )
+    .await;
+    let (_, removed_user_id) = register(
+        &app,
+        "compat-gateway-member-remove-intents-user@example.com",
+    )
+    .await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "member-remove-intents").await;
+    add_space_member(&app, &owner_token, &space_id, &removed_user_id).await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 1,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+
+    let removed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/spaces/{space_id}/members/{removed_user_id}"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(removed.status(), StatusCode::NO_CONTENT);
+    let filtered = timeout(Duration::from_millis(250), next_json(&mut socket)).await;
+    assert!(
+        filtered.is_err(),
+        "member remove events should require GUILD_MEMBERS intent"
+    );
+}
+
+#[tokio::test]
 async fn compat_gateway_identify_ready_heartbeat_and_message_create() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;
@@ -1814,6 +1880,71 @@ async fn compat_gateway_dispatches_guild_member_add() {
     assert_eq!(event["d"]["mute"], false);
     assert_eq!(event["d"]["pending"], false);
     assert!(event["d"]["joined_at"].as_str().is_some());
+}
+
+#[tokio::test]
+async fn compat_gateway_dispatches_guild_member_remove() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-member-remove-owner@example.com").await;
+    let (_, removed_user_id) = register(&app, "compat-gateway-member-removed@example.com").await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "member-remove-events").await;
+    add_space_member(&app, &owner_token, &space_id, &removed_user_id).await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 2,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+    assert_eq!(ready["s"], 1);
+
+    let removed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/spaces/{space_id}/members/{removed_user_id}"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(removed.status(), StatusCode::NO_CONTENT);
+
+    let event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("guild member remove dispatch");
+    assert_eq!(event["op"], 0);
+    assert_eq!(event["t"], "GUILD_MEMBER_REMOVE");
+    assert_eq!(event["s"], 2);
+    assert_eq!(event["d"]["guild_id"], space_id);
+    assert_eq!(event["d"]["user"]["id"], removed_user_id);
+    assert_eq!(event["d"]["user"]["username"], "Compat Gateway Test User");
+    assert_eq!(event["d"]["user"]["bot"], false);
 }
 
 #[tokio::test]

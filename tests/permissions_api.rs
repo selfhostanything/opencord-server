@@ -263,6 +263,85 @@ async fn member_can_view_and_send_but_cannot_manage_channels() {
 }
 
 #[tokio::test]
+async fn owner_can_remove_space_member_and_reinvite() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "permission-owner-remove@example.com").await;
+    let (member_token, member_id) = register(&app, "permission-member-remove@example.com").await;
+    let (_, space_id, _) = create_space_with_channel(&app, &owner_token, "remove-member").await;
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+
+    let removed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/spaces/{space_id}/members/{member_id}"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(removed.status(), StatusCode::NO_CONTENT);
+
+    let member_list = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/spaces/{space_id}/channels"),
+            &member_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(member_list.status(), StatusCode::NOT_FOUND);
+
+    let duplicate_remove = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/spaces/{space_id}/members/{member_id}"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(duplicate_remove.status(), StatusCode::NOT_FOUND);
+
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+    let relisted = app
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/spaces/{space_id}/channels"),
+            &member_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(relisted.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn space_member_remove_requires_manage_space() {
+    let app = test_app();
+    let (owner_token, owner_id) =
+        register(&app, "permission-owner-remove-denied@example.com").await;
+    let (member_token, member_id) =
+        register(&app, "permission-member-remove-denied@example.com").await;
+    let (_, space_id, _) = create_space_with_channel(&app, &owner_token, "remove-denied").await;
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+
+    let denied = app
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/spaces/{space_id}/members/{owner_id}"),
+            &member_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn overrides_and_roles_control_send_and_manage_messages() {
     let app = test_app();
     let (owner_token, _) = register(&app, "permission-owner-override@example.com").await;

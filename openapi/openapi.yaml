@@ -595,12 +595,13 @@ paths:
         OpenCord `ocb_` bot token, emits READY with bot-visible spaces as
         guilds, supports process-local RESUME by `session_id`, acknowledges
         heartbeats, and dispatches CHANNEL_CREATE, CHANNEL_UPDATE,
-        GUILD_CREATE, GUILD_MEMBER_ADD, MESSAGE_CREATE, MESSAGE_UPDATE,
-        MESSAGE_DELETE, and INTERACTION_CREATE events visible to the bot user.
+        GUILD_CREATE, GUILD_MEMBER_ADD, GUILD_MEMBER_REMOVE, MESSAGE_CREATE,
+        MESSAGE_UPDATE, MESSAGE_DELETE, and INTERACTION_CREATE events visible
+        to the bot user.
         Message create, update, and delete dispatches require the Discord
         `GUILD_MESSAGES` intent.
-        Channel and guild-create dispatches require `GUILDS`; guild-member-add
-        dispatches require `GUILD_MEMBERS`.
+        Channel and guild-create dispatches require `GUILDS`; guild-member
+        add/remove dispatches require `GUILD_MEMBERS`.
         Unknown opcodes close with `4001`; malformed payloads close with
         `4002`; invalid IDENTIFY tokens close with `4004`; duplicate IDENTIFY
         frames close with `4005`; unknown RESUME sessions close with `4009`
@@ -2024,6 +2025,38 @@ paths:
           description: Missing INVITE_MEMBERS permission
         "404":
           description: Space not found for this user
+  /spaces/{space_id}/members/{user_id}:
+    delete:
+      summary: Remove an active user from a space
+      description: >
+        Deactivates the target user's space membership. A later add request can
+        reactivate the membership. The space owner cannot be removed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Space member removed
+        "400":
+          description: The target member is the space owner
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_SPACE permission
+        "404":
+          description: Space or active member not found for this user
   /spaces/{space_id}/roles:
     post:
       summary: Create a space role
@@ -5015,6 +5048,7 @@ components:
           type: string
           examples:
             - space.member.added
+            - space.member.removed
             - role.created
             - role.assigned
             - channel.permission_override.set
