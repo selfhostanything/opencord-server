@@ -7,12 +7,14 @@ use uuid::Uuid;
 
 use crate::controllers::message_controller::message_response;
 use crate::domain::auth::AuthError;
-use crate::domain::bot::{AuthenticatedBot, BotError};
+use crate::domain::bot::{AuthenticatedBot, BotApplication, BotError};
 use crate::domain::channel::ChannelError;
 use crate::domain::command::{
     CommandError, CreateApplicationCommandInput, CreateCommandInteractionInput,
-    CreateComponentInteractionInput,
+    CreateComponentInteractionInput, INTERACTION_CALLBACK_CHANNEL_MESSAGE,
+    INTERACTION_CALLBACK_DEFERRED_CHANNEL_MESSAGE,
 };
+use crate::domain::message::Message;
 use crate::domain::message::MessageError;
 use crate::domain::permission::{Permission, PermissionError};
 use crate::domain::rate_limit::{RateLimitDecision, compat_rest_bot_bucket};
@@ -24,8 +26,9 @@ use crate::models::command::{
     CommandInteractionCreatedResponse, CompatApplicationCommandResponse,
     CreateCommandInteractionRequest, CreateCompatApplicationCommandRequest,
     CreateComponentInteractionRequest, CreateInteractionCallbackRequest,
+    CreateInteractionFollowupRequest,
 };
-use crate::models::compat::CompatErrorResponse;
+use crate::models::compat::{CompatErrorResponse, CompatMessageResponse, CompatUserResponse};
 use crate::state::AppState;
 
 pub async fn create_compat_space_command(
@@ -182,19 +185,26 @@ pub async fn create_interaction_callback(
     Path((interaction_id, interaction_token)): Path<(Uuid, String)>,
     Json(request): Json<CreateInteractionCallbackRequest>,
 ) -> Result<StatusCode, CommandApiError> {
-    if request.kind != 4 {
+    let interaction = state
+        .commands
+        .interaction_for_callback(interaction_id, &interaction_token)
+        .await?;
+    if request.kind == INTERACTION_CALLBACK_DEFERRED_CHANNEL_MESSAGE {
+        state
+            .commands
+            .mark_interaction_deferred(interaction.id)
+            .await?;
+        return Ok(StatusCode::NO_CONTENT);
+    }
+    if request.kind != INTERACTION_CALLBACK_CHANNEL_MESSAGE {
         return Err(CommandError::InvalidInput(
-            "only channel message interaction callbacks are supported",
+            "only channel message and deferred interaction callbacks are supported",
         )
         .into());
     }
     let data = request.data.ok_or(CommandError::InvalidInput(
         "interaction callback data is required",
     ))?;
-    let interaction = state
-        .commands
-        .interaction_for_callback(interaction_id, &interaction_token)
-        .await?;
     let application = state
         .bots
         .application_for_organization(interaction.application_id, interaction.organization_id)
@@ -232,6 +242,84 @@ pub async fn create_interaction_callback(
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn create_interaction_followup(
+    State(state): State<AppState>,
+    Path((application_id, interaction_token)): Path<(Uuid, String)>,
+    Json(request): Json<CreateInteractionFollowupRequest>,
+) -> Result<impl IntoResponse, CommandApiError> {
+    let interaction = state
+        .commands
+        .interaction_for_followup(application_id, &interaction_token)
+        .await?;
+    let application = state
+        .bots
+        .application_for_organization(interaction.application_id, interaction.organization_id)
+        .await?;
+    let channel = state.channels.get(interaction.channel_id).await?;
+    if channel.organization_id != interaction.organization_id
+        || channel.space_id != interaction.space_id
+    {
+        return Err(CommandError::NotFound.into());
+    }
+
+    let message = state
+        .messages
+        .create(
+            interaction.organization_id,
+            Some(interaction.space_id),
+            interaction.channel_id,
+            application.bot_user_id,
+            request.content,
+            false,
+        )
+        .await?;
+    let response = interaction_followup_response(message.clone(), &application);
+    state.realtime.publish(RealtimeEvent::channel(
+        "message.created",
+        interaction.organization_id,
+        interaction.space_id,
+        interaction.channel_id,
+        serde_json::json!({
+            "message": message_response(message, Vec::new(), &state.config.public_url)
+        }),
+    ));
+    state
+        .commands
+        .mark_interaction_responded(interaction.id)
+        .await?;
+
+    Ok((StatusCode::OK, Json(response)))
+}
+
+fn interaction_followup_response(
+    message: Message,
+    application: &BotApplication,
+) -> CompatMessageResponse {
+    CompatMessageResponse {
+        id: message.id.to_string(),
+        channel_id: message.channel_id.to_string(),
+        author: CompatUserResponse {
+            id: application.bot_user_id.to_string(),
+            username: application.name.clone(),
+            bot: true,
+        },
+        content: message.content,
+        timestamp: message.created_at,
+        edited_timestamp: message.edited_at,
+        tts: false,
+        mention_everyone: false,
+        mentions: Vec::new(),
+        mention_roles: Vec::new(),
+        attachments: Vec::new(),
+        embeds: message.embeds,
+        components: message.components,
+        message_reference: None,
+        referenced_message: None,
+        pinned: false,
+        kind: 0,
+    }
 }
 
 fn component_type_for_custom_id(

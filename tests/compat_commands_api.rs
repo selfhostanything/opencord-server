@@ -370,3 +370,115 @@ async fn command_registration_requires_matching_bot_application_and_space_member
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn bot_defers_interaction_and_sends_followup_message() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "command-deferred-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token).await;
+    let (application_id, bot_token, bot_user_id) =
+        create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let created_command = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!(
+                "/api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands"
+            ),
+            &bot_token,
+            json!({
+                "name": "report",
+                "description": "Generate a report",
+                "type": 1
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created_command.status(), StatusCode::CREATED);
+    let command_id = response_json(created_command).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let interaction = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/command-interactions"),
+            &owner_token,
+            json!({
+                "command_id": command_id,
+                "options": []
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(interaction.status(), StatusCode::CREATED);
+    let interaction = response_json(interaction).await["interaction"].clone();
+    let interaction_id = interaction["id"].as_str().unwrap();
+    let interaction_token = interaction["token"].as_str().unwrap();
+
+    let deferred = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!(
+                "/api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback"
+            ),
+            json!({
+                "type": 5
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deferred.status(), StatusCode::NO_CONTENT);
+
+    let followup = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}"),
+            json!({
+                "content": "Report is ready"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(followup.status(), StatusCode::OK);
+    let followup = response_json(followup).await;
+    assert_eq!(followup["content"], "Report is ready");
+    assert_eq!(followup["author"]["id"], bot_user_id);
+    assert_eq!(followup["author"]["bot"], true);
+
+    let second_followup = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}"),
+            json!({
+                "content": "Report is ready again"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(second_followup.status(), StatusCode::CONFLICT);
+
+    let messages = app
+        .clone()
+        .oneshot(bot_request(
+            Method::GET,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(messages.status(), StatusCode::OK);
+    let messages = response_json(messages).await;
+    assert_eq!(messages.as_array().unwrap().len(), 1);
+    assert_eq!(messages[0]["content"], "Report is ready");
+    assert_eq!(messages[0]["author"]["id"], bot_user_id);
+}

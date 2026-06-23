@@ -69,6 +69,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             post(command_controller::create_interaction_callback),
         )
         .route(
+            "/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}",
+            post(command_controller::create_interaction_followup),
+        )
+        .route(
             "/api/compat/discord/gateway",
             get(compat_gateway_controller::gateway),
         )

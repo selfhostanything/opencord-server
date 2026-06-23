@@ -451,9 +451,10 @@ paths:
     post:
       summary: Respond to a Discord-compatible interaction
       description: >
-        Accepts callback type `4` for a bot-authored channel message response.
-        The interaction token is a shown-once `oci_` token generated when the
-        interaction is created and delivered through the compatibility gateway.
+        Accepts callback type `4` for a bot-authored channel message response
+        or callback type `5` to defer the response. The interaction token is a
+        shown-once `oci_` token generated when the interaction is created and
+        delivered through the compatibility gateway.
       parameters:
         - name: interaction_id
           in: path
@@ -483,6 +484,46 @@ paths:
           description: Interaction, command, or channel not found
         "409":
           description: Interaction has already been responded to
+  /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}:
+    post:
+      summary: Create a follow-up message for a deferred interaction
+      description: >
+        Creates the first bot-authored follow-up message for an interaction that
+        was previously acknowledged with callback type `5`. This first subset
+        accepts one follow-up per deferred interaction token.
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: interaction_token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInteractionFollowupRequest"
+      responses:
+        "200":
+          description: Follow-up message created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompatMessage"
+        "400":
+          description: Invalid follow-up payload
+        "401":
+          description: Missing or invalid interaction token
+        "404":
+          description: Interaction application or channel not found
+        "409":
+          description: Interaction is not deferred or has already received its first follow-up
   /api/compat/discord/gateway:
     get:
       summary: Discord-compatible gateway websocket
@@ -3836,15 +3877,25 @@ components:
       type: object
       required:
         - type
-        - data
       properties:
         type:
           type: integer
           enum:
             - 4
+            - 5
+          description: "`4` creates an immediate channel message response; `5` defers the response for a follow-up."
         data:
           $ref: "#/components/schemas/InteractionCallbackData"
     InteractionCallbackData:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+    CreateInteractionFollowupRequest:
       type: object
       required:
         - content

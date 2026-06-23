@@ -96,6 +96,7 @@ PATCH /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
 DELETE /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
 POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands
 POST /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback
+POST /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}
 GET /api/compat/discord/gateway
 POST /auth/register
 POST /auth/login
@@ -443,7 +444,9 @@ sessions. `POST /channels/{channel_id}/component-interactions` creates a local
 message component interaction for a clicked persisted `custom_id` and dispatches
 Discord-shaped `INTERACTION_CREATE` type `3`. Bots respond through
 `POST /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback`
-with callback type `4` to post a bot-authored channel message.
+with callback type `4` to post a bot-authored channel message, or callback type
+`5` to defer the response and then post one follow-up message through
+`POST /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}`.
 
 ## License
 

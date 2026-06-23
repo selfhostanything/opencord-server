@@ -136,6 +136,61 @@ impl CommandStore for PostgresCommandStore {
         row.map(interaction_from_row).transpose()
     }
 
+    async fn find_interaction_by_token_hash(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<CommandInteraction>, CommandError> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                command_interaction_select_sql(
+                    r#"
+                    WHERE token_hash = $1
+                    "#,
+                ),
+                vec![Value::from(token_hash.to_owned())],
+            ))
+            .await
+            .map_err(|_| CommandError::StoreUnavailable)?;
+
+        row.map(interaction_from_row).transpose()
+    }
+
+    async fn mark_interaction_deferred(
+        &self,
+        interaction_id: Uuid,
+        responded_at: String,
+    ) -> Result<CommandInteraction, CommandError> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                UPDATE command_interactions
+                SET status = 'deferred',
+                    responded_at = $2::timestamptz
+                WHERE id = $1::uuid
+                  AND status = 'pending'
+                RETURNING id::text, application_id::text, organization_id::text,
+                          space_id::text, channel_id::text, interaction_type,
+                          command_id::text, message_id::text, invoking_user_id::text,
+                          token_hash, token_last_four, status, options::text,
+                          custom_id, component_type, created_at::text, responded_at::text
+                "#,
+                vec![
+                    Value::from(interaction_id.to_string()),
+                    Value::from(responded_at),
+                ],
+            ))
+            .await
+            .map_err(|_| CommandError::StoreUnavailable)?;
+
+        row.map(interaction_from_row)
+            .transpose()?
+            .ok_or(CommandError::AlreadyResponded)
+    }
+
     async fn mark_interaction_responded(
         &self,
         interaction_id: Uuid,
@@ -150,7 +205,7 @@ impl CommandStore for PostgresCommandStore {
                 SET status = 'responded',
                     responded_at = $2::timestamptz
                 WHERE id = $1::uuid
-                  AND status = 'pending'
+                  AND status IN ('pending', 'deferred')
                 RETURNING id::text, application_id::text, organization_id::text,
                           space_id::text, channel_id::text, interaction_type,
                           command_id::text, message_id::text, invoking_user_id::text,

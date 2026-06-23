@@ -10,6 +10,8 @@ use crate::domain::ids;
 
 pub const INTERACTION_TYPE_APPLICATION_COMMAND: i32 = 2;
 pub const INTERACTION_TYPE_MESSAGE_COMPONENT: i32 = 3;
+pub const INTERACTION_CALLBACK_CHANNEL_MESSAGE: i32 = 4;
+pub const INTERACTION_CALLBACK_DEFERRED_CHANNEL_MESSAGE: i32 = 5;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApplicationCommand {
@@ -144,6 +146,15 @@ pub trait CommandStore: Send + Sync {
         interaction_id: Uuid,
         token_hash: &str,
     ) -> Result<Option<CommandInteraction>, CommandError>;
+    async fn find_interaction_by_token_hash(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<CommandInteraction>, CommandError>;
+    async fn mark_interaction_deferred(
+        &self,
+        interaction_id: Uuid,
+        responded_at: String,
+    ) -> Result<CommandInteraction, CommandError>;
     async fn mark_interaction_responded(
         &self,
         interaction_id: Uuid,
@@ -278,6 +289,44 @@ impl CommandService {
         }
 
         Ok(interaction)
+    }
+
+    pub async fn interaction_for_followup(
+        &self,
+        application_id: Uuid,
+        token: &str,
+    ) -> Result<CommandInteraction, CommandError> {
+        if !token.starts_with("oci_") {
+            return Err(CommandError::Unauthorized);
+        }
+
+        let interaction = self
+            .store
+            .find_interaction_by_token_hash(&hash_interaction_token(token))
+            .await?
+            .ok_or(CommandError::Unauthorized)?;
+
+        if interaction.application_id != application_id {
+            return Err(CommandError::Unauthorized);
+        }
+
+        if interaction.status != "deferred" {
+            return Err(CommandError::AlreadyResponded);
+        }
+
+        Ok(interaction)
+    }
+
+    pub async fn mark_interaction_deferred(
+        &self,
+        interaction_id: Uuid,
+    ) -> Result<CommandInteraction, CommandError> {
+        self.store
+            .mark_interaction_deferred(
+                interaction_id,
+                Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            )
+            .await
     }
 
     pub async fn mark_interaction_responded(

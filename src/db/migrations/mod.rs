@@ -26,6 +26,7 @@ mod m20260623062000_message_embeds;
 mod m20260623063000_message_mentions;
 mod m20260623064000_message_components;
 mod m20260623065000_component_interactions;
+mod m20260623070000_deferred_interactions;
 
 pub struct Migrator;
 
@@ -59,6 +60,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623063000_message_mentions::Migration),
             Box::new(m20260623064000_message_components::Migration),
             Box::new(m20260623065000_component_interactions::Migration),
+            Box::new(m20260623070000_deferred_interactions::Migration),
         ]
     }
 }

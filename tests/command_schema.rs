@@ -59,3 +59,24 @@ fn component_interactions_migration_extends_interaction_schema() {
     assert!(migrator.contains("mod m20260623065000_component_interactions;"));
     assert!(migrator.contains("Box::new(m20260623065000_component_interactions::Migration)"));
 }
+
+#[test]
+fn deferred_interactions_migration_extends_status_schema() {
+    let migration = repo_file("src/db/migrations/m20260623070000_deferred_interactions.rs");
+
+    for expected in [
+        "DROP CONSTRAINT IF EXISTS command_interactions_status_check",
+        "CHECK (status IN ('pending', 'deferred', 'responded', 'expired'))",
+        "WHERE status = 'deferred'",
+        "CHECK (status IN ('pending', 'responded', 'expired'))",
+    ] {
+        assert!(
+            migration.contains(expected),
+            "deferred interaction migration should contain {expected}"
+        );
+    }
+
+    let migrator = repo_file("src/db/migrations/mod.rs");
+    assert!(migrator.contains("mod m20260623070000_deferred_interactions;"));
+    assert!(migrator.contains("Box::new(m20260623070000_deferred_interactions::Migration)"));
+}

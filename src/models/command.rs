@@ -119,3 +119,8 @@ pub struct CreateInteractionCallbackRequest {
 pub struct InteractionCallbackData {
     pub content: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct CreateInteractionFollowupRequest {
+    pub content: String,
+}
