@@ -2,11 +2,13 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::domain::auth::AuthError;
 use crate::domain::channel::{Channel, ChannelError};
 use crate::domain::permission::{Permission, PermissionError};
+use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::SpaceError;
 use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
@@ -40,12 +42,18 @@ pub async fn create(
             request.is_private.unwrap_or(false),
         )
         .await?;
+    let response = ChannelResponse::from(channel.clone());
+    state.realtime.publish(RealtimeEvent::channel(
+        "channel.created",
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        json!({ "channel": response.clone() }),
+    ));
 
     Ok((
         StatusCode::CREATED,
-        Json(ChannelResourceResponse {
-            channel: ChannelResponse::from(channel),
-        }),
+        Json(ChannelResourceResponse { channel: response }),
     ))
 }
 
@@ -97,10 +105,16 @@ pub async fn update(
         .await?;
 
     let channel = state.channels.update(existing, request.into()).await?;
+    let response = ChannelResponse::from(channel.clone());
+    state.realtime.publish(RealtimeEvent::channel(
+        "channel.updated",
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        json!({ "channel": response.clone() }),
+    ));
 
-    Ok(Json(ChannelResourceResponse {
-        channel: ChannelResponse::from(channel),
-    }))
+    Ok(Json(ChannelResourceResponse { channel: response }))
 }
 
 #[derive(Debug)]

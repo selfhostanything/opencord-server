@@ -1310,6 +1310,106 @@ async fn compat_gateway_dispatches_message_update_for_edited_compat_message() {
 }
 
 #[tokio::test]
+async fn compat_gateway_dispatches_channel_create_and_update() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-channel-owner@example.com").await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "channel-events").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+    assert_eq!(ready["s"], 1);
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/spaces/{space_id}/channels"),
+            &owner_token,
+            json!({
+                "name": "Live Events",
+                "topic": "channel event stream"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let created = response_json(created).await["channel"].clone();
+    let channel_id = created["id"].as_str().unwrap();
+
+    let create_event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("channel create dispatch");
+    assert_eq!(create_event["op"], 0);
+    assert_eq!(create_event["t"], "CHANNEL_CREATE");
+    assert_eq!(create_event["s"], 2);
+    assert_eq!(create_event["d"]["id"], channel_id);
+    assert_eq!(create_event["d"]["guild_id"], space_id);
+    assert_eq!(create_event["d"]["name"], "Live Events");
+    assert_eq!(create_event["d"]["type"], 0);
+    assert_eq!(create_event["d"]["position"], 0);
+    assert_eq!(create_event["d"]["topic"], "channel event stream");
+    assert_eq!(create_event["d"]["nsfw"], false);
+
+    let updated = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::PATCH,
+            &format!("/channels/{channel_id}"),
+            &owner_token,
+            json!({
+                "name": "Live Events Edited",
+                "topic": "renamed channel event stream",
+                "position": 7
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), StatusCode::OK);
+
+    let update_event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("channel update dispatch");
+    assert_eq!(update_event["op"], 0);
+    assert_eq!(update_event["t"], "CHANNEL_UPDATE");
+    assert_eq!(update_event["s"], 3);
+    assert_eq!(update_event["d"]["id"], channel_id);
+    assert_eq!(update_event["d"]["guild_id"], space_id);
+    assert_eq!(update_event["d"]["name"], "Live Events Edited");
+    assert_eq!(update_event["d"]["type"], 0);
+    assert_eq!(update_event["d"]["position"], 7);
+    assert_eq!(update_event["d"]["topic"], "renamed channel event stream");
+}
+
+#[tokio::test]
 async fn compat_gateway_resumes_existing_session_and_sequence() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;

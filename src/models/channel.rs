@@ -18,7 +18,7 @@ pub struct PatchChannelRequest {
     pub is_private: Option<bool>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ChannelResponse {
     pub id: String,
     pub organization_id: String,

@@ -132,6 +132,28 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                         break;
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                } else if event.event_type == "channel.created"
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(channel) = compat_channel_from_event(&event) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "CHANNEL_CREATE", sequence, channel).await.is_err() {
+                        break;
+                    }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                } else if event.event_type == "channel.updated"
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(channel) = compat_channel_from_event(&event) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "CHANNEL_UPDATE", sequence, channel).await.is_err() {
+                        break;
+                    }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "interaction.created"
                     && can_bot_receive_event(&state, bot, &event).await
                 {
@@ -368,6 +390,27 @@ fn compat_message_delete_from_event(event: &RealtimeEvent) -> Option<Value> {
         payload["guild_id"] = Value::String(guild_id.to_owned());
     }
     Some(payload)
+}
+
+fn compat_channel_from_event(event: &RealtimeEvent) -> Option<Value> {
+    let channel = event.data.get("channel")?;
+    let kind = channel.get("kind")?.as_str()?;
+    Some(json!({
+        "id": channel.get("id")?.as_str()?,
+        "guild_id": event.scope.space_id.as_deref().or_else(|| channel.get("space_id")?.as_str())?,
+        "name": channel.get("name")?.as_str()?,
+        "type": compat_channel_kind(kind),
+        "position": channel.get("position").and_then(Value::as_i64).unwrap_or_default(),
+        "topic": channel.get("topic").cloned().unwrap_or(Value::Null),
+        "nsfw": false
+    }))
+}
+
+fn compat_channel_kind(kind: &str) -> i32 {
+    match kind {
+        "voice" => 2,
+        _ => 0,
+    }
 }
 
 fn compat_message_from_value(
