@@ -94,10 +94,12 @@ pub trait SpaceStore: Send + Sync {
 
     async fn add_member(&self, member: StoredSpaceMember) -> Result<SpaceMembership, SpaceError>;
     async fn remove_member(&self, space_id: Uuid, user_id: Uuid) -> Result<(), SpaceError>;
+    async fn active_member_user_ids(&self, space_id: Uuid) -> Result<Vec<Uuid>, SpaceError>;
     async fn update_space(
         &self,
         membership: SpaceMembership,
     ) -> Result<SpaceMembership, SpaceError>;
+    async fn archive_space(&self, space_id: Uuid, organization_id: Uuid) -> Result<(), SpaceError>;
 }
 
 #[derive(Clone)]
@@ -192,6 +194,10 @@ impl SpaceService {
         Ok(membership)
     }
 
+    pub async fn active_member_user_ids(&self, space_id: Uuid) -> Result<Vec<Uuid>, SpaceError> {
+        self.store.active_member_user_ids(space_id).await
+    }
+
     pub async fn update(
         &self,
         mut existing: SpaceMembership,
@@ -204,6 +210,13 @@ impl SpaceService {
         }
 
         self.store.update_space(existing).await
+    }
+
+    pub async fn delete(&self, existing: SpaceMembership) -> Result<SpaceMembership, SpaceError> {
+        self.store
+            .archive_space(existing.id, existing.organization_id)
+            .await?;
+        Ok(existing)
     }
 }
 

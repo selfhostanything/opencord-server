@@ -93,6 +93,43 @@ pub async fn update(
     Ok(Json(response))
 }
 
+pub async fn delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(space_id): Path<Uuid>,
+) -> Result<StatusCode, SpaceApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let existing = state.spaces.get_for_user(user.id, space_id).await?;
+    state
+        .permissions
+        .require_space(user.id, &existing, Permission::ManageSpace)
+        .await?;
+
+    let member_user_ids = state.spaces.active_member_user_ids(existing.id).await?;
+    let space = state.spaces.delete(existing).await?;
+    let member_user_ids = member_user_ids
+        .into_iter()
+        .map(|user_id| user_id.to_string())
+        .collect::<Vec<_>>();
+
+    state.realtime.publish(RealtimeEvent::space(
+        "space.deleted",
+        space.organization_id,
+        space.id,
+        json!({
+            "guild": {
+                "id": space.id.to_string(),
+                "name": space.name,
+                "unavailable": false
+            },
+            "member_user_ids": member_user_ids
+        }),
+    ));
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Debug)]
 pub enum SpaceApiError {
     Auth(AuthError),

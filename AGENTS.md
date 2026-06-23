@@ -10,6 +10,9 @@ Important local rules:
 - Use UUIDv7 for all native UUID identifiers.
 - Use SeaORM migrations for schema changes.
 - Use `timescale/timescaledb:2.28.1-pg18-oss` for local TimescaleDB/PostgreSQL.
+- Use readable version-number pins for runtimes, Docker images, CI actions, and
+  dependencies. Do not pin them by image digest, commit SHA, or other hash-style
+  references unless a human explicitly approves a narrow exception.
 - Do not use Docker `latest` tags. Prefer major.minor tags that float patch
   updates, for example `valkey/valkey:8.1-alpine`; when an image only publishes
   release/date tags, use the current explicit release tag.

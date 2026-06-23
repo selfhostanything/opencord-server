@@ -206,6 +206,114 @@ async fn space_owner_can_update_space_name_and_slug() {
 }
 
 #[tokio::test]
+async fn space_owner_can_delete_space_and_hide_archived_space() {
+    let app = test_app();
+    let token = register_token(&app, "space-delete-owner@example.com").await;
+    let organization_id = create_organization(&app, &token, "Space Delete Parent").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/spaces"),
+            &token,
+            json!({ "name": "Archive Space" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let space_id = response_json(created).await["space"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let deleted = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/spaces/{space_id}"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let listed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/spaces"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert_eq!(body["spaces"].as_array().unwrap().len(), 0);
+
+    let update_deleted = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::PATCH,
+            &format!("/spaces/{space_id}"),
+            &token,
+            json!({ "name": "Should Stay Archived" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(update_deleted.status(), StatusCode::NOT_FOUND);
+
+    let delete_again = app
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/spaces/{space_id}"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(delete_again.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn space_delete_requires_manage_space() {
+    let app = test_app();
+    let owner_token = register_token(&app, "space-delete-denied-owner@example.com").await;
+    let (member_token, member_id) = register(&app, "space-delete-denied-member@example.com").await;
+    let organization_id =
+        create_organization(&app, &owner_token, "Space Delete Denied Parent").await;
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/spaces"),
+            &owner_token,
+            json!({ "name": "Protected Space" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let space_id = response_json(created).await["space"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+
+    let denied = app
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/spaces/{space_id}"),
+            &member_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn space_update_requires_manage_space() {
     let app = test_app();
     let owner_token = register_token(&app, "space-update-denied-owner@example.com").await;

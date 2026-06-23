@@ -186,6 +186,34 @@ impl SpaceStore for PostgresSpaceStore {
         }
     }
 
+    async fn active_member_user_ids(&self, space_id: Uuid) -> Result<Vec<Uuid>, SpaceError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT space_members.user_id::text
+                FROM space_members
+                INNER JOIN spaces ON spaces.id = space_members.space_id
+                WHERE space_members.space_id = $1::uuid
+                  AND space_members.status = 'active'
+                  AND spaces.archived_at IS NULL
+                "#,
+                vec![Value::from(space_id.to_string())],
+            ))
+            .await
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+
+        rows.into_iter()
+            .map(|row| {
+                let user_id = row
+                    .try_get::<String>("", "user_id")
+                    .map_err(|_| SpaceError::StoreUnavailable)?;
+                Uuid::parse_str(&user_id).map_err(|_| SpaceError::StoreUnavailable)
+            })
+            .collect()
+    }
+
     async fn update_space(
         &self,
         membership: SpaceMembership,
@@ -216,6 +244,30 @@ impl SpaceStore for PostgresSpaceStore {
             Ok(_) => Ok(membership),
             Err(error) if is_unique_violation(&error) => Err(SpaceError::SlugAlreadyExists),
             Err(_) => Err(SpaceError::StoreUnavailable),
+        }
+    }
+
+    async fn archive_space(&self, space_id: Uuid, organization_id: Uuid) -> Result<(), SpaceError> {
+        let result = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                UPDATE spaces
+                SET archived_at = now()
+                WHERE id = $1::uuid
+                  AND organization_id = $2::uuid
+                  AND archived_at IS NULL
+                "#,
+                values(vec![space_id.to_string(), organization_id.to_string()]),
+            ))
+            .await
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+
+        if result.rows_affected() == 0 {
+            Err(SpaceError::NotFound)
+        } else {
+            Ok(())
         }
     }
 }

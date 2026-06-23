@@ -156,6 +156,23 @@ impl SpaceStore for MemorySpaceStore {
         Ok(())
     }
 
+    async fn active_member_user_ids(&self, space_id: Uuid) -> Result<Vec<Uuid>, SpaceError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+        if !state.spaces_by_id.contains_key(&space_id) {
+            return Err(SpaceError::NotFound);
+        }
+
+        Ok(state
+            .members_by_space_user
+            .values()
+            .filter(|member| member.space_id == space_id && member.status == "active")
+            .map(|member| member.user_id)
+            .collect())
+    }
+
     async fn update_space(
         &self,
         membership: SpaceMembership,
@@ -193,5 +210,21 @@ impl SpaceStore for MemorySpaceStore {
         );
 
         Ok(membership)
+    }
+
+    async fn archive_space(&self, space_id: Uuid, organization_id: Uuid) -> Result<(), SpaceError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+        let Some(space) = state.spaces_by_id.get(&space_id) else {
+            return Err(SpaceError::NotFound);
+        };
+        if space.organization_id != organization_id {
+            return Err(SpaceError::NotFound);
+        }
+
+        state.spaces_by_id.remove(&space_id);
+        Ok(())
     }
 }

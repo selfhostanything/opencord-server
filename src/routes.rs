@@ -228,7 +228,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             "/spaces/{space_id}/channels",
             post(channel_controller::create).get(channel_controller::list),
         )
-        .route("/spaces/{space_id}", patch(space_controller::update))
+        .route(
+            "/spaces/{space_id}",
+            patch(space_controller::update).delete(space_controller::delete),
+        )
         .route(
             "/spaces/{space_id}/members",
             post(permission_controller::add_space_member),

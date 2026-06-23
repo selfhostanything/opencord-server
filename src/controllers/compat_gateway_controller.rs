@@ -195,6 +195,18 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                         break;
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                } else if event.event_type == "space.deleted"
+                    && has_intent(active_intents, INTENT_GUILDS)
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(guild) = compat_guild_from_event(&event) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "GUILD_DELETE", sequence, guild).await.is_err() {
+                        break;
+                    }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "space.bot.invited"
                     && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -484,6 +496,13 @@ async fn can_bot_receive_event(
         let Ok(space_id) = Uuid::parse_str(space_id) else {
             return false;
         };
+        if event.event_type == "space.deleted" {
+            let Ok(organization_id) = Uuid::parse_str(&event.organization_id) else {
+                return false;
+            };
+            return organization_id == bot.organization_id
+                && event_member_user_ids_include(event, bot.bot_user_id);
+        }
         let Ok(space) = state.spaces.get_for_user(bot.bot_user_id, space_id).await else {
             return false;
         };
@@ -592,6 +611,19 @@ fn compat_channel_kind(kind: &str) -> i32 {
 
 fn compat_guild_from_event(event: &RealtimeEvent) -> Option<Value> {
     event.data.get("guild").cloned()
+}
+
+fn event_member_user_ids_include(event: &RealtimeEvent, user_id: Uuid) -> bool {
+    let user_id = user_id.to_string();
+    event
+        .data
+        .get("member_user_ids")
+        .and_then(Value::as_array)
+        .is_some_and(|member_user_ids| {
+            member_user_ids
+                .iter()
+                .any(|member_user_id| member_user_id.as_str() == Some(user_id.as_str()))
+        })
 }
 
 fn compat_guild_member_from_event(event: &RealtimeEvent) -> Option<Value> {
