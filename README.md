@@ -178,8 +178,10 @@ Authorization: Bearer <session token>
 Discord compatibility message creation accepts `content`, basic `embeds`, and
 `allowed_mentions`. Content may be empty when at least one embed is supplied.
 Embed JSON is persisted and returned through compatibility message responses
-and gateway `MESSAGE_CREATE` dispatches; mention expansion, attachments,
-replies, and components remain future work.
+and gateway `MESSAGE_CREATE` dispatches. Linked native attachments are returned
+as Discord-shaped attachment metadata in compatibility list responses and
+gateway dispatches; compatibility file upload, mention expansion, replies, and
+components remain future work.
 
 ## Enterprise OIDC
 

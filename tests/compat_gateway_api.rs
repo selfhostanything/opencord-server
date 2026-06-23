@@ -62,6 +62,22 @@ fn bearer_request(method: Method, uri: &str, token: &str, body: Value) -> Reques
         .unwrap()
 }
 
+fn bearer_bytes_request(
+    method: Method,
+    uri: &str,
+    token: &str,
+    content_type: &str,
+    body: impl Into<Vec<u8>>,
+) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::from(body.into()))
+        .unwrap()
+}
+
 fn bot_request(method: Method, uri: &str, token: &str, body: Value) -> Request<Body> {
     Request::builder()
         .method(method)
@@ -245,6 +261,71 @@ async fn send_message(app: &Router, token: &str, channel_id: &str, content: &str
         .to_owned()
 }
 
+async fn create_uploaded_attachment(app: &Router, token: &str, channel_id: &str) -> String {
+    let presigned = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            "/attachments/presign",
+            token,
+            json!({
+                "channel_id": channel_id,
+                "file_name": "diagram.png",
+                "content_type": "image/png",
+                "size_bytes": 11
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(presigned.status(), StatusCode::CREATED);
+    let attachment_id = response_json(presigned).await["attachment"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let upload = app
+        .clone()
+        .oneshot(bearer_bytes_request(
+            Method::PUT,
+            &format!("/attachments/{attachment_id}/content"),
+            token,
+            "image/png",
+            b"hello image".to_vec(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(upload.status(), StatusCode::OK);
+
+    attachment_id
+}
+
+async fn send_message_with_attachment(
+    app: &Router,
+    token: &str,
+    channel_id: &str,
+    attachment_id: &str,
+) -> String {
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/messages"),
+            token,
+            json!({
+                "content": "diagram attached",
+                "attachment_ids": [attachment_id]
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    response_json(response).await["message"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
 async fn send_compat_embed_message(
     app: &Router,
     bot_token: &str,
@@ -354,6 +435,73 @@ async fn next_json(socket: &mut TestWebSocket) -> Value {
     }
 
     panic!("websocket closed before event")
+}
+
+#[tokio::test]
+async fn compat_gateway_message_create_includes_native_attachments() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, owner_id) =
+        register(&app, "compat-gateway-attachment-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "attachment").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+
+    let attachment_id = create_uploaded_attachment(&app, &owner_token, &channel_id).await;
+    let message_id =
+        send_message_with_attachment(&app, &owner_token, &channel_id, &attachment_id).await;
+    let event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("message create dispatch");
+
+    assert_eq!(event["op"], 0);
+    assert_eq!(event["t"], "MESSAGE_CREATE");
+    assert_eq!(event["d"]["id"], message_id);
+    assert_eq!(event["d"]["author"]["id"], owner_id);
+    assert_eq!(event["d"]["author"]["bot"], false);
+    assert_eq!(event["d"]["content"], "diagram attached");
+    assert_eq!(event["d"]["attachments"].as_array().unwrap().len(), 1);
+    assert_eq!(event["d"]["attachments"][0]["id"], attachment_id);
+    assert_eq!(event["d"]["attachments"][0]["filename"], "diagram.png");
+    assert_eq!(event["d"]["attachments"][0]["content_type"], "image/png");
+    assert_eq!(event["d"]["attachments"][0]["size"], 11);
+    assert_eq!(
+        event["d"]["attachments"][0]["url"],
+        format!("https://chat.example.com/attachments/{attachment_id}/content")
+    );
+    assert_eq!(
+        event["d"]["attachments"][0]["proxy_url"],
+        format!("https://chat.example.com/attachments/{attachment_id}/content")
+    );
 }
 
 #[tokio::test]

@@ -1,10 +1,13 @@
+use std::collections::HashMap;
+
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
 
-use crate::controllers::message_controller::message_response;
+use crate::controllers::message_controller::{attachment_download_url, message_response};
+use crate::domain::attachment::{Attachment, AttachmentError};
 use crate::domain::bot::{AuthenticatedBot, BotError};
 use crate::domain::channel::{Channel, ChannelError};
 use crate::domain::message::{CreateMessageInput, Message, MessageError};
@@ -141,7 +144,12 @@ pub async fn create_message(
 
     Ok((
         rate_limit_headers(&rate_limit),
-        Json(compat_message_response(message, &bot)),
+        Json(compat_message_response(
+            message,
+            Vec::new(),
+            &bot,
+            &state.config.public_url,
+        )),
     ))
 }
 
@@ -159,13 +167,24 @@ pub async fn list_messages(
         .await?;
 
     let messages = state.messages.list_for_channel(channel.id).await?;
+    let message_ids = messages
+        .iter()
+        .map(|message| message.id)
+        .collect::<Vec<_>>();
+    let attachments = state.attachments.list_for_message_ids(&message_ids).await?;
+    let mut attachments_by_message_id = attachments_by_message_id(attachments);
 
     Ok((
         rate_limit_headers(&rate_limit),
         Json(
             messages
                 .into_iter()
-                .map(|message| compat_message_response(message, &bot))
+                .map(|message| {
+                    let attachments = attachments_by_message_id
+                        .remove(&message.id)
+                        .unwrap_or_default();
+                    compat_message_response(message, attachments, &bot, &state.config.public_url)
+                })
                 .collect::<Vec<_>>(),
         ),
     ))
@@ -200,10 +219,19 @@ pub async fn update_message(
     }
 
     let message = state.messages.update(message, request.content).await?;
+    let attachments = state
+        .attachments
+        .list_for_message_ids(&[message.id])
+        .await?;
 
     Ok((
         rate_limit_headers(&rate_limit),
-        Json(compat_message_response(message, &bot)),
+        Json(compat_message_response(
+            message,
+            attachments,
+            &bot,
+            &state.config.public_url,
+        )),
     ))
 }
 
@@ -246,6 +274,7 @@ pub enum CompatApiError {
     Space(SpaceError),
     Permission(PermissionError),
     Message(MessageError),
+    Attachment(AttachmentError),
     RateLimited(RateLimitDecision),
 }
 
@@ -279,6 +308,12 @@ impl From<MessageError> for CompatApiError {
     }
 }
 
+impl From<AttachmentError> for CompatApiError {
+    fn from(error: AttachmentError) -> Self {
+        Self::Attachment(error)
+    }
+}
+
 impl IntoResponse for CompatApiError {
     fn into_response(self) -> Response {
         if let Self::RateLimited(decision) = self {
@@ -299,6 +334,7 @@ impl IntoResponse for CompatApiError {
             Self::Space(error) => (error.status_code(), error.message()),
             Self::Permission(error) => (error.status_code(), error.message()),
             Self::Message(error) => (error.status_code(), error.message()),
+            Self::Attachment(error) => (error.status_code(), error.message()),
             Self::RateLimited(_) => unreachable!("rate limited responses are returned above"),
         };
 
@@ -387,7 +423,9 @@ async fn message_in_channel(
 
 fn compat_message_response(
     message: Message,
+    attachments: Vec<Attachment>,
     current_bot: &AuthenticatedBot,
+    public_url: &str,
 ) -> CompatMessageResponse {
     let author_is_current_bot = message.author_user_id == current_bot.bot_user_id;
     CompatMessageResponse {
@@ -409,11 +447,39 @@ fn compat_message_response(
         mention_everyone: false,
         mentions: Vec::new(),
         mention_roles: Vec::new(),
-        attachments: Vec::new(),
+        attachments: attachments
+            .into_iter()
+            .map(|attachment| compat_attachment_response(attachment, public_url))
+            .collect(),
         embeds: message.embeds,
         pinned: false,
         kind: 0,
     }
+}
+
+fn attachments_by_message_id(attachments: Vec<Attachment>) -> HashMap<Uuid, Vec<Attachment>> {
+    let mut attachments_by_message_id = HashMap::new();
+    for attachment in attachments {
+        if let Some(message_id) = attachment.message_id {
+            attachments_by_message_id
+                .entry(message_id)
+                .or_insert_with(Vec::new)
+                .push(attachment);
+        }
+    }
+    attachments_by_message_id
+}
+
+fn compat_attachment_response(attachment: Attachment, public_url: &str) -> serde_json::Value {
+    let url = attachment_download_url(public_url, attachment.id);
+    serde_json::json!({
+        "id": attachment.id.to_string(),
+        "filename": attachment.file_name,
+        "size": attachment.size_bytes,
+        "url": url,
+        "proxy_url": url,
+        "content_type": attachment.content_type
+    })
 }
 
 fn realtime_message_with_embeds(message: Message, public_url: &str) -> serde_json::Value {

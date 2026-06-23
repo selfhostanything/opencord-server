@@ -38,6 +38,22 @@ fn bearer_request(method: Method, uri: &str, token: &str, body: Value) -> Reques
         .unwrap()
 }
 
+fn bearer_bytes_request(
+    method: Method,
+    uri: &str,
+    token: &str,
+    content_type: &str,
+    body: impl Into<Vec<u8>>,
+) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+        .body(Body::from(body.into()))
+        .unwrap()
+}
+
 fn bot_request(method: Method, uri: &str, token: &str, body: Value) -> Request<Body> {
     Request::builder()
         .method(method)
@@ -181,6 +197,44 @@ async fn add_space_member(
     assert_eq!(response.status(), StatusCode::CREATED);
 }
 
+async fn create_uploaded_attachment(app: &axum::Router, token: &str, channel_id: &str) -> String {
+    let presigned = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            "/attachments/presign",
+            token,
+            json!({
+                "channel_id": channel_id,
+                "file_name": "diagram.png",
+                "content_type": "image/png",
+                "size_bytes": 11
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(presigned.status(), StatusCode::CREATED);
+    let attachment_id = response_json(presigned).await["attachment"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let upload = app
+        .clone()
+        .oneshot(bearer_bytes_request(
+            Method::PUT,
+            &format!("/attachments/{attachment_id}/content"),
+            token,
+            "image/png",
+            b"hello image".to_vec(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(upload.status(), StatusCode::OK);
+
+    attachment_id
+}
+
 #[tokio::test]
 async fn bot_can_send_list_edit_and_delete_messages_through_compat_routes() {
     let app = test_app();
@@ -281,6 +335,66 @@ async fn bot_can_send_list_edit_and_delete_messages_through_compat_routes() {
             .as_array()
             .unwrap()
             .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn bot_can_list_native_message_attachments_through_compat_routes() {
+    let app = test_app();
+    let (owner_token, owner_id) = register(&app, "compat-attachment-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "attachments").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id, "member").await;
+
+    let attachment_id = create_uploaded_attachment(&app, &owner_token, &channel_id).await;
+    let message = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/messages"),
+            &owner_token,
+            json!({
+                "content": "diagram attached",
+                "attachment_ids": [attachment_id]
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(message.status(), StatusCode::CREATED);
+    let message_id = response_json(message).await["message"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let listed = app
+        .clone()
+        .oneshot(bot_request(
+            Method::GET,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["id"], message_id);
+    assert_eq!(body[0]["author"]["id"], owner_id);
+    assert_eq!(body[0]["content"], "diagram attached");
+    assert_eq!(body[0]["attachments"].as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["attachments"][0]["id"], attachment_id);
+    assert_eq!(body[0]["attachments"][0]["filename"], "diagram.png");
+    assert_eq!(body[0]["attachments"][0]["content_type"], "image/png");
+    assert_eq!(body[0]["attachments"][0]["size"], 11);
+    assert_eq!(
+        body[0]["attachments"][0]["url"],
+        format!("https://chat.example.com/attachments/{attachment_id}/content")
+    );
+    assert_eq!(
+        body[0]["attachments"][0]["proxy_url"],
+        format!("https://chat.example.com/attachments/{attachment_id}/content")
     );
 }
 

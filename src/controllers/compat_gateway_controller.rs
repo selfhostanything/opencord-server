@@ -234,6 +234,7 @@ fn compat_message_from_event(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    let attachments = compat_attachments_from_event(message.get("attachments"));
 
     Some(CompatMessageResponse {
         id: message.get("id")?.as_str()?.to_owned(),
@@ -257,11 +258,48 @@ fn compat_message_from_event(
         mention_everyone: false,
         mentions: Vec::new(),
         mention_roles: Vec::new(),
-        attachments: Vec::new(),
+        attachments,
         embeds,
         pinned: false,
         kind: 0,
     })
+}
+
+fn compat_attachments_from_event(attachments: Option<&Value>) -> Vec<Value> {
+    attachments
+        .and_then(Value::as_array)
+        .map(|attachments| {
+            attachments
+                .iter()
+                .filter_map(compat_attachment_from_event)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn compat_attachment_from_event(attachment: &Value) -> Option<Value> {
+    let id = attachment.get("id")?.as_str()?;
+    let filename = attachment.get("file_name")?.as_str()?;
+    let size = attachment.get("size_bytes")?.as_i64()?;
+    let url = attachment.get("download_url")?.as_str()?;
+    let mut value = json!({
+        "id": id,
+        "filename": filename,
+        "size": size,
+        "url": url,
+        "proxy_url": url
+    });
+
+    if let Some(content_type) = attachment.get("content_type").and_then(Value::as_str)
+        && let Some(object) = value.as_object_mut()
+    {
+        object.insert(
+            "content_type".to_owned(),
+            Value::String(content_type.to_owned()),
+        );
+    }
+
+    Some(value)
 }
 
 fn compat_interaction_from_event(

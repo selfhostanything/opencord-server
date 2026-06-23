@@ -3485,7 +3485,30 @@ components:
             type: string
         attachments:
           type: array
-          items: {}
+          items:
+            type: object
+            required:
+              - id
+              - filename
+              - size
+              - url
+              - proxy_url
+            properties:
+              id:
+                type: string
+                format: uuid
+              filename:
+                type: string
+              size:
+                type: integer
+              url:
+                type: string
+                format: uri
+              proxy_url:
+                type: string
+                format: uri
+              content_type:
+                type: string
         embeds:
           type: array
           items:
