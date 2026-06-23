@@ -9,8 +9,10 @@ use crate::domain::bot::{AuthenticatedBot, BotError};
 use crate::domain::channel::{Channel, ChannelError};
 use crate::domain::message::{Message, MessageError};
 use crate::domain::permission::{Permission, PermissionError, Role};
+use crate::domain::rate_limit::{RateLimitDecision, compat_rest_bot_bucket};
 use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::{SpaceError, SpaceMembership};
+use crate::http::rate_limit::rate_limit_headers;
 use crate::models::compat::{
     CompatChannelResponse, CompatErrorResponse, CompatGuildResponse, CompatMessageResponse,
     CompatRoleResponse, CompatUserResponse, CreateCompatMessageRequest, PatchCompatMessageRequest,
@@ -20,29 +22,38 @@ use crate::state::AppState;
 pub async fn get_current_user(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<CompatUserResponse>, CompatApiError> {
+) -> Result<impl IntoResponse, CompatApiError> {
     let bot = authenticate_bot(&state, &headers).await?;
+    let rate_limit = compat_rest_rate_limit(&state, &bot)?;
 
-    Ok(Json(compat_user_response(&bot)))
+    Ok((
+        rate_limit_headers(&rate_limit),
+        Json(compat_user_response(&bot)),
+    ))
 }
 
 pub async fn get_guild(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(space_id): Path<Uuid>,
-) -> Result<Json<CompatGuildResponse>, CompatApiError> {
+) -> Result<impl IntoResponse, CompatApiError> {
     let bot = authenticate_bot(&state, &headers).await?;
+    let rate_limit = compat_rest_rate_limit(&state, &bot)?;
     let space = visible_space_for_bot(&state, &bot, space_id).await?;
 
-    Ok(Json(compat_guild_response(space)))
+    Ok((
+        rate_limit_headers(&rate_limit),
+        Json(compat_guild_response(space)),
+    ))
 }
 
 pub async fn list_guild_channels(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(space_id): Path<Uuid>,
-) -> Result<Json<Vec<CompatChannelResponse>>, CompatApiError> {
+) -> Result<impl IntoResponse, CompatApiError> {
     let bot = authenticate_bot(&state, &headers).await?;
+    let rate_limit = compat_rest_rate_limit(&state, &bot)?;
     let space = visible_space_for_bot(&state, &bot, space_id).await?;
     let channels = state.channels.list_for_space(space.id).await?;
     let mut visible_channels = Vec::new();
@@ -61,19 +72,28 @@ pub async fn list_guild_channels(
         }
     }
 
-    Ok(Json(visible_channels))
+    Ok((rate_limit_headers(&rate_limit), Json(visible_channels)))
 }
 
 pub async fn list_guild_roles(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(space_id): Path<Uuid>,
-) -> Result<Json<Vec<CompatRoleResponse>>, CompatApiError> {
+) -> Result<impl IntoResponse, CompatApiError> {
     let bot = authenticate_bot(&state, &headers).await?;
+    let rate_limit = compat_rest_rate_limit(&state, &bot)?;
     let space = visible_space_for_bot(&state, &bot, space_id).await?;
     let roles = state.permissions.list_roles_for_space(space.id).await?;
 
-    Ok(Json(roles.into_iter().map(compat_role_response).collect()))
+    Ok((
+        rate_limit_headers(&rate_limit),
+        Json(
+            roles
+                .into_iter()
+                .map(compat_role_response)
+                .collect::<Vec<_>>(),
+        ),
+    ))
 }
 
 pub async fn create_message(
@@ -81,8 +101,9 @@ pub async fn create_message(
     headers: HeaderMap,
     Path(channel_id): Path<Uuid>,
     Json(request): Json<CreateCompatMessageRequest>,
-) -> Result<Json<CompatMessageResponse>, CompatApiError> {
+) -> Result<impl IntoResponse, CompatApiError> {
     let bot = authenticate_bot(&state, &headers).await?;
+    let rate_limit = compat_rest_rate_limit(&state, &bot)?;
     let (channel, space) = visible_channel_for_bot(&state, &bot, channel_id).await?;
     state
         .permissions
@@ -110,15 +131,19 @@ pub async fn create_message(
         }),
     ));
 
-    Ok(Json(compat_message_response(message, &bot)))
+    Ok((
+        rate_limit_headers(&rate_limit),
+        Json(compat_message_response(message, &bot)),
+    ))
 }
 
 pub async fn list_messages(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(channel_id): Path<Uuid>,
-) -> Result<Json<Vec<CompatMessageResponse>>, CompatApiError> {
+) -> Result<impl IntoResponse, CompatApiError> {
     let bot = authenticate_bot(&state, &headers).await?;
+    let rate_limit = compat_rest_rate_limit(&state, &bot)?;
     let (channel, space) = visible_channel_for_bot(&state, &bot, channel_id).await?;
     state
         .permissions
@@ -127,11 +152,14 @@ pub async fn list_messages(
 
     let messages = state.messages.list_for_channel(channel.id).await?;
 
-    Ok(Json(
-        messages
-            .into_iter()
-            .map(|message| compat_message_response(message, &bot))
-            .collect(),
+    Ok((
+        rate_limit_headers(&rate_limit),
+        Json(
+            messages
+                .into_iter()
+                .map(|message| compat_message_response(message, &bot))
+                .collect::<Vec<_>>(),
+        ),
     ))
 }
 
@@ -140,8 +168,9 @@ pub async fn update_message(
     headers: HeaderMap,
     Path((channel_id, message_id)): Path<(Uuid, Uuid)>,
     Json(request): Json<PatchCompatMessageRequest>,
-) -> Result<Json<CompatMessageResponse>, CompatApiError> {
+) -> Result<impl IntoResponse, CompatApiError> {
     let bot = authenticate_bot(&state, &headers).await?;
+    let rate_limit = compat_rest_rate_limit(&state, &bot)?;
     let (channel, space) = visible_channel_for_bot(&state, &bot, channel_id).await?;
     let message = message_in_channel(&state, message_id, channel.id).await?;
 
@@ -164,15 +193,19 @@ pub async fn update_message(
 
     let message = state.messages.update(message, request.content).await?;
 
-    Ok(Json(compat_message_response(message, &bot)))
+    Ok((
+        rate_limit_headers(&rate_limit),
+        Json(compat_message_response(message, &bot)),
+    ))
 }
 
 pub async fn delete_message(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((channel_id, message_id)): Path<(Uuid, Uuid)>,
-) -> Result<StatusCode, CompatApiError> {
+) -> Result<impl IntoResponse, CompatApiError> {
     let bot = authenticate_bot(&state, &headers).await?;
+    let rate_limit = compat_rest_rate_limit(&state, &bot)?;
     let (channel, space) = visible_channel_for_bot(&state, &bot, channel_id).await?;
     let message = message_in_channel(&state, message_id, channel.id).await?;
 
@@ -195,7 +228,7 @@ pub async fn delete_message(
 
     state.messages.delete(message).await?;
 
-    Ok(StatusCode::NO_CONTENT)
+    Ok((rate_limit_headers(&rate_limit), StatusCode::NO_CONTENT))
 }
 
 #[derive(Debug)]
@@ -205,6 +238,7 @@ pub enum CompatApiError {
     Space(SpaceError),
     Permission(PermissionError),
     Message(MessageError),
+    RateLimited(RateLimitDecision),
 }
 
 impl From<BotError> for CompatApiError {
@@ -239,12 +273,25 @@ impl From<MessageError> for CompatApiError {
 
 impl IntoResponse for CompatApiError {
     fn into_response(self) -> Response {
+        if let Self::RateLimited(decision) = self {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                rate_limit_headers(&decision),
+                Json(CompatErrorResponse {
+                    message: "rate limit exceeded",
+                    code: 42900,
+                }),
+            )
+                .into_response();
+        }
+
         let (status, message) = match self {
             Self::Bot(error) => (error.status_code(), error.message()),
             Self::Channel(error) => (error.status_code(), error.message()),
             Self::Space(error) => (error.status_code(), error.message()),
             Self::Permission(error) => (error.status_code(), error.message()),
             Self::Message(error) => (error.status_code(), error.message()),
+            Self::RateLimited(_) => unreachable!("rate limited responses are returned above"),
         };
 
         (status, Json(CompatErrorResponse { message, code: 0 })).into_response()
@@ -257,6 +304,20 @@ async fn authenticate_bot(
 ) -> Result<AuthenticatedBot, CompatApiError> {
     let token = bot_token(headers)?;
     Ok(state.bots.authenticate_token(token).await?)
+}
+
+fn compat_rest_rate_limit(
+    state: &AppState,
+    bot: &AuthenticatedBot,
+) -> Result<RateLimitDecision, CompatApiError> {
+    let decision = state
+        .compat_rest_rate_limits
+        .check(compat_rest_bot_bucket(bot.application_id));
+    if decision.allowed {
+        Ok(decision)
+    } else {
+        Err(CompatApiError::RateLimited(decision))
+    }
 }
 
 fn bot_token(headers: &HeaderMap) -> Result<&str, BotError> {

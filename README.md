@@ -405,6 +405,13 @@ use `Authorization: Bot ocb_...`. The bot user must be added to the target
 space through the normal member endpoint, and channel permissions are enforced
 against that bot user.
 
+Bot-authenticated compatibility REST routes are limited to 10 requests per
+minute per bot application bucket. Successful responses include
+`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and
+`X-RateLimit-Bucket`. Exhausted buckets return `429` with the same headers,
+`Retry-After`, and Discord-shaped body `{ "message": "rate limit exceeded",
+"code": 42900 }`.
+
 `GET /api/compat/discord/gateway` upgrades to a Discord-shaped WebSocket. The
 initial implementation sends HELLO, accepts IDENTIFY with an OpenCord bot
 token, emits READY, acknowledges heartbeats, and dispatches MESSAGE_CREATE for

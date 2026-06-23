@@ -199,6 +199,62 @@ async fn bot_can_discover_guild_roles() {
 }
 
 #[tokio::test]
+async fn bot_compat_rest_routes_return_rate_limit_headers_and_429() {
+    let harness = CompatHarness::new();
+    let owner = harness
+        .register("compat-rate-limit-owner@example.com")
+        .await;
+    let space = harness
+        .create_space_with_channel(&owner.token, "rate-limit")
+        .await;
+    let bot = harness
+        .create_bot_application(&owner.token, &space.organization_id, "Limited Bot")
+        .await;
+    harness
+        .add_space_member(&owner.token, &space.space_id, &bot.bot_user_id, "member")
+        .await;
+    let bucket = format!("compat-rest:bot:{}", bot.application_id);
+
+    for remaining in (0..10).rev() {
+        let (status, headers, body) = harness
+            .bot_json_with_headers(
+                Method::GET,
+                "/api/compat/discord/v10/users/@me",
+                &bot.bot_token,
+                json!({}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.expect("current user response")["id"], bot.bot_user_id);
+        assert_eq!(headers["x-ratelimit-limit"].to_str().unwrap(), "10");
+        assert_eq!(
+            headers["x-ratelimit-remaining"].to_str().unwrap(),
+            remaining.to_string()
+        );
+        assert_eq!(headers["x-ratelimit-bucket"].to_str().unwrap(), bucket);
+        assert!(headers.contains_key("x-ratelimit-reset"));
+    }
+
+    let (status, headers, body) = harness
+        .bot_json_with_headers(
+            Method::GET,
+            &format!("/api/compat/discord/v10/guilds/{}/channels", space.space_id),
+            &bot.bot_token,
+            json!({}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(headers["x-ratelimit-limit"].to_str().unwrap(), "10");
+    assert_eq!(headers["x-ratelimit-remaining"].to_str().unwrap(), "0");
+    assert_eq!(headers["x-ratelimit-bucket"].to_str().unwrap(), bucket);
+    assert!(headers.contains_key("x-ratelimit-reset"));
+    assert!(headers.contains_key("retry-after"));
+    let body = body.expect("rate limited response");
+    assert_eq!(body["message"], "rate limit exceeded");
+    assert_eq!(body["code"], 42900);
+}
+
+#[tokio::test]
 async fn guild_discovery_requires_bot_space_membership() {
     let harness = CompatHarness::new();
     let owner = harness

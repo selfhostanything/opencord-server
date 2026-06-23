@@ -2,7 +2,7 @@
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
-use axum::http::{Method, Request, StatusCode, header};
+use axum::http::{HeaderMap, Method, Request, StatusCode, header};
 use futures_util::{SinkExt, StreamExt};
 use opencord_server::config::AppConfig;
 use opencord_server::routes::api_router_with_state;
@@ -78,6 +78,17 @@ impl CompatHarness {
         body: Value,
     ) -> (StatusCode, Option<Value>) {
         self.send(bot_request(method, uri, token, body)).await
+    }
+
+    pub async fn bot_json_with_headers(
+        &self,
+        method: Method,
+        uri: &str,
+        token: &str,
+        body: Value,
+    ) -> (StatusCode, HeaderMap, Option<Value>) {
+        self.send_with_headers(bot_request(method, uri, token, body))
+            .await
     }
 
     pub async fn register(&self, email: &str) -> TestUser {
@@ -254,18 +265,28 @@ impl CompatHarness {
     }
 
     async fn send(&self, request: Request<Body>) -> (StatusCode, Option<Value>) {
+        let (status, _, body) = self.send_with_headers(request).await;
+        (status, body)
+    }
+
+    async fn send_with_headers(
+        &self,
+        request: Request<Body>,
+    ) -> (StatusCode, HeaderMap, Option<Value>) {
         let response = self.app.clone().oneshot(request).await.unwrap();
         let status = response.status();
+        let headers = response.headers().clone();
         let bytes = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("read response body");
 
         if bytes.is_empty() {
-            return (status, None);
+            return (status, headers, None);
         }
 
         (
             status,
+            headers,
             Some(serde_json::from_slice(&bytes).expect("response should be json")),
         )
     }

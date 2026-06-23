@@ -172,6 +172,8 @@ paths:
                 $ref: "#/components/schemas/CompatUser"
         "401":
           description: Missing or invalid bot token
+        "429":
+          $ref: "#/components/responses/CompatRateLimited"
   /api/compat/discord/v10/guilds/{space_id}:
     get:
       summary: Get a Discord-compatible guild
@@ -198,6 +200,8 @@ paths:
           description: Missing or invalid bot token
         "404":
           description: Space not found for this bot
+        "429":
+          $ref: "#/components/responses/CompatRateLimited"
   /api/compat/discord/v10/guilds/{space_id}/channels:
     get:
       summary: List Discord-compatible guild channels
@@ -227,6 +231,8 @@ paths:
           description: Missing or invalid bot token
         "404":
           description: Space not found for this bot
+        "429":
+          $ref: "#/components/responses/CompatRateLimited"
   /api/compat/discord/v10/guilds/{space_id}/roles:
     get:
       summary: List Discord-compatible guild roles
@@ -255,6 +261,8 @@ paths:
           description: Missing or invalid bot token
         "404":
           description: Space not found for this bot
+        "429":
+          $ref: "#/components/responses/CompatRateLimited"
   /api/compat/discord/v10/channels/{channel_id}/messages:
     post:
       summary: Create a Discord-compatible channel message
@@ -292,6 +300,8 @@ paths:
           description: Missing SEND_MESSAGES permission
         "404":
           description: Channel or parent space not found for this bot
+        "429":
+          $ref: "#/components/responses/CompatRateLimited"
     get:
       summary: List Discord-compatible channel messages
       security:
@@ -318,6 +328,8 @@ paths:
           description: Missing VIEW_CHANNEL permission
         "404":
           description: Channel or parent space not found for this bot
+        "429":
+          $ref: "#/components/responses/CompatRateLimited"
   /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}:
     patch:
       summary: Edit a Discord-compatible channel message
@@ -357,6 +369,8 @@ paths:
           description: Missing SEND_MESSAGES or MANAGE_MESSAGES permission
         "404":
           description: Channel, message, or parent space not found for this bot
+        "429":
+          $ref: "#/components/responses/CompatRateLimited"
     delete:
       summary: Delete a Discord-compatible channel message
       security:
@@ -383,6 +397,8 @@ paths:
           description: Missing SEND_MESSAGES or MANAGE_MESSAGES permission
         "404":
           description: Channel, message, or parent space not found for this bot
+        "429":
+          $ref: "#/components/responses/CompatRateLimited"
   /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands:
     post:
       summary: Register a Discord-compatible space command
@@ -424,6 +440,8 @@ paths:
           description: Missing or invalid bot token
         "404":
           description: Application or target space not found for this bot
+        "429":
+          $ref: "#/components/responses/CompatRateLimited"
   /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback:
     post:
       summary: Respond to a Discord-compatible interaction
@@ -2411,6 +2429,40 @@ paths:
         "404":
           description: Message or parent channel not found for this user
 components:
+  responses:
+    CompatRateLimited:
+      description: Compatibility REST bot bucket is exhausted.
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+        X-RateLimit-Bucket:
+          schema:
+            type: string
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until retry is allowed.
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - message
+              - code
+            properties:
+              message:
+                type: string
+                example: rate limit exceeded
+              code:
+                type: integer
+                example: 42900
   securitySchemes:
     bearerAuth:
       type: http

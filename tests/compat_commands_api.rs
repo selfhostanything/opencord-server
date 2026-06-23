@@ -211,6 +211,33 @@ async fn bot_registers_space_command_and_responds_to_interaction() {
         .unwrap();
 
     assert_eq!(created_command.status(), StatusCode::CREATED);
+    assert_eq!(
+        created_command
+            .headers()
+            .get("x-ratelimit-limit")
+            .expect("rate limit")
+            .to_str()
+            .unwrap(),
+        "10"
+    );
+    assert_eq!(
+        created_command
+            .headers()
+            .get("x-ratelimit-remaining")
+            .expect("rate limit remaining")
+            .to_str()
+            .unwrap(),
+        "9"
+    );
+    assert_eq!(
+        created_command
+            .headers()
+            .get("x-ratelimit-bucket")
+            .expect("rate limit bucket")
+            .to_str()
+            .unwrap(),
+        format!("compat-rest:bot:{application_id}")
+    );
     let command = response_json(created_command).await;
     let command_id = command["id"].as_str().unwrap();
     assert_eq!(

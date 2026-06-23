@@ -2,6 +2,10 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use uuid::Uuid;
+
+pub const COMPAT_REST_BOT_LIMIT: u32 = 10;
+pub const COMPAT_REST_BOT_WINDOW: Duration = Duration::from_secs(60);
 pub const PUBLIC_WEBHOOK_EXECUTION_LIMIT: u32 = 5;
 pub const PUBLIC_WEBHOOK_EXECUTION_WINDOW: Duration = Duration::from_secs(60);
 
@@ -40,6 +44,10 @@ impl FixedWindowRateLimiter {
             PUBLIC_WEBHOOK_EXECUTION_LIMIT,
             PUBLIC_WEBHOOK_EXECUTION_WINDOW,
         )
+    }
+
+    pub fn compat_rest_bot() -> Self {
+        Self::new(COMPAT_REST_BOT_LIMIT, COMPAT_REST_BOT_WINDOW)
     }
 
     pub fn check(&self, bucket: impl Into<String>) -> RateLimitDecision {
@@ -84,4 +92,8 @@ impl FixedWindowRateLimiter {
             reset_after_seconds,
         }
     }
+}
+
+pub fn compat_rest_bot_bucket(application_id: Uuid) -> String {
+    format!("compat-rest:bot:{application_id}")
 }

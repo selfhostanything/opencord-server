@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
 use uuid::Uuid;
@@ -15,6 +15,7 @@ use crate::domain::rate_limit::RateLimitDecision;
 use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::SpaceError;
 use crate::domain::webhook::{IncomingWebhook, WebhookError};
+use crate::http::rate_limit::rate_limit_headers;
 use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
 use crate::models::message::MessageResourceResponse;
@@ -279,35 +280,6 @@ impl IntoResponse for WebhookApiError {
 
 fn public_webhook_bucket(webhook_id: Uuid) -> String {
     format!("webhook:{webhook_id}")
-}
-
-fn rate_limit_headers(decision: &RateLimitDecision) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        "x-ratelimit-limit",
-        HeaderValue::from_str(&decision.limit.to_string()).expect("valid rate limit header"),
-    );
-    headers.insert(
-        "x-ratelimit-remaining",
-        HeaderValue::from_str(&decision.remaining.to_string()).expect("valid rate limit header"),
-    );
-    headers.insert(
-        "x-ratelimit-reset",
-        HeaderValue::from_str(&decision.reset_after_seconds.to_string())
-            .expect("valid rate limit header"),
-    );
-    headers.insert(
-        "x-ratelimit-bucket",
-        HeaderValue::from_str(&decision.bucket).expect("valid rate limit header"),
-    );
-    if !decision.allowed {
-        headers.insert(
-            header::RETRY_AFTER,
-            HeaderValue::from_str(&decision.reset_after_seconds.to_string())
-                .expect("valid retry-after header"),
-        );
-    }
-    headers
 }
 
 async fn manageable_text_channel(

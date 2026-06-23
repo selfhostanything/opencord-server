@@ -13,14 +13,17 @@ use crate::domain::command::{
 };
 use crate::domain::message::MessageError;
 use crate::domain::permission::{Permission, PermissionError};
+use crate::domain::rate_limit::{RateLimitDecision, compat_rest_bot_bucket};
 use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::SpaceError;
+use crate::http::rate_limit::rate_limit_headers;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
 use crate::models::command::{
     CommandInteractionCreatedResponse, CompatApplicationCommandResponse,
     CreateCommandInteractionRequest, CreateCompatApplicationCommandRequest,
     CreateInteractionCallbackRequest,
 };
+use crate::models::compat::CompatErrorResponse;
 use crate::state::AppState;
 
 pub async fn create_compat_space_command(
@@ -30,6 +33,7 @@ pub async fn create_compat_space_command(
     Json(request): Json<CreateCompatApplicationCommandRequest>,
 ) -> Result<impl IntoResponse, CommandApiError> {
     let bot = authenticate_bot(&state, &headers).await?;
+    let rate_limit = compat_rest_rate_limit(&state, &bot)?;
     if bot.application_id != application_id {
         return Err(CommandError::NotFound.into());
     }
@@ -53,6 +57,7 @@ pub async fn create_compat_space_command(
 
     Ok((
         StatusCode::CREATED,
+        rate_limit_headers(&rate_limit),
         Json(CompatApplicationCommandResponse::from(command)),
     ))
 }
@@ -168,6 +173,7 @@ pub enum CommandApiError {
     Permission(PermissionError),
     Command(CommandError),
     Message(MessageError),
+    RateLimited(RateLimitDecision),
 }
 
 impl From<AuthError> for CommandApiError {
@@ -214,6 +220,18 @@ impl From<MessageError> for CommandApiError {
 
 impl IntoResponse for CommandApiError {
     fn into_response(self) -> Response {
+        if let Self::RateLimited(decision) = self {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                rate_limit_headers(&decision),
+                Json(CompatErrorResponse {
+                    message: "rate limit exceeded",
+                    code: 42900,
+                }),
+            )
+                .into_response();
+        }
+
         let (status, code, message) = match self {
             Self::Auth(error) => (error.status_code(), error.code(), error.message()),
             Self::Bot(error) => (error.status_code(), error.code(), error.message()),
@@ -222,6 +240,7 @@ impl IntoResponse for CommandApiError {
             Self::Permission(error) => (error.status_code(), error.code(), error.message()),
             Self::Command(error) => (error.status_code(), error.code(), error.message()),
             Self::Message(error) => (error.status_code(), error.code(), error.message()),
+            Self::RateLimited(_) => unreachable!("rate limited responses are returned above"),
         };
 
         (
@@ -240,6 +259,20 @@ async fn authenticate_bot(
 ) -> Result<AuthenticatedBot, CommandApiError> {
     let token = bot_token(headers)?;
     Ok(state.bots.authenticate_token(token).await?)
+}
+
+fn compat_rest_rate_limit(
+    state: &AppState,
+    bot: &AuthenticatedBot,
+) -> Result<RateLimitDecision, CommandApiError> {
+    let decision = state
+        .compat_rest_rate_limits
+        .check(compat_rest_bot_bucket(bot.application_id));
+    if decision.allowed {
+        Ok(decision)
+    } else {
+        Err(CommandApiError::RateLimited(decision))
+    }
 }
 
 fn bot_token(headers: &HeaderMap) -> Result<&str, BotError> {
