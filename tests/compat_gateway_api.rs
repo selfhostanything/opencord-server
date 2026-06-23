@@ -2819,6 +2819,91 @@ async fn compat_gateway_rejects_unknown_resume_session() {
 }
 
 #[tokio::test]
+async fn compat_gateway_rejects_resume_with_invalid_sequence() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(
+        &app,
+        "compat-gateway-resume-invalid-sequence-owner@example.com",
+    )
+    .await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "resume-invalid-sequence").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+    assert_eq!(ready["s"], 1);
+    let session_id = ready["d"]["session_id"].as_str().unwrap().to_owned();
+
+    socket
+        .close(None)
+        .await
+        .expect("close first gateway socket");
+
+    let (mut resumed_socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect resumed compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut resumed_socket))
+        .await
+        .expect("resumed gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    resumed_socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 6,
+                "d": {
+                    "token": bot_token,
+                    "session_id": session_id,
+                    "seq": 99
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send invalid sequence resume");
+
+    let invalid_session = timeout(Duration::from_secs(2), next_json(&mut resumed_socket))
+        .await
+        .expect("invalid session event");
+    assert_eq!(invalid_session["op"], 9);
+    assert_eq!(invalid_session["d"], false);
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut resumed_socket))
+        .await
+        .expect("invalid sequence close frame");
+    assert_eq!(code, CloseCode::Library(4007));
+    assert_eq!(reason, "invalid sequence");
+}
+
+#[tokio::test]
 async fn compat_gateway_rejects_invalid_identify_token() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;

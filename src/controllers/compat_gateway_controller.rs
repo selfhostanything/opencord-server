@@ -12,6 +12,7 @@ use crate::domain::channel::Channel;
 use crate::domain::command::{
     INTERACTION_TYPE_APPLICATION_COMMAND, INTERACTION_TYPE_MESSAGE_COMPONENT,
 };
+use crate::domain::compat_gateway::CompatGatewayResumeResult;
 use crate::domain::ids;
 use crate::domain::permission::Permission;
 use crate::domain::realtime::RealtimeEvent;
@@ -31,6 +32,7 @@ const CLOSE_UNKNOWN_OPCODE: u16 = 4001;
 const CLOSE_DECODE_ERROR: u16 = 4002;
 const CLOSE_AUTHENTICATION_FAILED: u16 = 4004;
 const CLOSE_ALREADY_AUTHENTICATED: u16 = 4005;
+const CLOSE_INVALID_SEQUENCE: u16 = 4007;
 const CLOSE_RATE_LIMITED: u16 = 4008;
 const CLOSE_SESSION_TIMED_OUT: u16 = 4009;
 const GATEWAY_CLIENT_FRAME_LIMIT: u32 = 5;
@@ -481,15 +483,27 @@ async fn resume_bot(
         return false;
     };
 
-    let Some(session) = state.compat_gateway_sessions.resume(
+    let session = match state.compat_gateway_sessions.resume(
         &payload.session_id,
         &bot,
         payload.seq.unwrap_or_default(),
-    ) else {
-        let _ =
-            send_invalid_session_and_close(socket, CLOSE_SESSION_TIMED_OUT, "session timed out")
-                .await;
-        return false;
+    ) {
+        CompatGatewayResumeResult::Resumed(session) => session,
+        CompatGatewayResumeResult::InvalidSequence => {
+            let _ =
+                send_invalid_session_and_close(socket, CLOSE_INVALID_SEQUENCE, "invalid sequence")
+                    .await;
+            return false;
+        }
+        CompatGatewayResumeResult::NotFound => {
+            let _ = send_invalid_session_and_close(
+                socket,
+                CLOSE_SESSION_TIMED_OUT,
+                "session timed out",
+            )
+            .await;
+            return false;
+        }
     };
 
     *sequence = session.sequence + 1;

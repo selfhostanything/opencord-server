@@ -20,6 +20,13 @@ pub struct CompatGatewaySessions {
     sessions: Mutex<HashMap<String, CompatGatewaySession>>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompatGatewayResumeResult {
+    Resumed(CompatGatewaySession),
+    InvalidSequence,
+    NotFound,
+}
+
 impl CompatGatewaySessions {
     pub fn create(
         &self,
@@ -59,20 +66,25 @@ impl CompatGatewaySessions {
         session_id: &str,
         bot: &AuthenticatedBot,
         client_sequence: i64,
-    ) -> Option<CompatGatewaySession> {
+    ) -> CompatGatewayResumeResult {
         let mut sessions = self
             .sessions
             .lock()
             .expect("compat gateway sessions mutex poisoned");
-        let session = sessions.get_mut(session_id)?;
+        let Some(session) = sessions.get_mut(session_id) else {
+            return CompatGatewayResumeResult::NotFound;
+        };
         if session.application_id != bot.application_id
             || session.organization_id != bot.organization_id
             || session.bot_user_id != bot.bot_user_id
         {
-            return None;
+            return CompatGatewayResumeResult::NotFound;
+        }
+        if client_sequence > session.sequence {
+            return CompatGatewayResumeResult::InvalidSequence;
         }
 
         session.sequence = session.sequence.max(client_sequence);
-        Some(session.clone())
+        CompatGatewayResumeResult::Resumed(session.clone())
     }
 }
