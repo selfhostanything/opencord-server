@@ -82,6 +82,19 @@ pub fn api_router_with_state(state: AppState) -> Router {
             get(usage_controller::get),
         )
         .route(
+            "/organizations/{organization_id}/custom-domains",
+            post(organization_controller::create_custom_domain)
+                .get(organization_controller::list_custom_domains),
+        )
+        .route(
+            "/organizations/{organization_id}/custom-domains/{custom_domain_id}/verify",
+            post(organization_controller::verify_custom_domain),
+        )
+        .route(
+            "/custom-domains/resolve",
+            get(organization_controller::resolve_custom_domain),
+        )
+        .route(
             "/organizations/{organization_id}/spaces",
             post(space_controller::create).get(space_controller::list),
         )

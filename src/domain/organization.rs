@@ -23,6 +23,35 @@ pub struct StoredOrganizationMember {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StoredCustomDomain {
+    pub id: Uuid,
+    pub organization_id: Uuid,
+    pub hostname: String,
+    pub verification_token: String,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CustomDomain {
+    pub id: Uuid,
+    pub organization_id: Uuid,
+    pub hostname: String,
+    pub verification_token: String,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CustomDomainTenant {
+    pub organization_id: Uuid,
+    pub slug: String,
+    pub name: String,
+    pub plan: String,
+    pub deployment_mode: String,
+    pub primary_region: String,
+    pub hostname: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrganizationMembership {
     pub id: Uuid,
     pub slug: String,
@@ -43,6 +72,7 @@ pub struct TenantProvision {
 pub enum OrganizationError {
     InvalidInput(&'static str),
     SlugAlreadyExists,
+    CustomDomainAlreadyExists,
     NotFound,
     StoreUnavailable,
 }
@@ -52,6 +82,7 @@ impl OrganizationError {
         match self {
             Self::InvalidInput(_) => StatusCode::BAD_REQUEST,
             Self::SlugAlreadyExists => StatusCode::CONFLICT,
+            Self::CustomDomainAlreadyExists => StatusCode::CONFLICT,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::StoreUnavailable => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -61,6 +92,7 @@ impl OrganizationError {
         match self {
             Self::InvalidInput(_) => "invalid_request",
             Self::SlugAlreadyExists => "organization_slug_already_exists",
+            Self::CustomDomainAlreadyExists => "custom_domain_already_exists",
             Self::NotFound => "organization_not_found",
             Self::StoreUnavailable => "store_unavailable",
         }
@@ -70,6 +102,7 @@ impl OrganizationError {
         match self {
             Self::InvalidInput(message) => message,
             Self::SlugAlreadyExists => "organization slug already exists",
+            Self::CustomDomainAlreadyExists => "custom domain already exists",
             Self::NotFound => "organization was not found",
             Self::StoreUnavailable => "organization store is unavailable",
         }
@@ -110,6 +143,28 @@ pub trait OrganizationStore: Send + Sync {
         &self,
         member: StoredOrganizationMember,
     ) -> Result<(), OrganizationError>;
+
+    async fn create_custom_domain(
+        &self,
+        custom_domain: StoredCustomDomain,
+    ) -> Result<(), OrganizationError>;
+
+    async fn list_custom_domains(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<Vec<CustomDomain>, OrganizationError>;
+
+    async fn verify_custom_domain(
+        &self,
+        organization_id: Uuid,
+        custom_domain_id: Uuid,
+        verification_token: String,
+    ) -> Result<CustomDomain, OrganizationError>;
+
+    async fn resolve_custom_domain(
+        &self,
+        hostname: String,
+    ) -> Result<Option<CustomDomainTenant>, OrganizationError>;
 }
 
 #[derive(Clone)]
@@ -226,6 +281,87 @@ impl OrganizationService {
             })
             .await
     }
+
+    pub async fn create_custom_domain(
+        &self,
+        user_id: Uuid,
+        organization_id: Uuid,
+        hostname: String,
+    ) -> Result<CustomDomain, OrganizationError> {
+        self.get_for_user(user_id, organization_id).await?;
+
+        let hostname = normalize_hostname(hostname)?;
+        let custom_domain = StoredCustomDomain {
+            id: ids::new_uuid_v7(),
+            organization_id,
+            hostname,
+            verification_token: format!("opc-domain-{}", ids::new_uuid_v7().simple()),
+            status: "pending_verification".to_owned(),
+        };
+
+        self.store
+            .create_custom_domain(custom_domain.clone())
+            .await?;
+
+        Ok(CustomDomain::from(custom_domain))
+    }
+
+    pub async fn list_custom_domains(
+        &self,
+        user_id: Uuid,
+        organization_id: Uuid,
+    ) -> Result<Vec<CustomDomain>, OrganizationError> {
+        self.get_for_user(user_id, organization_id).await?;
+        self.store.list_custom_domains(organization_id).await
+    }
+
+    pub async fn verify_custom_domain(
+        &self,
+        user_id: Uuid,
+        organization_id: Uuid,
+        custom_domain_id: Uuid,
+        verification_token: String,
+    ) -> Result<CustomDomain, OrganizationError> {
+        self.get_for_user(user_id, organization_id).await?;
+
+        let verification_token = verification_token.trim();
+        if verification_token.is_empty() {
+            return Err(OrganizationError::InvalidInput(
+                "custom domain verification_token is required",
+            ));
+        }
+
+        self.store
+            .verify_custom_domain(
+                organization_id,
+                custom_domain_id,
+                verification_token.to_owned(),
+            )
+            .await
+    }
+
+    pub async fn resolve_custom_domain(
+        &self,
+        host_header: String,
+    ) -> Result<CustomDomainTenant, OrganizationError> {
+        let hostname = normalize_host_header(host_header)?;
+        self.store
+            .resolve_custom_domain(hostname)
+            .await?
+            .ok_or(OrganizationError::NotFound)
+    }
+}
+
+impl From<StoredCustomDomain> for CustomDomain {
+    fn from(custom_domain: StoredCustomDomain) -> Self {
+        Self {
+            id: custom_domain.id,
+            organization_id: custom_domain.organization_id,
+            hostname: custom_domain.hostname,
+            verification_token: custom_domain.verification_token,
+            status: custom_domain.status,
+        }
+    }
 }
 
 fn normalize_name(name: String) -> Result<String, OrganizationError> {
@@ -304,6 +440,58 @@ fn normalize_region(region: String) -> Result<String, OrganizationError> {
     } else {
         Err(OrganizationError::InvalidInput(
             "tenant primary_region must be 2 to 64 lowercase letters, numbers, or hyphens",
+        ))
+    }
+}
+
+fn normalize_host_header(host_header: String) -> Result<String, OrganizationError> {
+    let host = host_header.trim();
+    if host.is_empty() {
+        return Err(OrganizationError::InvalidInput("host header is required"));
+    }
+
+    if let Some(host_without_port) = host
+        .strip_prefix('[')
+        .and_then(|rest| rest.split(']').next())
+    {
+        return normalize_hostname(host_without_port.to_owned());
+    }
+
+    let hostname = host
+        .rsplit_once(':')
+        .filter(|(_, port)| {
+            !port.is_empty() && port.chars().all(|character| character.is_ascii_digit())
+        })
+        .map(|(hostname, _)| hostname)
+        .unwrap_or(host);
+
+    normalize_hostname(hostname.to_owned())
+}
+
+fn normalize_hostname(hostname: String) -> Result<String, OrganizationError> {
+    let hostname = hostname.trim().trim_end_matches('.').to_ascii_lowercase();
+
+    if hostname.len() > 253 || !hostname.contains('.') {
+        return Err(OrganizationError::InvalidInput(
+            "custom domain hostname must be a valid fully qualified hostname",
+        ));
+    }
+
+    let valid = hostname.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    });
+
+    if valid {
+        Ok(hostname)
+    } else {
+        Err(OrganizationError::InvalidInput(
+            "custom domain hostname must be a valid fully qualified hostname",
         ))
     }
 }

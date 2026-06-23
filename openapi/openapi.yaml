@@ -477,6 +477,124 @@ paths:
           description: Missing or invalid bearer session
         "404":
           description: Organization not found for this user
+  /organizations/{organization_id}/custom-domains:
+    post:
+      summary: Create a custom domain mapping for an organization
+      description: >
+        Creates a pending custom domain mapping and returns a verification token.
+        The hostname is normalized to lowercase without a trailing dot.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomDomainRequest"
+      responses:
+        "201":
+          description: Created custom domain mapping
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomDomainResponse"
+        "400":
+          description: Invalid hostname
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Organization not found for this user
+        "409":
+          description: Hostname already belongs to a custom domain mapping
+    get:
+      summary: List custom domains for an organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Custom domains for the organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomDomainListResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Organization not found for this user
+  /organizations/{organization_id}/custom-domains/{custom_domain_id}/verify:
+    post:
+      summary: Verify and activate a custom domain mapping
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: custom_domain_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyCustomDomainRequest"
+      responses:
+        "200":
+          description: Activated custom domain mapping
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomDomainResponse"
+        "400":
+          description: Invalid verification token
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Organization or custom domain not found
+  /custom-domains/resolve:
+    get:
+      summary: Resolve the request Host header to an active tenant
+      description: >
+        Public routing endpoint used by ingress and cloud routing checks. Only
+        active custom domains resolve.
+      parameters:
+        - name: Host
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tenant metadata for the active custom domain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomDomainResolveResponse"
+        "400":
+          description: Missing or invalid Host header
+        "404":
+          description: No active tenant found for this host
   /organizations/{organization_id}/spaces:
     post:
       summary: Create a space inside an organization
@@ -1628,6 +1746,102 @@ components:
       properties:
         tenant:
           $ref: "#/components/schemas/Tenant"
+    CreateCustomDomainRequest:
+      type: object
+      required:
+        - hostname
+      properties:
+        hostname:
+          type: string
+          example: team.example.com
+    VerifyCustomDomainRequest:
+      type: object
+      required:
+        - verification_token
+      properties:
+        verification_token:
+          type: string
+    CustomDomain:
+      type: object
+      required:
+        - id
+        - organization_id
+        - hostname
+        - verification_token
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        hostname:
+          type: string
+        verification_token:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending_verification
+            - active
+    CustomDomainResponse:
+      type: object
+      required:
+        - custom_domain
+      properties:
+        custom_domain:
+          $ref: "#/components/schemas/CustomDomain"
+    CustomDomainListResponse:
+      type: object
+      required:
+        - custom_domains
+      properties:
+        custom_domains:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomDomain"
+    CustomDomainTenant:
+      type: object
+      required:
+        - organization_id
+        - slug
+        - name
+        - plan
+        - deployment_mode
+        - primary_region
+        - hostname
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        plan:
+          type: string
+          enum:
+            - free
+            - team
+            - business
+            - enterprise
+        deployment_mode:
+          type: string
+          enum:
+            - self_hosted
+            - cloud
+        primary_region:
+          type: string
+        hostname:
+          type: string
+    CustomDomainResolveResponse:
+      type: object
+      required:
+        - tenant
+      properties:
+        tenant:
+          $ref: "#/components/schemas/CustomDomainTenant"
     BillingProviderEventRequest:
       type: object
       required:

@@ -103,6 +103,10 @@ POST /organizations
 GET /organizations
 GET /organizations/{organization_id}
 GET /organizations/{organization_id}/usage
+POST /organizations/{organization_id}/custom-domains
+GET /organizations/{organization_id}/custom-domains
+POST /organizations/{organization_id}/custom-domains/{custom_domain_id}/verify
+GET /custom-domains/resolve
 POST /organizations/{organization_id}/spaces
 GET /organizations/{organization_id}/spaces
 POST /organizations/{organization_id}/meetings
@@ -147,6 +151,12 @@ store transaction while setting the initial `plan`, `deployment_mode`, and
 `GET /organizations/{organization_id}/usage` exposes billing/admin usage
 counters for visible organizations, including active users, stored attachment
 bytes, and connected calendar accounts for active members.
+
+`POST /organizations/{organization_id}/custom-domains` creates a pending custom
+domain mapping for the organization and returns a verification token. After
+`POST /organizations/{organization_id}/custom-domains/{custom_domain_id}/verify`
+activates the mapping, `GET /custom-domains/resolve` maps the request `Host`
+header to tenant metadata for ingress and cloud routing.
 
 ## Billing
 

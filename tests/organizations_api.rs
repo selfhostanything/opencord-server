@@ -274,6 +274,153 @@ async fn organization_usage_shows_active_users_storage_and_calendar_accounts() {
 }
 
 #[tokio::test]
+async fn custom_domain_can_be_created_verified_and_resolved_by_host() {
+    let app = test_app();
+    let (token, _) = register_user(&app, "domain-owner@example.com").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            "/cloud/tenants",
+            &token,
+            json!({
+                "name": "Domain Cloud",
+                "plan": "business",
+                "deployment_mode": "cloud",
+                "primary_region": "vultr-sgp"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let tenant = response_json(created).await["tenant"].clone();
+    let organization_id = tenant["organization_id"].as_str().unwrap().to_owned();
+
+    let custom_domain = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/custom-domains"),
+            &token,
+            json!({ "hostname": "Team.Example.Com." }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(custom_domain.status(), StatusCode::CREATED);
+    let body = response_json(custom_domain).await;
+    let domain = &body["custom_domain"];
+    let domain_id = domain["id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        uuid::Uuid::parse_str(&domain_id).unwrap().get_version_num(),
+        7
+    );
+    assert_eq!(domain["organization_id"], organization_id);
+    assert_eq!(domain["hostname"], "team.example.com");
+    assert_eq!(domain["status"], "pending_verification");
+    let verification_token = domain["verification_token"].as_str().unwrap().to_owned();
+    assert!(verification_token.starts_with("opc-domain-"));
+
+    let unresolved = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/custom-domains/resolve")
+                .header(header::HOST, "team.example.com:443")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unresolved.status(), StatusCode::NOT_FOUND);
+
+    let bad_token = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/custom-domains/{domain_id}/verify"),
+            &token,
+            json!({ "verification_token": "opc-domain-wrong" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(bad_token.status(), StatusCode::BAD_REQUEST);
+
+    let missing_domain_id = opencord_server::domain::ids::new_uuid_v7();
+    let missing_domain = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/custom-domains/{missing_domain_id}/verify"),
+            &token,
+            json!({ "verification_token": "opc-domain-missing" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(missing_domain.status(), StatusCode::NOT_FOUND);
+
+    let verified = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/custom-domains/{domain_id}/verify"),
+            &token,
+            json!({ "verification_token": verification_token }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(verified.status(), StatusCode::OK);
+    let body = response_json(verified).await;
+    assert_eq!(body["custom_domain"]["status"], "active");
+
+    let listed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/custom-domains"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert_eq!(body["custom_domains"].as_array().unwrap().len(), 1);
+    assert_eq!(body["custom_domains"][0]["hostname"], "team.example.com");
+    assert_eq!(body["custom_domains"][0]["status"], "active");
+
+    let resolved = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/custom-domains/resolve")
+                .header(header::HOST, "team.example.com:443")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resolved.status(), StatusCode::OK);
+    let body = response_json(resolved).await;
+    assert_eq!(body["tenant"]["organization_id"], organization_id);
+    assert_eq!(body["tenant"]["slug"], "domain-cloud");
+    assert_eq!(body["tenant"]["hostname"], "team.example.com");
+
+    let duplicate = app
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/custom-domains"),
+            &token,
+            json!({ "hostname": "team.example.com" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(duplicate.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
 async fn organization_endpoints_require_bearer_auth() {
     let app = test_app();
 
