@@ -20,6 +20,14 @@ pub struct ConnectMicrosoftCalendarRequest {
     pub refresh_token: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ConnectCaldavCalendarRequest {
+    pub server_url: String,
+    pub username: String,
+    pub password: String,
+    pub calendar_id: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct CalendarAccountResponse {
     pub id: String,
@@ -83,6 +91,20 @@ impl From<ConnectMicrosoftCalendarRequest> for ConnectCalendarAccount {
             calendar_id: request.calendar_id.unwrap_or_else(|| "primary".to_owned()),
             access_token: request.access_token,
             refresh_token: request.refresh_token,
+        }
+    }
+}
+
+impl From<ConnectCaldavCalendarRequest> for ConnectCalendarAccount {
+    fn from(request: ConnectCaldavCalendarRequest) -> Self {
+        let server_url = request.server_url.trim().trim_end_matches('/');
+        let username = request.username.trim();
+
+        Self {
+            external_account_id: format!("{username}@{server_url}"),
+            calendar_id: request.calendar_id.unwrap_or_else(|| "primary".to_owned()),
+            access_token: request.password,
+            refresh_token: None,
         }
     }
 }

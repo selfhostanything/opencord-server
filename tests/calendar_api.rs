@@ -361,3 +361,120 @@ async fn microsoft_calendar_sync_requires_connected_account() {
         "microsoft calendar account is not connected"
     );
 }
+
+#[tokio::test]
+async fn caldav_calendar_connected_user_can_create_and_update_provider_event() {
+    let app = test_app();
+    let token = register(&app, "calendar-caldav-owner@example.com").await;
+    let organization_id = create_organization(&app, &token, "CalDAV Calendar Parent").await;
+    let meeting_id = create_meeting(&app, &token, &organization_id).await;
+
+    let connected = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            "/calendar/accounts/caldav",
+            &token,
+            json!({
+                "server_url": "https://caldav.example.com/dav",
+                "username": "ada",
+                "password": "caldav-password-secret",
+                "calendar_id": "personal"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(connected.status(), StatusCode::CREATED);
+    let body = response_json(connected).await;
+    assert_eq!(body["account"]["provider"], "caldav");
+    assert_eq!(
+        body["account"]["external_account_id"],
+        "ada@https://caldav.example.com/dav"
+    );
+    assert_eq!(body["account"]["calendar_id"], "personal");
+    assert!(body["account"].get("password").is_none());
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/meetings/{meeting_id}/calendar/caldav/sync"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::OK);
+    let body = response_json(created).await;
+    assert_eq!(body["calendar_event"]["provider"], "caldav");
+    assert_eq!(body["calendar_event"]["operation"], "created");
+    assert_eq!(body["calendar_event"]["meeting_id"], meeting_id);
+    assert_eq!(body["calendar_event"]["calendar_id"], "personal");
+    assert_eq!(body["calendar_event"]["status"], "synced");
+    let provider_event_id = body["calendar_event"]["provider_event_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(provider_event_id.starts_with("caldav-"));
+
+    let updated_meeting = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::PATCH,
+            &format!("/meetings/{meeting_id}"),
+            &token,
+            json!({
+                "title": "CalDAV Sync Review Updated",
+                "ends_at": "2026-06-24T10:00:00Z"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(updated_meeting.status(), StatusCode::OK);
+
+    let updated = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/meetings/{meeting_id}/calendar/caldav/sync"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), StatusCode::OK);
+    let raw_body = response_text(updated).await;
+    assert!(!raw_body.contains("caldav-password-secret"));
+    let body: Value =
+        serde_json::from_str(&raw_body).expect("calendar sync response should be json");
+    assert_eq!(body["calendar_event"]["operation"], "updated");
+    assert_eq!(
+        body["calendar_event"]["provider_event_id"],
+        provider_event_id
+    );
+    assert_eq!(body["calendar_event"]["status"], "synced");
+}
+
+#[tokio::test]
+async fn caldav_calendar_sync_requires_connected_account() {
+    let app = test_app();
+    let token = register(&app, "calendar-caldav-missing@example.com").await;
+    let organization_id = create_organization(&app, &token, "CalDAV Missing Parent").await;
+    let meeting_id = create_meeting(&app, &token, &organization_id).await;
+
+    let response = app
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/meetings/{meeting_id}/calendar/caldav/sync"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(response).await["error"]["message"],
+        "caldav calendar account is not connected"
+    );
+}

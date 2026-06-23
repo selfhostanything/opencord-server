@@ -9,7 +9,7 @@ use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
 use crate::models::calendar::{
     CalendarAccountListResponse, CalendarAccountResourceResponse, CalendarAccountResponse,
-    ConnectGoogleCalendarRequest, ConnectMicrosoftCalendarRequest,
+    ConnectCaldavCalendarRequest, ConnectGoogleCalendarRequest, ConnectMicrosoftCalendarRequest,
 };
 use crate::state::AppState;
 
@@ -43,6 +43,26 @@ pub async fn connect_microsoft(
     let account = state
         .calendar_sync
         .connect_microsoft_account(user.id, request.into())
+        .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(CalendarAccountResourceResponse {
+            account: account.into(),
+        }),
+    ))
+}
+
+pub async fn connect_caldav(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ConnectCaldavCalendarRequest>,
+) -> Result<impl IntoResponse, CalendarApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let account = state
+        .calendar_sync
+        .connect_caldav_account(user.id, request.into())
         .await?;
 
     Ok((

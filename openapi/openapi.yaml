@@ -156,6 +156,31 @@ paths:
                 $ref: "#/components/schemas/CalendarAccountListResponse"
         "401":
           description: Missing or invalid bearer session
+  /calendar/accounts/caldav:
+    post:
+      summary: Connect or update the current user's CalDAV calendar account
+      description: >
+        Stores write-only CalDAV password material for future provider calls and
+        returns redacted account metadata.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectCaldavCalendarRequest"
+      responses:
+        "201":
+          description: Connected CalDAV calendar account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarAccountResourceResponse"
+        "400":
+          description: Invalid CalDAV account payload
+        "401":
+          description: Missing or invalid bearer session
   /calendar/accounts/google:
     post:
       summary: Connect or update the current user's Google Calendar account
@@ -605,6 +630,37 @@ paths:
                 $ref: "#/components/schemas/CalendarEventResourceResponse"
         "400":
           description: Google Calendar account is not connected
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Current user cannot manage this meeting
+        "404":
+          description: Meeting not found for this user
+  /meetings/{meeting_id}/calendar/caldav/sync:
+    post:
+      summary: Create or update a CalDAV calendar event for one meeting
+      description: >
+        Requires a connected CalDAV calendar account and meeting management
+        access. The operation is idempotent for the current user, meeting, and
+        provider account.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: meeting_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Provider calendar event sync metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarEventResourceResponse"
+        "400":
+          description: CalDAV calendar account is not connected
         "401":
           description: Missing or invalid bearer session
         "403":
@@ -1745,6 +1801,28 @@ components:
           type: string
           writeOnly: true
           minLength: 8
+    ConnectCaldavCalendarRequest:
+      type: object
+      required:
+        - server_url
+        - username
+        - password
+      properties:
+        server_url:
+          type: string
+          format: uri
+          maxLength: 256
+        username:
+          type: string
+          maxLength: 256
+        password:
+          type: string
+          writeOnly: true
+          minLength: 8
+        calendar_id:
+          type: string
+          default: primary
+          maxLength: 256
         refresh_token:
           type:
             - string
@@ -1773,6 +1851,7 @@ components:
         provider:
           type: string
           enum:
+            - caldav
             - google
             - microsoft
         external_account_id:
@@ -1832,6 +1911,7 @@ components:
         provider:
           type: string
           enum:
+            - caldav
             - google
             - microsoft
         provider_event_id:

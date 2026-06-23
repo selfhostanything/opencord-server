@@ -42,6 +42,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             post(calendar_controller::connect_google),
         )
         .route(
+            "/calendar/accounts/caldav",
+            post(calendar_controller::connect_caldav),
+        )
+        .route(
             "/calendar/accounts/microsoft",
             post(calendar_controller::connect_microsoft),
         )
@@ -86,6 +90,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/meetings/{meeting_id}/calendar/google/sync",
             post(meeting_controller::sync_google_calendar),
+        )
+        .route(
+            "/meetings/{meeting_id}/calendar/caldav/sync",
+            post(meeting_controller::sync_caldav_calendar),
         )
         .route(
             "/meetings/{meeting_id}/calendar/microsoft/sync",

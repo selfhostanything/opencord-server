@@ -184,11 +184,36 @@ impl CalendarProviderAdapter for LocalMicrosoftCalendarAdapter {
     }
 }
 
+#[derive(Default)]
+pub struct LocalCaldavCalendarAdapter;
+
+#[async_trait::async_trait]
+impl CalendarProviderAdapter for LocalCaldavCalendarAdapter {
+    async fn upsert_event(
+        &self,
+        _account: &ConnectedCalendarAccount,
+        meeting: &MeetingBundle,
+        public_url: &str,
+        existing: Option<&CalendarEventSync>,
+    ) -> Result<ProviderEventUpsert, CalendarSyncError> {
+        let provider_event_id = existing
+            .map(|event| event.provider_event_id.clone())
+            .unwrap_or_else(|| format!("caldav-{}", ids::new_uuid_v7().simple()));
+        let _meeting_url = meeting_join_url(public_url, &meeting.meeting.join_slug);
+
+        Ok(ProviderEventUpsert {
+            provider_event_id,
+            provider_event_url: None,
+        })
+    }
+}
+
 #[derive(Clone)]
 pub struct CalendarSyncService {
     store: std::sync::Arc<dyn CalendarStore>,
     google: std::sync::Arc<dyn CalendarProviderAdapter>,
     microsoft: std::sync::Arc<dyn CalendarProviderAdapter>,
+    caldav: std::sync::Arc<dyn CalendarProviderAdapter>,
 }
 
 impl CalendarSyncService {
@@ -196,11 +221,13 @@ impl CalendarSyncService {
         store: std::sync::Arc<dyn CalendarStore>,
         google: std::sync::Arc<dyn CalendarProviderAdapter>,
         microsoft: std::sync::Arc<dyn CalendarProviderAdapter>,
+        caldav: std::sync::Arc<dyn CalendarProviderAdapter>,
     ) -> Self {
         Self {
             store,
             google,
             microsoft,
+            caldav,
         }
     }
 
@@ -230,6 +257,21 @@ impl CalendarSyncService {
             "microsoft",
             "microsoft external_account_id is required",
             "microsoft calendar_id is required",
+        )
+        .await
+    }
+
+    pub async fn connect_caldav_account(
+        &self,
+        user_id: Uuid,
+        input: ConnectCalendarAccount,
+    ) -> Result<ConnectedCalendarAccount, CalendarSyncError> {
+        self.connect_provider_account(
+            user_id,
+            input,
+            "caldav",
+            "caldav external_account_id is required",
+            "caldav calendar_id is required",
         )
         .await
     }
@@ -301,6 +343,23 @@ impl CalendarSyncService {
             "microsoft",
             self.microsoft.as_ref(),
             "microsoft calendar account is not connected",
+        )
+        .await
+    }
+
+    pub async fn sync_caldav_meeting(
+        &self,
+        user_id: Uuid,
+        meeting: MeetingBundle,
+        public_url: &str,
+    ) -> Result<CalendarEventSyncResult, CalendarSyncError> {
+        self.sync_provider_meeting(
+            user_id,
+            meeting,
+            public_url,
+            "caldav",
+            self.caldav.as_ref(),
+            "caldav calendar account is not connected",
         )
         .await
     }
