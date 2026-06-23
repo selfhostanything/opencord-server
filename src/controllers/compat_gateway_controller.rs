@@ -35,11 +35,13 @@ const CLOSE_ALREADY_AUTHENTICATED: u16 = 4005;
 const CLOSE_INVALID_SEQUENCE: u16 = 4007;
 const CLOSE_RATE_LIMITED: u16 = 4008;
 const CLOSE_SESSION_TIMED_OUT: u16 = 4009;
+const CLOSE_INVALID_INTENTS: u16 = 4013;
 const GATEWAY_CLIENT_FRAME_LIMIT: u32 = 5;
 const GATEWAY_CLIENT_FRAME_WINDOW: Duration = Duration::from_secs(1);
 const INTENT_GUILDS: u64 = 1 << 0;
 const INTENT_GUILD_MEMBERS: u64 = 1 << 1;
 const INTENT_GUILD_MESSAGES: u64 = 1 << 9;
+const SUPPORTED_GATEWAY_INTENTS: u64 = INTENT_GUILDS | INTENT_GUILD_MEMBERS | INTENT_GUILD_MESSAGES;
 
 #[derive(Debug, Deserialize)]
 struct GatewayMessage {
@@ -399,6 +401,13 @@ async fn identify_bot(
         return true;
     };
 
+    let intents = payload.intents.unwrap_or_default();
+    if intents & !SUPPORTED_GATEWAY_INTENTS != 0 {
+        let _ =
+            send_invalid_session_and_close(socket, CLOSE_INVALID_INTENTS, "invalid intents").await;
+        return false;
+    }
+
     let Ok(bot) = state.bots.authenticate_token(&payload.token).await else {
         let _ = send_invalid_session_and_close(
             socket,
@@ -422,7 +431,6 @@ async fn identify_bot(
         .collect::<Vec<_>>();
 
     *sequence += 1;
-    let intents = payload.intents.unwrap_or_default();
     let session_id = format!("gw_{}", ids::new_uuid_v7());
     let ready = json!({
         "v": 10,

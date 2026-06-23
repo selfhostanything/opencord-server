@@ -2945,6 +2945,50 @@ async fn compat_gateway_rejects_invalid_identify_token() {
 }
 
 #[tokio::test]
+async fn compat_gateway_rejects_identify_with_invalid_intents() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-invalid-intents-owner@example.com").await;
+    let (organization_id, _, _) =
+        create_space_with_channel(&app, &owner_token, "invalid-intents").await;
+    let (bot_token, _) = create_bot(&app, &owner_token, &organization_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 1073741824,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify with invalid intents");
+    let invalid_session = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("invalid session event");
+    assert_eq!(invalid_session["op"], 9);
+    assert_eq!(invalid_session["d"], false);
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut socket))
+        .await
+        .expect("invalid intents close frame");
+    assert_eq!(code, CloseCode::Library(4013));
+    assert_eq!(reason, "invalid intents");
+}
+
+#[tokio::test]
 async fn compat_gateway_closes_second_identify_with_already_authenticated() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;
