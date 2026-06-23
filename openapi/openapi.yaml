@@ -524,11 +524,12 @@ paths:
           description: Interaction has already been responded to
   /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}:
     post:
-      summary: Create a follow-up message for a deferred interaction
+      summary: Create an interaction follow-up message
       description: >
-        Creates the first bot-authored follow-up message for an interaction that
-        was previously acknowledged with callback type `5`. This first subset
-        accepts one follow-up per deferred interaction token.
+        Creates a bot-authored follow-up message for an interaction that was
+        previously acknowledged with callback type `4` or `5`. For deferred
+        interactions, the first follow-up becomes the stored original response;
+        later follow-ups remain addressable by message ID.
       parameters:
         - name: application_id
           in: path
@@ -561,7 +562,7 @@ paths:
         "404":
           description: Interaction application or channel not found
         "409":
-          description: Interaction is not deferred or has already received its first follow-up
+          description: Interaction has not been acknowledged yet
   /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original:
     patch:
       summary: Edit the original interaction response
@@ -625,6 +626,81 @@ paths:
           description: Missing or invalid interaction token
         "404":
           description: Original interaction response was not found
+  /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/{message_id}:
+    patch:
+      summary: Edit a non-original interaction follow-up
+      description: >
+        Edits a bot-authored follow-up message created by the same interaction
+        token. The original response is intentionally excluded from this route
+        and must be edited through `messages/@original`.
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: interaction_token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchInteractionOriginalResponseRequest"
+      responses:
+        "200":
+          description: Follow-up message edited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompatMessage"
+        "400":
+          description: Invalid edit payload
+        "401":
+          description: Missing or invalid interaction token
+        "404":
+          description: Follow-up message was not found or is the original response
+    delete:
+      summary: Delete a non-original interaction follow-up
+      description: >
+        Soft-deletes a bot-authored follow-up message created by the same
+        interaction token. The original response is intentionally excluded from
+        this route and must be deleted through `messages/@original`.
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: interaction_token
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: message_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Follow-up message deleted
+        "401":
+          description: Missing or invalid interaction token
+        "404":
+          description: Follow-up message was not found or is the original response
   /api/compat/discord/gateway:
     get:
       summary: Discord-compatible gateway websocket

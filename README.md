@@ -99,6 +99,9 @@ POST /api/compat/discord/v10/applications/{application_id}/commands
 POST /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback
 POST /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}
 PATCH /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original
+DELETE /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original
+PATCH /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/{message_id}
+DELETE /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/{message_id}
 GET /api/compat/discord/gateway
 POST /auth/register
 POST /auth/login
@@ -495,12 +498,16 @@ message component interaction for a clicked persisted `custom_id` and dispatches
 Discord-shaped `INTERACTION_CREATE` type `3`. Bots respond through
 `POST /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback`
 with callback type `4` to post a bot-authored channel message, or callback type
-`5` to defer the response and then post one follow-up message through
+`5` to defer the response and then post follow-up messages through
 `POST /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}`.
 Original interaction responses can be edited through
 `PATCH /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original`
 and deleted through
 `DELETE /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original`.
+Non-original follow-up messages can be edited or deleted through
+`PATCH /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/{message_id}`
+and
+`DELETE /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/{message_id}`.
 
 ## License
 

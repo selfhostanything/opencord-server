@@ -229,6 +229,60 @@ impl CommandStore for PostgresCommandStore {
             .transpose()?
             .ok_or(CommandError::AlreadyResponded)
     }
+
+    async fn record_interaction_followup_message(
+        &self,
+        interaction_id: Uuid,
+        message_id: Uuid,
+    ) -> Result<(), CommandError> {
+        self.db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO interaction_followup_messages (interaction_id, message_id)
+                VALUES ($1::uuid, $2::uuid)
+                ON CONFLICT (message_id) DO NOTHING
+                "#,
+                vec![
+                    Value::from(interaction_id.to_string()),
+                    Value::from(message_id.to_string()),
+                ],
+            ))
+            .await
+            .map_err(|_| CommandError::StoreUnavailable)?;
+
+        Ok(())
+    }
+
+    async fn interaction_has_followup_message(
+        &self,
+        interaction_id: Uuid,
+        message_id: Uuid,
+    ) -> Result<bool, CommandError> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM interaction_followup_messages
+                    WHERE interaction_id = $1::uuid
+                      AND message_id = $2::uuid
+                ) AS exists
+                "#,
+                vec![
+                    Value::from(interaction_id.to_string()),
+                    Value::from(message_id.to_string()),
+                ],
+            ))
+            .await
+            .map_err(|_| CommandError::StoreUnavailable)?;
+
+        row.ok_or(CommandError::StoreUnavailable)?
+            .try_get::<bool>("", "exists")
+            .map_err(|_| CommandError::StoreUnavailable)
+    }
 }
 
 fn application_command_select_sql(where_clause: &str) -> String {

@@ -326,6 +326,10 @@ pub async fn create_interaction_followup(
         )
         .await?;
     let response_message_id = message.id;
+    state
+        .commands
+        .record_interaction_followup_message(interaction.id, response_message_id)
+        .await?;
     let response = interaction_followup_response(message.clone(), &application);
     state.realtime.publish(RealtimeEvent::channel(
         "message.created",
@@ -336,10 +340,12 @@ pub async fn create_interaction_followup(
             "message": message_response(message, Vec::new(), &state.config.public_url)
         }),
     ));
-    state
-        .commands
-        .mark_interaction_responded(interaction.id, Some(response_message_id))
-        .await?;
+    if interaction.status == "deferred" && interaction.response_message_id.is_none() {
+        state
+            .commands
+            .mark_interaction_responded(interaction.id, Some(response_message_id))
+            .await?;
+    }
 
     Ok((StatusCode::OK, Json(response)))
 }
@@ -423,6 +429,67 @@ pub async fn delete_original_interaction_response(
     Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn update_interaction_followup_response(
+    State(state): State<AppState>,
+    Path((application_id, interaction_token, message_id)): Path<(Uuid, String, Uuid)>,
+    Json(request): Json<PatchInteractionOriginalResponseRequest>,
+) -> Result<impl IntoResponse, CommandApiError> {
+    let interaction = state
+        .commands
+        .interaction_for_followup(application_id, &interaction_token)
+        .await?;
+    let application = state
+        .bots
+        .application_for_organization(interaction.application_id, interaction.organization_id)
+        .await?;
+    let message =
+        interaction_followup_message(&state, &interaction, &application, message_id).await?;
+
+    let message = state.messages.update(message, request.content).await?;
+    let response = interaction_followup_response(message.clone(), &application);
+    state.realtime.publish(RealtimeEvent::channel(
+        "message.updated",
+        interaction.organization_id,
+        interaction.space_id,
+        interaction.channel_id,
+        serde_json::json!({
+            "message": message_response(message, Vec::new(), &state.config.public_url)
+        }),
+    ));
+    Ok((StatusCode::OK, Json(response)))
+}
+
+pub async fn delete_interaction_followup_response(
+    State(state): State<AppState>,
+    Path((application_id, interaction_token, message_id)): Path<(Uuid, String, Uuid)>,
+) -> Result<StatusCode, CommandApiError> {
+    let interaction = state
+        .commands
+        .interaction_for_followup(application_id, &interaction_token)
+        .await?;
+    let application = state
+        .bots
+        .application_for_organization(interaction.application_id, interaction.organization_id)
+        .await?;
+    let message =
+        interaction_followup_message(&state, &interaction, &application, message_id).await?;
+
+    state.messages.delete(message).await?;
+    state.realtime.publish(RealtimeEvent::channel(
+        "message.deleted",
+        interaction.organization_id,
+        interaction.space_id,
+        interaction.channel_id,
+        serde_json::json!({
+            "id": message_id.to_string(),
+            "channel_id": interaction.channel_id.to_string(),
+            "guild_id": interaction.space_id.to_string()
+        }),
+    ));
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 fn interaction_followup_response(
     message: Message,
     application: &BotApplication,
@@ -450,6 +517,36 @@ fn interaction_followup_response(
         pinned: false,
         kind: 0,
     }
+}
+
+async fn interaction_followup_message(
+    state: &AppState,
+    interaction: &crate::domain::command::CommandInteraction,
+    application: &BotApplication,
+    message_id: Uuid,
+) -> Result<Message, CommandApiError> {
+    if interaction.response_message_id == Some(message_id) {
+        return Err(CommandError::NotFound.into());
+    }
+
+    if !state
+        .commands
+        .interaction_has_followup_message(interaction.id, message_id)
+        .await?
+    {
+        return Err(CommandError::NotFound.into());
+    }
+
+    let message = state.messages.get(message_id).await?;
+    if message.organization_id != interaction.organization_id
+        || message.space_id != Some(interaction.space_id)
+        || message.channel_id != interaction.channel_id
+        || message.author_user_id != application.bot_user_id
+    {
+        return Err(CommandError::NotFound.into());
+    }
+
+    Ok(message)
 }
 
 fn component_type_for_custom_id(

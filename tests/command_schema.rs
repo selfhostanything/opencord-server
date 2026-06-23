@@ -60,6 +60,31 @@ fn global_application_commands_migration_adds_global_scope() {
 }
 
 #[test]
+fn interaction_followup_messages_migration_tracks_followup_ownership() {
+    let migration = repo_file("src/db/migrations/m20260623081000_interaction_followup_messages.rs");
+
+    for expected in [
+        "CREATE TABLE IF NOT EXISTS interaction_followup_messages",
+        "interaction_id uuid NOT NULL REFERENCES command_interactions(id) ON DELETE CASCADE",
+        "message_id uuid NOT NULL REFERENCES messages(id) ON DELETE CASCADE",
+        "PRIMARY KEY (interaction_id, message_id)",
+        "CONSTRAINT interaction_followup_messages_unique_message UNIQUE (message_id)",
+        "CREATE INDEX IF NOT EXISTS idx_interaction_followup_messages_interaction",
+    ] {
+        assert!(
+            migration.contains(expected),
+            "interaction follow-up migration should contain {expected}"
+        );
+    }
+
+    let migrator = repo_file("src/db/migrations/mod.rs");
+    assert!(migrator.contains("mod m20260623081000_interaction_followup_messages;"));
+    assert!(
+        migrator.contains("Box::new(m20260623081000_interaction_followup_messages::Migration)")
+    );
+}
+
+#[test]
 fn component_interactions_migration_extends_interaction_schema() {
     let migration = repo_file("src/db/migrations/m20260623065000_component_interactions.rs");
 

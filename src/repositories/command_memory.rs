@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use uuid::Uuid;
@@ -14,6 +14,7 @@ pub struct MemoryCommandStore {
 struct MemoryCommandState {
     commands: HashMap<Uuid, ApplicationCommand>,
     interactions: HashMap<Uuid, CommandInteraction>,
+    interaction_followup_messages: HashSet<(Uuid, Uuid)>,
 }
 
 #[async_trait::async_trait]
@@ -134,5 +135,38 @@ impl CommandStore for MemoryCommandStore {
         }
         interaction.responded_at = Some(responded_at);
         Ok(interaction.clone())
+    }
+
+    async fn record_interaction_followup_message(
+        &self,
+        interaction_id: Uuid,
+        message_id: Uuid,
+    ) -> Result<(), CommandError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| CommandError::StoreUnavailable)?;
+        if !state.interactions.contains_key(&interaction_id) {
+            return Err(CommandError::NotFound);
+        }
+
+        state
+            .interaction_followup_messages
+            .insert((interaction_id, message_id));
+        Ok(())
+    }
+
+    async fn interaction_has_followup_message(
+        &self,
+        interaction_id: Uuid,
+        message_id: Uuid,
+    ) -> Result<bool, CommandError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| CommandError::StoreUnavailable)?;
+        Ok(state
+            .interaction_followup_messages
+            .contains(&(interaction_id, message_id)))
     }
 }

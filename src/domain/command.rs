@@ -162,6 +162,16 @@ pub trait CommandStore: Send + Sync {
         response_message_id: Option<Uuid>,
         responded_at: String,
     ) -> Result<CommandInteraction, CommandError>;
+    async fn record_interaction_followup_message(
+        &self,
+        interaction_id: Uuid,
+        message_id: Uuid,
+    ) -> Result<(), CommandError>;
+    async fn interaction_has_followup_message(
+        &self,
+        interaction_id: Uuid,
+        message_id: Uuid,
+    ) -> Result<bool, CommandError>;
 }
 
 #[derive(Clone)]
@@ -335,7 +345,7 @@ impl CommandService {
             return Err(CommandError::Unauthorized);
         }
 
-        if interaction.status != "deferred" {
+        if interaction.status != "deferred" && interaction.status != "responded" {
             return Err(CommandError::AlreadyResponded);
         }
 
@@ -391,6 +401,26 @@ impl CommandService {
                 response_message_id,
                 Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             )
+            .await
+    }
+
+    pub async fn record_interaction_followup_message(
+        &self,
+        interaction_id: Uuid,
+        message_id: Uuid,
+    ) -> Result<(), CommandError> {
+        self.store
+            .record_interaction_followup_message(interaction_id, message_id)
+            .await
+    }
+
+    pub async fn interaction_has_followup_message(
+        &self,
+        interaction_id: Uuid,
+        message_id: Uuid,
+    ) -> Result<bool, CommandError> {
+        self.store
+            .interaction_has_followup_message(interaction_id, message_id)
             .await
     }
 }

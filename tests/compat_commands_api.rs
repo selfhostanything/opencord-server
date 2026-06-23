@@ -557,7 +557,7 @@ async fn command_registration_requires_matching_bot_application_and_space_member
 }
 
 #[tokio::test]
-async fn bot_defers_interaction_and_sends_followup_message() {
+async fn bot_defers_interaction_and_sends_multiple_followup_messages() {
     let app = test_app();
     let (owner_token, _) = register(&app, "command-deferred-owner@example.com").await;
     let (organization_id, space_id, channel_id) =
@@ -649,7 +649,12 @@ async fn bot_defers_interaction_and_sends_followup_message() {
         ))
         .await
         .unwrap();
-    assert_eq!(second_followup.status(), StatusCode::CONFLICT);
+    assert_eq!(second_followup.status(), StatusCode::OK);
+    let second_followup = response_json(second_followup).await;
+    assert_eq!(second_followup["content"], "Report is ready again");
+    assert_eq!(second_followup["author"]["id"], bot_user_id);
+    assert_eq!(second_followup["author"]["bot"], true);
+    assert_ne!(second_followup["id"], followup["id"]);
 
     let messages = app
         .clone()
@@ -663,9 +668,228 @@ async fn bot_defers_interaction_and_sends_followup_message() {
         .unwrap();
     assert_eq!(messages.status(), StatusCode::OK);
     let messages = response_json(messages).await;
-    assert_eq!(messages.as_array().unwrap().len(), 1);
-    assert_eq!(messages[0]["content"], "Report is ready");
+    let messages = messages.as_array().unwrap();
+    assert_eq!(messages.len(), 2);
+    let contents = messages
+        .iter()
+        .map(|message| message["content"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(contents, vec!["Report is ready", "Report is ready again"]);
+    assert!(
+        messages
+            .iter()
+            .all(|message| message["author"]["id"] == bot_user_id)
+    );
+}
+
+#[tokio::test]
+async fn bot_edits_and_deletes_non_original_followup_message() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "command-followup-edit-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token).await;
+    let (application_id, bot_token, bot_user_id) =
+        create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let created_command = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!(
+                "/api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands"
+            ),
+            &bot_token,
+            json!({
+                "name": "details",
+                "description": "Generate details",
+                "type": 1
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created_command.status(), StatusCode::CREATED);
+    let command_id = response_json(created_command).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let interaction = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/command-interactions"),
+            &owner_token,
+            json!({
+                "command_id": command_id,
+                "options": []
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(interaction.status(), StatusCode::CREATED);
+    let interaction = response_json(interaction).await["interaction"].clone();
+    let interaction_id = interaction["id"].as_str().unwrap();
+    let interaction_token = interaction["token"].as_str().unwrap();
+
+    let deferred = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!(
+                "/api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback"
+            ),
+            json!({
+                "type": 5
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deferred.status(), StatusCode::NO_CONTENT);
+
+    let original_followup = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}"),
+            json!({
+                "content": "Original report"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(original_followup.status(), StatusCode::OK);
+    let original_followup = response_json(original_followup).await;
+    let original_message_id = original_followup["id"].as_str().unwrap().to_owned();
+
+    let followup = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}"),
+            json!({
+                "content": "Draft details"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(followup.status(), StatusCode::OK);
+    let followup = response_json(followup).await;
+    let followup_message_id = followup["id"].as_str().unwrap().to_owned();
+    assert_ne!(followup_message_id, original_message_id);
+
+    let edited = app
+        .clone()
+        .oneshot(json_request(
+            Method::PATCH,
+            &format!(
+                "/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/{followup_message_id}"
+            ),
+            json!({
+                "content": "Final details"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(edited.status(), StatusCode::OK);
+    let edited = response_json(edited).await;
+    assert_eq!(edited["id"], followup_message_id);
+    assert_eq!(edited["content"], "Final details");
+    assert_eq!(edited["author"]["id"], bot_user_id);
+    assert_eq!(edited["author"]["bot"], true);
+    assert!(edited["edited_timestamp"].as_str().is_some());
+
+    let original_via_followup_route = app
+        .clone()
+        .oneshot(json_request(
+            Method::PATCH,
+            &format!(
+                "/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/{original_message_id}"
+            ),
+            json!({
+                "content": "Should use @original"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(original_via_followup_route.status(), StatusCode::NOT_FOUND);
+
+    let unrelated_message = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({
+                "content": "Unrelated bot message"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(unrelated_message.status(), StatusCode::OK);
+    let unrelated_message = response_json(unrelated_message).await;
+    let unrelated_message_id = unrelated_message["id"].as_str().unwrap();
+
+    let unrelated_via_followup_route = app
+        .clone()
+        .oneshot(json_request(
+            Method::PATCH,
+            &format!(
+                "/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/{unrelated_message_id}"
+            ),
+            json!({
+                "content": "Should not edit unrelated bot messages"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(unrelated_via_followup_route.status(), StatusCode::NOT_FOUND);
+
+    let deleted = app
+        .clone()
+        .oneshot(json_request(
+            Method::DELETE,
+            &format!(
+                "/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/{followup_message_id}"
+            ),
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let duplicate_delete = app
+        .clone()
+        .oneshot(json_request(
+            Method::DELETE,
+            &format!(
+                "/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/{followup_message_id}"
+            ),
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(duplicate_delete.status(), StatusCode::NOT_FOUND);
+
+    let messages = app
+        .clone()
+        .oneshot(bot_request(
+            Method::GET,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(messages.status(), StatusCode::OK);
+    let messages = response_json(messages).await;
+    let messages = messages.as_array().unwrap();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["id"], original_message_id);
+    assert_eq!(messages[0]["content"], "Original report");
     assert_eq!(messages[0]["author"]["id"], bot_user_id);
+    assert_eq!(messages[1]["id"], unrelated_message["id"]);
+    assert_eq!(messages[1]["content"], "Unrelated bot message");
 }
 
 #[tokio::test]
