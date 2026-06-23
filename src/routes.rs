@@ -31,6 +31,8 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route("/api/capabilities", get(discovery_controller::capabilities))
         .route("/auth/register", post(auth_controller::register))
         .route("/auth/login", post(auth_controller::login))
+        .route("/auth/oidc/providers", get(auth_controller::oidc_providers))
+        .route("/auth/oidc/callback", post(auth_controller::oidc_callback))
         .route("/auth/logout", post(auth_controller::logout))
         .route("/me", get(auth_controller::me))
         .route(
@@ -80,6 +82,11 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/organizations/{organization_id}/usage",
             get(usage_controller::get),
+        )
+        .route(
+            "/organizations/{organization_id}/oidc",
+            get(organization_controller::get_oidc_provider)
+                .put(organization_controller::configure_oidc_provider),
         )
         .route(
             "/organizations/{organization_id}/custom-domains",

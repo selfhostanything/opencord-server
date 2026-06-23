@@ -87,6 +87,8 @@ GET /api/version
 GET /api/capabilities
 POST /auth/register
 POST /auth/login
+GET /auth/oidc/providers
+POST /auth/oidc/callback
 POST /auth/logout
 GET /me
 POST /billing/provider-events
@@ -103,6 +105,8 @@ POST /organizations
 GET /organizations
 GET /organizations/{organization_id}
 GET /organizations/{organization_id}/usage
+GET /organizations/{organization_id}/oidc
+PUT /organizations/{organization_id}/oidc
 POST /organizations/{organization_id}/custom-domains
 GET /organizations/{organization_id}/custom-domains
 POST /organizations/{organization_id}/custom-domains/{custom_domain_id}/verify
@@ -140,6 +144,24 @@ Auth endpoints use bearer session tokens:
 ```text
 Authorization: Bearer <session token>
 ```
+
+## Enterprise OIDC
+
+`PUT /organizations/{organization_id}/oidc` lets an organization owner/admin
+configure an OIDC provider with issuer, endpoints, client credentials, allowed
+email domains, SSO enforcement, and auto-join role. Responses never include the
+stored client secret.
+
+`GET /auth/oidc/providers?email=member@example.com` returns matching providers
+for the email domain so clients can show the correct SSO option. When
+`require_sso` is enabled for a matching domain, password registration/login is
+blocked with `sso_required`.
+
+`POST /auth/oidc/callback` accepts a validated provider assertion, creates or
+reuses the local user, links the OIDC identity, creates a bearer session, and
+auto-joins the configured organization. The current local assertion signature is
+a testable development boundary; production OIDC code/JWKS exchange remains a
+future hardening step.
 
 ## Cloud Tenants
 

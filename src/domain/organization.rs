@@ -73,6 +73,7 @@ pub enum OrganizationError {
     InvalidInput(&'static str),
     SlugAlreadyExists,
     CustomDomainAlreadyExists,
+    Forbidden,
     NotFound,
     StoreUnavailable,
 }
@@ -83,6 +84,7 @@ impl OrganizationError {
             Self::InvalidInput(_) => StatusCode::BAD_REQUEST,
             Self::SlugAlreadyExists => StatusCode::CONFLICT,
             Self::CustomDomainAlreadyExists => StatusCode::CONFLICT,
+            Self::Forbidden => StatusCode::FORBIDDEN,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::StoreUnavailable => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -93,6 +95,7 @@ impl OrganizationError {
             Self::InvalidInput(_) => "invalid_request",
             Self::SlugAlreadyExists => "organization_slug_already_exists",
             Self::CustomDomainAlreadyExists => "custom_domain_already_exists",
+            Self::Forbidden => "forbidden",
             Self::NotFound => "organization_not_found",
             Self::StoreUnavailable => "store_unavailable",
         }
@@ -103,6 +106,7 @@ impl OrganizationError {
             Self::InvalidInput(message) => message,
             Self::SlugAlreadyExists => "organization slug already exists",
             Self::CustomDomainAlreadyExists => "custom domain already exists",
+            Self::Forbidden => "organization admin permission is required",
             Self::NotFound => "organization was not found",
             Self::StoreUnavailable => "organization store is unavailable",
         }
@@ -264,6 +268,19 @@ impl OrganizationService {
             .get_for_user(user_id, organization_id)
             .await?
             .ok_or(OrganizationError::NotFound)
+    }
+
+    pub async fn require_admin(
+        &self,
+        user_id: Uuid,
+        organization_id: Uuid,
+    ) -> Result<OrganizationMembership, OrganizationError> {
+        let membership = self.get_for_user(user_id, organization_id).await?;
+        if membership.role == "owner" || membership.role == "admin" {
+            Ok(membership)
+        } else {
+            Err(OrganizationError::Forbidden)
+        }
     }
 
     pub async fn add_member_if_missing(

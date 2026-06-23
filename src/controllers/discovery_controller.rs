@@ -39,6 +39,7 @@ pub async fn capabilities() -> Json<CapabilitiesResponse> {
             "media_control",
             "voice_join",
             "custom_domains",
+            "oidc",
         ],
     })
 }

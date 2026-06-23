@@ -7,7 +7,10 @@ use uuid::Uuid;
 use crate::domain::auth::AuthError;
 use crate::domain::organization::{OrganizationError, OrganizationMembership};
 use crate::http::session::bearer_token;
-use crate::models::auth::{ErrorDetail, ErrorResponse};
+use crate::models::auth::{
+    ConfigureOidcProviderRequest, ErrorDetail, ErrorResponse, OidcProviderEnvelope,
+    OidcProviderResponse,
+};
 use crate::models::organization::{
     CreateCustomDomainRequest, CreateOrganizationRequest, CustomDomainEnvelope,
     CustomDomainListResponse, CustomDomainResolveResponse, CustomDomainResponse,
@@ -84,6 +87,61 @@ pub async fn get(
         .await?;
 
     Ok(Json(OrganizationMembershipResponse::from(organization)))
+}
+
+pub async fn configure_oidc_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization_id): Path<Uuid>,
+    Json(request): Json<ConfigureOidcProviderRequest>,
+) -> Result<Json<OidcProviderEnvelope>, OrganizationApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    state
+        .organizations
+        .require_admin(user.id, organization_id)
+        .await?;
+    let provider = state
+        .auth
+        .configure_oidc_provider(crate::domain::auth::ConfigureOidcProviderInput {
+            organization_id,
+            issuer: request.issuer,
+            authorization_endpoint: request.authorization_endpoint,
+            token_endpoint: request.token_endpoint,
+            jwks_uri: request.jwks_uri,
+            client_id: request.client_id,
+            client_secret: request.client_secret,
+            allowed_domains: request.allowed_domains,
+            require_sso: request.require_sso,
+            auto_join_role: request.auto_join_role,
+        })
+        .await?;
+
+    Ok(Json(OidcProviderEnvelope {
+        provider: OidcProviderResponse::from(provider),
+    }))
+}
+
+pub async fn get_oidc_provider(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization_id): Path<Uuid>,
+) -> Result<Json<OidcProviderEnvelope>, OrganizationApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    state
+        .organizations
+        .require_admin(user.id, organization_id)
+        .await?;
+    let provider = state
+        .auth
+        .oidc_provider_for_organization(organization_id)
+        .await?
+        .ok_or(OrganizationError::NotFound)?;
+
+    Ok(Json(OidcProviderEnvelope {
+        provider: OidcProviderResponse::from(provider),
+    }))
 }
 
 pub async fn create_custom_domain(

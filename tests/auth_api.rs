@@ -1,8 +1,10 @@
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
+use hmac::{Hmac, KeyInit, Mac};
 use opencord_server::config::AppConfig;
 use opencord_server::routes::api_router;
 use serde_json::{Value, json};
+use sha2::Sha256;
 use tower::ServiceExt;
 
 fn test_app() -> axum::Router {
@@ -36,6 +38,18 @@ fn bearer_json_request(method: Method, uri: &str, token: &str, body: Value) -> R
         .header(header::AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::from(body.to_string()))
         .unwrap()
+}
+
+fn oidc_signature(
+    secret: &str,
+    issuer: &str,
+    subject: &str,
+    email: &str,
+    email_verified: bool,
+) -> String {
+    let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+    mac.update(format!("{issuer}\n{subject}\n{email}\n{email_verified}").as_bytes());
+    hex::encode(mac.finalize().into_bytes())
 }
 
 #[tokio::test]
@@ -185,4 +199,173 @@ async fn login_logout_and_session_check_enforce_bearer_token() {
         .await
         .unwrap();
     assert_eq!(me_after_logout.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn oidc_login_can_be_required_for_an_organization_domain() {
+    let app = test_app();
+    let owner = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/auth/register",
+            json!({
+                "email": "owner@company.example",
+                "display_name": "Owner",
+                "password": "correct horse battery staple"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(owner.status(), StatusCode::CREATED);
+    let owner_body = response_json(owner).await;
+    let owner_token = owner_body["session"]["token"].as_str().unwrap().to_owned();
+
+    let tenant = app
+        .clone()
+        .oneshot(bearer_json_request(
+            Method::POST,
+            "/cloud/tenants",
+            &owner_token,
+            json!({
+                "name": "Company Cloud",
+                "plan": "enterprise",
+                "deployment_mode": "cloud",
+                "primary_region": "vultr-sgp"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(tenant.status(), StatusCode::CREATED);
+    let organization_id = response_json(tenant).await["tenant"]["organization_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let issuer = "https://idp.company.example";
+    let client_secret = "super-secret-oidc";
+    let configured = app
+        .clone()
+        .oneshot(bearer_json_request(
+            Method::PUT,
+            &format!("/organizations/{organization_id}/oidc"),
+            &owner_token,
+            json!({
+                "issuer": issuer,
+                "authorization_endpoint": "https://idp.company.example/oauth2/authorize",
+                "token_endpoint": "https://idp.company.example/oauth2/token",
+                "jwks_uri": "https://idp.company.example/oauth2/jwks",
+                "client_id": "opencord",
+                "client_secret": client_secret,
+                "allowed_domains": ["company.example"],
+                "require_sso": true,
+                "auto_join_role": "member"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(configured.status(), StatusCode::OK);
+    let body = response_json(configured).await;
+    assert_eq!(body["provider"]["organization_id"], organization_id);
+    assert_eq!(body["provider"]["issuer"], issuer);
+    assert_eq!(body["provider"]["require_sso"], true);
+    assert!(body["provider"].get("client_secret").is_none());
+
+    let providers = app
+        .clone()
+        .oneshot(json_request(
+            Method::GET,
+            "/auth/oidc/providers?email=member@company.example",
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(providers.status(), StatusCode::OK);
+    let body = response_json(providers).await;
+    assert_eq!(body["providers"].as_array().unwrap().len(), 1);
+    assert_eq!(body["providers"][0]["organization_id"], organization_id);
+    assert_eq!(body["providers"][0]["require_sso"], true);
+
+    let password_registration = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/auth/register",
+            json!({
+                "email": "member@company.example",
+                "display_name": "Member",
+                "password": "correct horse battery staple"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(password_registration.status(), StatusCode::FORBIDDEN);
+    let body = response_json(password_registration).await;
+    assert_eq!(body["error"]["code"], "sso_required");
+
+    let subject = "company-idp-user-1";
+    let signature = oidc_signature(
+        client_secret,
+        issuer,
+        subject,
+        "member@company.example",
+        true,
+    );
+    let oidc_login = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/auth/oidc/callback",
+            json!({
+                "issuer": issuer,
+                "subject": subject,
+                "email": "Member@Company.Example",
+                "display_name": "Member User",
+                "email_verified": true,
+                "signature": signature
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(oidc_login.status(), StatusCode::OK);
+    let body = response_json(oidc_login).await;
+    let member_id = body["user"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        uuid::Uuid::parse_str(&member_id).unwrap().get_version_num(),
+        7
+    );
+    assert_eq!(body["user"]["email"], "member@company.example");
+    let member_token = body["session"]["token"].as_str().unwrap().to_owned();
+
+    let organizations = app
+        .clone()
+        .oneshot(bearer_json_request(
+            Method::GET,
+            "/organizations",
+            &member_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(organizations.status(), StatusCode::OK);
+    let body = response_json(organizations).await;
+    assert_eq!(body["organizations"][0]["id"], organization_id);
+    assert_eq!(body["organizations"][0]["role"], "member");
+
+    let bad_signature = app
+        .oneshot(json_request(
+            Method::POST,
+            "/auth/oidc/callback",
+            json!({
+                "issuer": issuer,
+                "subject": "company-idp-user-2",
+                "email": "other@company.example",
+                "display_name": "Other User",
+                "email_verified": true,
+                "signature": "bad-signature"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(bad_signature.status(), StatusCode::UNAUTHORIZED);
 }

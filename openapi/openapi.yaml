@@ -100,6 +100,8 @@ paths:
                 $ref: "#/components/schemas/AuthResponse"
         "409":
           description: Email already registered
+        "403":
+          description: SSO required for this email domain
   /auth/login:
     post:
       summary: Login with email and password
@@ -118,6 +120,45 @@ paths:
                 $ref: "#/components/schemas/AuthResponse"
         "401":
           description: Invalid credentials
+        "403":
+          description: SSO required for this email domain
+  /auth/oidc/providers:
+    get:
+      summary: List OIDC providers matching an email domain
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema:
+            type: string
+            format: email
+      responses:
+        "200":
+          description: Matching OIDC providers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcProvidersResponse"
+        "400":
+          description: Invalid email
+  /auth/oidc/callback:
+    post:
+      summary: Complete OIDC login with a validated provider assertion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OidcCallbackRequest"
+      responses:
+        "200":
+          description: Authenticated user and session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid provider assertion
   /auth/logout:
     post:
       summary: Revoke the current bearer session
@@ -475,6 +516,63 @@ paths:
                 $ref: "#/components/schemas/UsageResourceResponse"
         "401":
           description: Missing or invalid bearer session
+        "404":
+          description: Organization not found for this user
+  /organizations/{organization_id}/oidc:
+    get:
+      summary: Return OIDC provider settings for an organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Sanitized OIDC provider settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcProviderEnvelope"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization or OIDC provider not found
+    put:
+      summary: Configure OIDC provider settings for an organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigureOidcProviderRequest"
+      responses:
+        "200":
+          description: Sanitized OIDC provider settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OidcProviderEnvelope"
+        "400":
+          description: Invalid OIDC provider settings
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
         "404":
           description: Organization not found for this user
   /organizations/{organization_id}/custom-domains:
@@ -1403,6 +1501,125 @@ components:
           $ref: "#/components/schemas/User"
         session:
           $ref: "#/components/schemas/Session"
+    ConfigureOidcProviderRequest:
+      type: object
+      required:
+        - issuer
+        - authorization_endpoint
+        - token_endpoint
+        - jwks_uri
+        - client_id
+        - client_secret
+        - allowed_domains
+        - require_sso
+        - auto_join_role
+      properties:
+        issuer:
+          type: string
+          format: uri
+        authorization_endpoint:
+          type: string
+          format: uri
+        token_endpoint:
+          type: string
+          format: uri
+        jwks_uri:
+          type: string
+          format: uri
+        client_id:
+          type: string
+        client_secret:
+          type: string
+          minLength: 8
+        allowed_domains:
+          type: array
+          items:
+            type: string
+        require_sso:
+          type: boolean
+        auto_join_role:
+          type: string
+          enum:
+            - member
+            - admin
+    OidcCallbackRequest:
+      type: object
+      required:
+        - issuer
+        - subject
+        - email
+        - display_name
+        - email_verified
+        - signature
+      properties:
+        issuer:
+          type: string
+          format: uri
+        subject:
+          type: string
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        email_verified:
+          type: boolean
+        signature:
+          type: string
+    OidcProvider:
+      type: object
+      required:
+        - organization_id
+        - issuer
+        - authorization_endpoint
+        - token_endpoint
+        - jwks_uri
+        - client_id
+        - allowed_domains
+        - require_sso
+        - auto_join_role
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        issuer:
+          type: string
+          format: uri
+        authorization_endpoint:
+          type: string
+          format: uri
+        token_endpoint:
+          type: string
+          format: uri
+        jwks_uri:
+          type: string
+          format: uri
+        client_id:
+          type: string
+        allowed_domains:
+          type: array
+          items:
+            type: string
+        require_sso:
+          type: boolean
+        auto_join_role:
+          type: string
+    OidcProvidersResponse:
+      type: object
+      required:
+        - providers
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/OidcProvider"
+    OidcProviderEnvelope:
+      type: object
+      required:
+        - provider
+      properties:
+        provider:
+          $ref: "#/components/schemas/OidcProvider"
     MeResponse:
       type: object
       required:

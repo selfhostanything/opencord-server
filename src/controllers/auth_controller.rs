@@ -1,11 +1,13 @@
+use axum::Json;
+use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::{Json, extract::State};
 
-use crate::domain::auth::{AuthError, AuthUser};
+use crate::domain::auth::{AuthError, AuthUser, OidcProvider};
 use crate::http::session::bearer_token;
 use crate::models::auth::{
-    AuthResponse, ErrorDetail, ErrorResponse, LoginRequest, MeResponse, RegisterRequest,
+    AuthResponse, ErrorDetail, ErrorResponse, LoginRequest, MeResponse, OidcCallbackRequest,
+    OidcProviderResponse, OidcProvidersQuery, OidcProvidersResponse, RegisterRequest,
     SessionResponse, UserResponse,
 };
 use crate::state::AppState;
@@ -29,6 +31,48 @@ pub async fn login(
     let result = state.auth.login(request.email, request.password).await?;
 
     Ok(Json(AuthResponse::from(result)))
+}
+
+pub async fn oidc_providers(
+    State(state): State<AppState>,
+    Query(query): Query<OidcProvidersQuery>,
+) -> Result<Json<OidcProvidersResponse>, AuthApiError> {
+    let providers = state.auth.oidc_providers_for_email(query.email).await?;
+
+    Ok(Json(OidcProvidersResponse {
+        providers: providers
+            .into_iter()
+            .map(OidcProviderResponse::from)
+            .collect(),
+    }))
+}
+
+pub async fn oidc_callback(
+    State(state): State<AppState>,
+    Json(request): Json<OidcCallbackRequest>,
+) -> Result<Json<AuthResponse>, AuthApiError> {
+    let result = state
+        .auth
+        .oidc_login(crate::domain::auth::OidcProviderAssertion {
+            issuer: request.issuer,
+            subject: request.subject,
+            email: request.email,
+            display_name: request.display_name,
+            email_verified: request.email_verified,
+            signature: request.signature,
+        })
+        .await?;
+    state
+        .organizations
+        .add_member_if_missing(
+            result.organization_id,
+            result.auth.user.id,
+            result.auto_join_role,
+        )
+        .await
+        .map_err(|_| AuthError::StoreUnavailable)?;
+
+    Ok(Json(AuthResponse::from(result.auth)))
 }
 
 pub async fn logout(
@@ -82,6 +126,22 @@ impl From<AuthUser> for UserResponse {
             id: user.id.to_string(),
             email: user.email,
             display_name: user.display_name,
+        }
+    }
+}
+
+impl From<OidcProvider> for OidcProviderResponse {
+    fn from(provider: OidcProvider) -> Self {
+        Self {
+            organization_id: provider.organization_id.to_string(),
+            issuer: provider.issuer,
+            authorization_endpoint: provider.authorization_endpoint,
+            token_endpoint: provider.token_endpoint,
+            jwks_uri: provider.jwks_uri,
+            client_id: provider.client_id,
+            allowed_domains: provider.allowed_domains,
+            require_sso: provider.require_sso,
+            auto_join_role: provider.auto_join_role,
         }
     }
 }
