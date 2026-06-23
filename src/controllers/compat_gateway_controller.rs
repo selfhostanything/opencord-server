@@ -35,6 +35,7 @@ const CLOSE_ALREADY_AUTHENTICATED: u16 = 4005;
 const CLOSE_INVALID_SEQUENCE: u16 = 4007;
 const CLOSE_RATE_LIMITED: u16 = 4008;
 const CLOSE_SESSION_TIMED_OUT: u16 = 4009;
+const CLOSE_INVALID_SHARD: u16 = 4010;
 const CLOSE_INVALID_INTENTS: u16 = 4013;
 const GATEWAY_CLIENT_FRAME_LIMIT: u32 = 5;
 const GATEWAY_CLIENT_FRAME_WINDOW: Duration = Duration::from_secs(1);
@@ -53,6 +54,7 @@ struct GatewayMessage {
 struct IdentifyPayload {
     token: String,
     intents: Option<u64>,
+    shard: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -407,6 +409,10 @@ async fn identify_bot(
             send_invalid_session_and_close(socket, CLOSE_INVALID_INTENTS, "invalid intents").await;
         return false;
     }
+    if is_invalid_shard(payload.shard.as_ref()) {
+        let _ = send_invalid_session_and_close(socket, CLOSE_INVALID_SHARD, "invalid shard").await;
+        return false;
+    }
 
     let Ok(bot) = state.bots.authenticate_token(&payload.token).await else {
         let _ = send_invalid_session_and_close(
@@ -458,6 +464,20 @@ async fn identify_bot(
     send_dispatch(socket, "READY", *sequence, ready)
         .await
         .is_ok()
+}
+
+fn is_invalid_shard(shard: Option<&Value>) -> bool {
+    let Some(Value::Array(parts)) = shard else {
+        return shard.is_some();
+    };
+    if parts.len() != 2 {
+        return true;
+    }
+    let (Some(shard_id), Some(shard_count)) = (parts[0].as_u64(), parts[1].as_u64()) else {
+        return true;
+    };
+
+    shard_count == 0 || shard_id >= shard_count
 }
 
 fn compat_guild_from_space(space: SpaceMembership) -> CompatGuildResponse {

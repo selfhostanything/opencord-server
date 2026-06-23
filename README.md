@@ -450,8 +450,8 @@ close with `4001`; malformed payloads close with `4002`; invalid IDENTIFY
 tokens close with `4004`; duplicate IDENTIFY frames close with `4005`;
 RESUME frames with a sequence ahead of the server close with `4007`;
 connections that exceed 5 client frames per second close with `4008`; unknown
-RESUME sessions close with `4009`; unsupported IDENTIFY intent bits close with
-`4013` after OP 9.
+RESUME sessions close with `4009`; invalid IDENTIFY shard tuples close with
+`4010`; unsupported IDENTIFY intent bits close with `4013` after OP 9.
 
 `POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands`
 registers a space-scoped chat input command for the current bot application.
