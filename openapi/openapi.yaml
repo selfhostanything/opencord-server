@@ -1913,6 +1913,35 @@ paths:
         "404":
           description: Channel or parent space not found for this user
   /channels/{channel_id}/webhooks:
+    get:
+      summary: List active incoming webhooks for a text channel
+      description: >
+        Lists channel-scoped incoming webhooks for users with MANAGE_CHANNELS.
+        Raw webhook tokens and execute URLs are never returned by this endpoint.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Active incoming webhooks for the channel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncomingWebhookListResponse"
+        "400":
+          description: Non-text channel
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_CHANNELS permission
+        "404":
+          description: Channel or parent space not found for this user
     post:
       summary: Create an incoming webhook for a text channel
       description: >
@@ -1948,6 +1977,74 @@ paths:
           description: Missing MANAGE_CHANNELS permission
         "404":
           description: Channel or parent space not found for this user
+  /channels/{channel_id}/webhooks/{webhook_id}/token/rotate:
+    post:
+      summary: Rotate an incoming webhook token
+      description: >
+        Replaces the active webhook token and returns the replacement `ocw_`
+        token and execute URL once. The old token stops working immediately.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: webhook_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Incoming webhook with replacement shown-once token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncomingWebhookResourceResponse"
+        "400":
+          description: Non-text channel
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_CHANNELS permission
+        "404":
+          description: Channel or webhook not found for this user
+  /channels/{channel_id}/webhooks/{webhook_id}:
+    delete:
+      summary: Disable an incoming webhook
+      description: >
+        Soft-disables an active incoming webhook. Disabled webhooks disappear
+        from list responses and all existing execution tokens stop working.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: webhook_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Incoming webhook disabled
+        "400":
+          description: Non-text channel
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_CHANNELS permission
+        "404":
+          description: Channel or webhook not found for this user
   /channels/{channel_id}/command-interactions:
     post:
       summary: Create a local command interaction in a channel
@@ -2968,9 +3065,7 @@ components:
         - created_by_user_id
         - name
         - status
-        - token
         - token_last_four
-        - execute_url
         - created_at
       properties:
         id:
@@ -2998,24 +3093,41 @@ components:
           enum:
             - active
             - disabled
-        token:
-          type: string
-          description: Shown once when the webhook is created.
         token_last_four:
           type: string
-        execute_url:
-          type: string
-          format: uri
         created_at:
           type: string
           format: date-time
+    IncomingWebhookWithToken:
+      allOf:
+        - $ref: "#/components/schemas/IncomingWebhook"
+        - type: object
+          required:
+            - token
+            - execute_url
+          properties:
+            token:
+              type: string
+              description: Shown once when the webhook is created or rotated.
+            execute_url:
+              type: string
+              format: uri
     IncomingWebhookResourceResponse:
       type: object
       required:
         - webhook
       properties:
         webhook:
-          $ref: "#/components/schemas/IncomingWebhook"
+          $ref: "#/components/schemas/IncomingWebhookWithToken"
+    IncomingWebhookListResponse:
+      type: object
+      required:
+        - webhooks
+      properties:
+        webhooks:
+          type: array
+          items:
+            $ref: "#/components/schemas/IncomingWebhook"
     CreateCompatMessageRequest:
       type: object
       required:

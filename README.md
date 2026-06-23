@@ -152,6 +152,9 @@ GET /spaces/{space_id}/audit-events
 PATCH /channels/{channel_id}
 POST /channels/{channel_id}/permission-overrides
 POST /channels/{channel_id}/webhooks
+GET /channels/{channel_id}/webhooks
+POST /channels/{channel_id}/webhooks/{webhook_id}/token/rotate
+DELETE /channels/{channel_id}/webhooks/{webhook_id}
 POST /channels/{channel_id}/command-interactions
 POST /channels/{channel_id}/messages
 GET /channels/{channel_id}/messages
@@ -369,6 +372,12 @@ webhook for a text channel. The server creates an internal webhook bot user and
 returns a shown-once `ocw_` token plus an execute URL. `POST
 /api/webhooks/{webhook_id}/{webhook_token}` accepts a Discord-style webhook
 payload with `content` and posts the message as the webhook bot user.
+`GET /channels/{channel_id}/webhooks` lists active channel webhooks without raw
+token material. `POST
+/channels/{channel_id}/webhooks/{webhook_id}/token/rotate` returns a replacement
+shown-once token and invalidates the old one. `DELETE
+/channels/{channel_id}/webhooks/{webhook_id}` soft-disables the webhook so
+existing execution URLs stop working.
 
 `/api/compat/discord/v10/channels/{channel_id}/messages` supports the first
 Discord-compatible bot message routes: send, list, edit, and delete. Requests

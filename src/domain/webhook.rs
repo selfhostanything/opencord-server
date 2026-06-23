@@ -78,6 +78,22 @@ impl From<AuthError> for WebhookError {
 pub trait IncomingWebhookStore: Send + Sync {
     async fn create_webhook(&self, webhook: IncomingWebhook) -> Result<(), WebhookError>;
     async fn get_webhook(&self, webhook_id: Uuid) -> Result<Option<IncomingWebhook>, WebhookError>;
+    async fn list_webhooks_for_channel(
+        &self,
+        channel_id: Uuid,
+    ) -> Result<Vec<IncomingWebhook>, WebhookError>;
+    async fn rotate_webhook_token(
+        &self,
+        webhook_id: Uuid,
+        channel_id: Uuid,
+        token_hash: String,
+        token_last_four: String,
+    ) -> Result<Option<IncomingWebhook>, WebhookError>;
+    async fn disable_webhook(
+        &self,
+        webhook_id: Uuid,
+        channel_id: Uuid,
+    ) -> Result<bool, WebhookError>;
 }
 
 #[derive(Clone)]
@@ -134,6 +150,37 @@ impl IncomingWebhookService {
         self.store.create_webhook(webhook.clone()).await?;
 
         Ok(IncomingWebhookCreated { webhook, token })
+    }
+
+    pub async fn list_for_channel(
+        &self,
+        channel_id: Uuid,
+    ) -> Result<Vec<IncomingWebhook>, WebhookError> {
+        self.store.list_webhooks_for_channel(channel_id).await
+    }
+
+    pub async fn rotate_token(
+        &self,
+        webhook_id: Uuid,
+        channel_id: Uuid,
+    ) -> Result<IncomingWebhookCreated, WebhookError> {
+        let token = generate_token();
+        let token_last_four = token[token.len() - 4..].to_owned();
+        let webhook = self
+            .store
+            .rotate_webhook_token(webhook_id, channel_id, hash_token(&token), token_last_four)
+            .await?
+            .ok_or(WebhookError::NotFound)?;
+
+        Ok(IncomingWebhookCreated { webhook, token })
+    }
+
+    pub async fn disable(&self, webhook_id: Uuid, channel_id: Uuid) -> Result<(), WebhookError> {
+        if self.store.disable_webhook(webhook_id, channel_id).await? {
+            Ok(())
+        } else {
+            Err(WebhookError::NotFound)
+        }
     }
 
     pub async fn verify(

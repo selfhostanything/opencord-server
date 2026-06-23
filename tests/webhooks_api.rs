@@ -233,6 +233,136 @@ async fn channel_manager_can_create_and_execute_incoming_webhook() {
 }
 
 #[tokio::test]
+async fn channel_manager_can_list_rotate_and_delete_incoming_webhook() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "webhook-manage-owner@example.com").await;
+    let (_, _, channel_id) = create_space_with_channel(&app, &owner_token, "manage", "text").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/webhooks"),
+            &owner_token,
+            json!({ "name": "Release Hook" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let body = response_json(created).await;
+    let webhook_id = body["webhook"]["id"].as_str().unwrap().to_owned();
+    let first_token = body["webhook"]["token"].as_str().unwrap().to_owned();
+
+    let listed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/channels/{channel_id}/webhooks"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    let webhooks = body["webhooks"].as_array().unwrap();
+    assert_eq!(webhooks.len(), 1);
+    assert_eq!(webhooks[0]["id"], webhook_id);
+    assert_eq!(webhooks[0]["channel_id"], channel_id);
+    assert_eq!(webhooks[0]["name"], "Release Hook");
+    assert_eq!(webhooks[0]["status"], "active");
+    assert_eq!(
+        webhooks[0]["token_last_four"],
+        &first_token[first_token.len() - 4..]
+    );
+    assert!(webhooks[0].get("token").is_none());
+    assert!(webhooks[0].get("execute_url").is_none());
+
+    let rotated = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/webhooks/{webhook_id}/token/rotate"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rotated.status(), StatusCode::CREATED);
+    let body = response_json(rotated).await;
+    let second_token = body["webhook"]["token"].as_str().unwrap().to_owned();
+    assert!(second_token.starts_with("ocw_"));
+    assert_ne!(second_token, first_token);
+    assert_eq!(
+        body["webhook"]["token_last_four"],
+        &second_token[second_token.len() - 4..]
+    );
+    assert_eq!(
+        body["webhook"]["execute_url"],
+        format!("https://chat.example.com/api/webhooks/{webhook_id}/{second_token}")
+    );
+
+    let rejected_old_token = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!("/api/webhooks/{webhook_id}/{first_token}"),
+            json!({ "content": "must not post" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rejected_old_token.status(), StatusCode::NOT_FOUND);
+
+    let accepted_new_token = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!("/api/webhooks/{webhook_id}/{second_token}"),
+            json!({ "content": "second token works" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(accepted_new_token.status(), StatusCode::CREATED);
+
+    let deleted = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/channels/{channel_id}/webhooks/{webhook_id}"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let rejected_deleted = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!("/api/webhooks/{webhook_id}/{second_token}"),
+            json!({ "content": "must not post" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rejected_deleted.status(), StatusCode::NOT_FOUND);
+
+    let listed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/channels/{channel_id}/webhooks"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert!(body["webhooks"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn webhook_create_requires_manage_channels() {
     let app = test_app();
     let (owner_token, _) = register(&app, "webhook-permission-owner@example.com").await;
@@ -253,6 +383,67 @@ async fn webhook_create_requires_manage_channels() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn webhook_management_requires_manage_channels() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "webhook-manage-permission-owner@example.com").await;
+    let (member_token, member_id) =
+        register(&app, "webhook-manage-permission-member@example.com").await;
+    let (_, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "manage-permission", "text").await;
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/webhooks"),
+            &owner_token,
+            json!({ "name": "Owner Hook" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let body = response_json(created).await;
+    let webhook_id = body["webhook"]["id"].as_str().unwrap();
+
+    let listed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/channels/{channel_id}/webhooks"),
+            &member_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::FORBIDDEN);
+
+    let rotated = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/webhooks/{webhook_id}/token/rotate"),
+            &member_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rotated.status(), StatusCode::FORBIDDEN);
+
+    let deleted = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/channels/{channel_id}/webhooks/{webhook_id}"),
+            &member_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

@@ -69,6 +69,97 @@ impl IncomingWebhookStore for PostgresIncomingWebhookStore {
 
         row.map(webhook_from_row).transpose()
     }
+
+    async fn list_webhooks_for_channel(
+        &self,
+        channel_id: Uuid,
+    ) -> Result<Vec<IncomingWebhook>, WebhookError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT id::text, organization_id::text, space_id::text, channel_id::text,
+                       bot_user_id::text, created_by_user_id::text, name, token_hash,
+                       token_last_four, status, created_at::text
+                FROM incoming_webhooks
+                WHERE channel_id = $1::uuid
+                  AND status = 'active'
+                ORDER BY created_at ASC, id ASC
+                "#,
+                vec![Value::from(channel_id.to_string())],
+            ))
+            .await
+            .map_err(|_| WebhookError::StoreUnavailable)?;
+
+        rows.into_iter()
+            .map(webhook_from_row)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    async fn rotate_webhook_token(
+        &self,
+        webhook_id: Uuid,
+        channel_id: Uuid,
+        token_hash: String,
+        token_last_four: String,
+    ) -> Result<Option<IncomingWebhook>, WebhookError> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                UPDATE incoming_webhooks
+                SET token_hash = $3,
+                    token_last_four = $4,
+                    updated_at = now()
+                WHERE id = $1::uuid
+                  AND channel_id = $2::uuid
+                  AND status = 'active'
+                RETURNING id::text, organization_id::text, space_id::text, channel_id::text,
+                          bot_user_id::text, created_by_user_id::text, name, token_hash,
+                          token_last_four, status, created_at::text
+                "#,
+                vec![
+                    Value::from(webhook_id.to_string()),
+                    Value::from(channel_id.to_string()),
+                    Value::from(token_hash),
+                    Value::from(token_last_four),
+                ],
+            ))
+            .await
+            .map_err(|_| WebhookError::StoreUnavailable)?;
+
+        row.map(webhook_from_row).transpose()
+    }
+
+    async fn disable_webhook(
+        &self,
+        webhook_id: Uuid,
+        channel_id: Uuid,
+    ) -> Result<bool, WebhookError> {
+        let result = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                UPDATE incoming_webhooks
+                SET status = 'disabled',
+                    updated_at = now()
+                WHERE id = $1::uuid
+                  AND channel_id = $2::uuid
+                  AND status = 'active'
+                "#,
+                vec![
+                    Value::from(webhook_id.to_string()),
+                    Value::from(channel_id.to_string()),
+                ],
+            ))
+            .await
+            .map_err(|_| WebhookError::StoreUnavailable)?;
+
+        Ok(result.rows_affected() > 0)
+    }
 }
 
 fn webhook_from_row(row: sea_orm::QueryResult) -> Result<IncomingWebhook, WebhookError> {

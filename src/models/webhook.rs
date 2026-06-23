@@ -29,6 +29,25 @@ pub struct IncomingWebhookResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct IncomingWebhookDetailResponse {
+    pub id: String,
+    pub organization_id: String,
+    pub space_id: String,
+    pub channel_id: String,
+    pub bot_user_id: String,
+    pub created_by_user_id: String,
+    pub name: String,
+    pub status: String,
+    pub token_last_four: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct IncomingWebhookResourceResponse {
     pub webhook: IncomingWebhookResponse,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IncomingWebhookListResponse {
+    pub webhooks: Vec<IncomingWebhookDetailResponse>,
 }

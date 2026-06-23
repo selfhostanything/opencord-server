@@ -17,8 +17,8 @@ use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
 use crate::models::message::MessageResourceResponse;
 use crate::models::webhook::{
-    CreateIncomingWebhookRequest, ExecuteIncomingWebhookRequest, IncomingWebhookResourceResponse,
-    IncomingWebhookResponse,
+    CreateIncomingWebhookRequest, ExecuteIncomingWebhookRequest, IncomingWebhookDetailResponse,
+    IncomingWebhookListResponse, IncomingWebhookResourceResponse, IncomingWebhookResponse,
 };
 use crate::state::AppState;
 
@@ -28,15 +28,7 @@ pub async fn create(
     Path(channel_id): Path<Uuid>,
     Json(request): Json<CreateIncomingWebhookRequest>,
 ) -> Result<impl IntoResponse, WebhookApiError> {
-    let token = bearer_token(&headers)?;
-    let user = state.auth.user_for_token(token).await?;
-    let channel = state.channels.get(channel_id).await?;
-    let space = state.spaces.get_for_user(user.id, channel.space_id).await?;
-    state
-        .permissions
-        .require_channel(user.id, &space, &channel, Permission::ManageChannels)
-        .await?;
-    ensure_text_channel(&channel)?;
+    let (user_id, channel) = manageable_text_channel(&state, &headers, channel_id).await?;
 
     let created = state
         .webhooks
@@ -44,7 +36,7 @@ pub async fn create(
             channel.organization_id,
             channel.space_id,
             channel.id,
-            user.id,
+            user_id,
             request.name,
         )
         .await?;
@@ -55,6 +47,50 @@ pub async fn create(
             webhook: webhook_response(created.webhook, created.token, &state.config.public_url),
         }),
     ))
+}
+
+pub async fn list_for_channel(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(channel_id): Path<Uuid>,
+) -> Result<impl IntoResponse, WebhookApiError> {
+    let (_, channel) = manageable_text_channel(&state, &headers, channel_id).await?;
+    let webhooks = state.webhooks.list_for_channel(channel.id).await?;
+
+    Ok(Json(IncomingWebhookListResponse {
+        webhooks: webhooks
+            .into_iter()
+            .map(webhook_detail_response)
+            .collect::<Vec<_>>(),
+    }))
+}
+
+pub async fn rotate_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((channel_id, webhook_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, WebhookApiError> {
+    let (_, channel) = manageable_text_channel(&state, &headers, channel_id).await?;
+    let rotated = state.webhooks.rotate_token(webhook_id, channel.id).await?;
+    ensure_webhook_matches_channel(&rotated.webhook, &channel)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(IncomingWebhookResourceResponse {
+            webhook: webhook_response(rotated.webhook, rotated.token, &state.config.public_url),
+        }),
+    ))
+}
+
+pub async fn delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((channel_id, webhook_id)): Path<(Uuid, Uuid)>,
+) -> Result<impl IntoResponse, WebhookApiError> {
+    let (_, channel) = manageable_text_channel(&state, &headers, channel_id).await?;
+    state.webhooks.disable(webhook_id, channel.id).await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn execute(
@@ -159,6 +195,24 @@ impl IntoResponse for WebhookApiError {
     }
 }
 
+async fn manageable_text_channel(
+    state: &AppState,
+    headers: &HeaderMap,
+    channel_id: Uuid,
+) -> Result<(Uuid, Channel), WebhookApiError> {
+    let token = bearer_token(headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let channel = state.channels.get(channel_id).await?;
+    let space = state.spaces.get_for_user(user.id, channel.space_id).await?;
+    state
+        .permissions
+        .require_channel(user.id, &space, &channel, Permission::ManageChannels)
+        .await?;
+    ensure_text_channel(&channel)?;
+
+    Ok((user.id, channel))
+}
+
 fn webhook_response(
     webhook: IncomingWebhook,
     token: String,
@@ -176,6 +230,21 @@ fn webhook_response(
         token_last_four: webhook.token_last_four,
         execute_url: format!("{public_url}/api/webhooks/{}/{}", webhook.id, token),
         token,
+        created_at: webhook.created_at,
+    }
+}
+
+fn webhook_detail_response(webhook: IncomingWebhook) -> IncomingWebhookDetailResponse {
+    IncomingWebhookDetailResponse {
+        id: webhook.id.to_string(),
+        organization_id: webhook.organization_id.to_string(),
+        space_id: webhook.space_id.to_string(),
+        channel_id: webhook.channel_id.to_string(),
+        bot_user_id: webhook.bot_user_id.to_string(),
+        created_by_user_id: webhook.created_by_user_id.to_string(),
+        name: webhook.name,
+        status: webhook.status,
+        token_last_four: webhook.token_last_four,
         created_at: webhook.created_at,
     }
 }

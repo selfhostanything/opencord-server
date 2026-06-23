@@ -1,6 +1,6 @@
 use axum::Router;
 use axum::middleware;
-use axum::routing::{get, patch, post, put};
+use axum::routing::{delete, get, patch, post, put};
 
 use crate::config::AppConfig;
 use crate::controllers::{
@@ -226,7 +226,15 @@ pub fn api_router_with_state(state: AppState) -> Router {
         )
         .route(
             "/channels/{channel_id}/webhooks",
-            post(webhook_controller::create),
+            post(webhook_controller::create).get(webhook_controller::list_for_channel),
+        )
+        .route(
+            "/channels/{channel_id}/webhooks/{webhook_id}/token/rotate",
+            post(webhook_controller::rotate_token),
+        )
+        .route(
+            "/channels/{channel_id}/webhooks/{webhook_id}",
+            delete(webhook_controller::delete),
         )
         .route(
             "/channels/{channel_id}/command-interactions",
