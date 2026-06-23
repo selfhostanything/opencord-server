@@ -404,6 +404,11 @@ payload with `content`, up to 10 basic `embeds`, and optional `username` and
 embeds and overrides are persisted on the created message and returned by
 message list/detail responses; compatibility payloads use the override username
 for webhook-authored messages.
+`GET /organizations/{organization_id}/webhook-policy` and `PUT
+/organizations/{organization_id}/webhook-policy` let organization admins read
+and update whether webhook `username`/`avatar_url` identity overrides are
+accepted. Overrides are allowed by default; when disabled, webhook execution
+still accepts and persists content and embeds but strips the override metadata.
 `GET /channels/{channel_id}/webhooks` lists active channel webhooks without raw
 token material. `POST
 /channels/{channel_id}/webhooks/{webhook_id}/token/rotate` returns a replacement
@@ -413,7 +418,8 @@ existing execution URLs stop working.
 Webhook create, token rotation, and delete write `webhook.created`,
 `webhook.token_rotated`, and `webhook.deleted` audit events. Event metadata
 includes webhook IDs and token last-four values, never raw `ocw_` token
-material.
+material. Webhook policy updates write `organization.webhook_policy_updated`
+with the new override setting.
 Public webhook execution is limited to 5 requests per minute per webhook URL
 bucket. Successful execution responses include `X-RateLimit-Limit`,
 `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `X-RateLimit-Bucket`.

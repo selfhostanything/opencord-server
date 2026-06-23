@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::domain::organization::{
-    CustomDomain, CustomDomainTenant, OrganizationMembership, TenantProvision,
+    CustomDomain, CustomDomainTenant, OrganizationMembership, OrganizationWebhookPolicy,
+    TenantProvision,
 };
 
 #[derive(Debug, Deserialize)]
@@ -58,6 +59,22 @@ pub struct TenantResponse {
 #[derive(Debug, Serialize)]
 pub struct TenantProvisionResponse {
     pub tenant: TenantResponse,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpsertWebhookPolicyRequest {
+    pub allow_identity_overrides: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WebhookPolicyResponse {
+    pub organization_id: String,
+    pub allow_identity_overrides: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WebhookPolicyEnvelope {
+    pub webhook_policy: WebhookPolicyResponse,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +148,15 @@ impl From<TenantProvision> for TenantProvisionResponse {
                 deployment_mode: tenant.organization.deployment_mode,
                 primary_region: tenant.organization.primary_region,
             },
+        }
+    }
+}
+
+impl From<OrganizationWebhookPolicy> for WebhookPolicyResponse {
+    fn from(policy: OrganizationWebhookPolicy) -> Self {
+        Self {
+            organization_id: policy.organization_id.to_string(),
+            allow_identity_overrides: policy.allow_identity_overrides,
         }
     }
 }

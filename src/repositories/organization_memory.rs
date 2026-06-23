@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::domain::organization::{
     CustomDomain, CustomDomainTenant, OrganizationError, OrganizationMembership, OrganizationStore,
-    StoredCustomDomain, StoredOrganization, StoredOrganizationMember,
+    OrganizationWebhookPolicy, StoredCustomDomain, StoredOrganization, StoredOrganizationMember,
 };
 
 #[derive(Default)]
@@ -20,6 +20,7 @@ struct MemoryOrganizationState {
     members_by_org_user: HashMap<(Uuid, Uuid), StoredOrganizationMember>,
     custom_domains_by_id: HashMap<Uuid, StoredCustomDomain>,
     custom_domain_id_by_hostname: HashMap<String, Uuid>,
+    webhook_policies_by_organization: HashMap<Uuid, OrganizationWebhookPolicy>,
 }
 
 #[async_trait::async_trait]
@@ -328,5 +329,51 @@ impl OrganizationStore for MemoryOrganizationStore {
                 primary_region: organization.primary_region.clone(),
                 hostname: custom_domain.hostname.clone(),
             }))
+    }
+
+    async fn get_webhook_policy(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<OrganizationWebhookPolicy, OrganizationError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+
+        if !state.organizations_by_id.contains_key(&organization_id) {
+            return Err(OrganizationError::NotFound);
+        }
+
+        Ok(state
+            .webhook_policies_by_organization
+            .get(&organization_id)
+            .cloned()
+            .unwrap_or(OrganizationWebhookPolicy {
+                organization_id,
+                allow_identity_overrides: true,
+            }))
+    }
+
+    async fn upsert_webhook_policy(
+        &self,
+        policy: OrganizationWebhookPolicy,
+    ) -> Result<OrganizationWebhookPolicy, OrganizationError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+
+        if !state
+            .organizations_by_id
+            .contains_key(&policy.organization_id)
+        {
+            return Err(OrganizationError::NotFound);
+        }
+
+        state
+            .webhook_policies_by_organization
+            .insert(policy.organization_id, policy.clone());
+
+        Ok(policy)
     }
 }

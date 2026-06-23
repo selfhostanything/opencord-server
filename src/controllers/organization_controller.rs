@@ -2,8 +2,10 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
+use serde_json::json;
 use uuid::Uuid;
 
+use crate::domain::audit::{AuditError, NewAuditEvent};
 use crate::domain::auth::AuthError;
 use crate::domain::organization::{OrganizationError, OrganizationMembership};
 use crate::http::session::bearer_token;
@@ -15,7 +17,8 @@ use crate::models::organization::{
     CreateCustomDomainRequest, CreateOrganizationRequest, CustomDomainEnvelope,
     CustomDomainListResponse, CustomDomainResolveResponse, CustomDomainResponse,
     OrganizationListResponse, OrganizationMembershipResponse, OrganizationResponse,
-    ProvisionTenantRequest, TenantProvisionResponse, VerifyCustomDomainRequest,
+    ProvisionTenantRequest, TenantProvisionResponse, UpsertWebhookPolicyRequest,
+    VerifyCustomDomainRequest, WebhookPolicyEnvelope, WebhookPolicyResponse,
 };
 use crate::state::AppState;
 
@@ -87,6 +90,55 @@ pub async fn get(
         .await?;
 
     Ok(Json(OrganizationMembershipResponse::from(organization)))
+}
+
+pub async fn get_webhook_policy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization_id): Path<Uuid>,
+) -> Result<Json<WebhookPolicyEnvelope>, OrganizationApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let policy = state
+        .organizations
+        .webhook_policy(user.id, organization_id)
+        .await?;
+
+    Ok(Json(WebhookPolicyEnvelope {
+        webhook_policy: WebhookPolicyResponse::from(policy),
+    }))
+}
+
+pub async fn upsert_webhook_policy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization_id): Path<Uuid>,
+    Json(request): Json<UpsertWebhookPolicyRequest>,
+) -> Result<Json<WebhookPolicyEnvelope>, OrganizationApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let policy = state
+        .organizations
+        .upsert_webhook_policy(user.id, organization_id, request.allow_identity_overrides)
+        .await?;
+    state
+        .audit
+        .record(NewAuditEvent {
+            organization_id,
+            space_id: organization_id,
+            actor_user_id: user.id,
+            action: "organization.webhook_policy_updated",
+            target_type: "organization",
+            target_id: organization_id,
+            metadata: json!({
+                "allow_identity_overrides": policy.allow_identity_overrides
+            }),
+        })
+        .await?;
+
+    Ok(Json(WebhookPolicyEnvelope {
+        webhook_policy: WebhookPolicyResponse::from(policy),
+    }))
 }
 
 pub async fn configure_oidc_provider(
@@ -228,6 +280,7 @@ pub async fn resolve_custom_domain(
 pub enum OrganizationApiError {
     Auth(AuthError),
     Organization(OrganizationError),
+    Audit(AuditError),
 }
 
 impl From<AuthError> for OrganizationApiError {
@@ -242,11 +295,18 @@ impl From<OrganizationError> for OrganizationApiError {
     }
 }
 
+impl From<AuditError> for OrganizationApiError {
+    fn from(error: AuditError) -> Self {
+        Self::Audit(error)
+    }
+}
+
 impl IntoResponse for OrganizationApiError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
             Self::Auth(error) => (error.status_code(), error.code(), error.message()),
             Self::Organization(error) => (error.status_code(), error.code(), error.message()),
+            Self::Audit(error) => (error.status_code(), error.code(), error.message()),
         };
 
         (

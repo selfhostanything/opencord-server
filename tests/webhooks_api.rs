@@ -252,6 +252,143 @@ async fn channel_manager_can_create_and_execute_incoming_webhook() {
 }
 
 #[tokio::test]
+async fn organization_admin_can_disable_webhook_identity_overrides() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "webhook-policy-owner@example.com").await;
+    let (organization_id, _, channel_id) =
+        create_space_with_channel(&app, &owner_token, "policy", "text").await;
+
+    let default_policy = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/webhook-policy"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(default_policy.status(), StatusCode::OK);
+    let body = response_json(default_policy).await;
+    assert_eq!(body["webhook_policy"]["organization_id"], organization_id);
+    assert_eq!(body["webhook_policy"]["allow_identity_overrides"], true);
+
+    let updated_policy = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::PUT,
+            &format!("/organizations/{organization_id}/webhook-policy"),
+            &owner_token,
+            json!({ "allow_identity_overrides": false }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(updated_policy.status(), StatusCode::OK);
+    let body = response_json(updated_policy).await;
+    assert_eq!(body["webhook_policy"]["organization_id"], organization_id);
+    assert_eq!(body["webhook_policy"]["allow_identity_overrides"], false);
+
+    let audit = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!(
+                "/organizations/{organization_id}/audit-events/export?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z"
+            ),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(audit.status(), StatusCode::OK);
+    let body = response_json(audit).await;
+    let events = body["export"]["audit_events"].as_array().unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["action"], "organization.webhook_policy_updated");
+    assert_eq!(events[0]["target_type"], "organization");
+    assert_eq!(events[0]["target_id"], organization_id);
+    assert_eq!(events[0]["metadata"]["allow_identity_overrides"], false);
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/webhooks"),
+            &owner_token,
+            json!({ "name": "Policy Hook" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let body = response_json(created).await;
+    let webhook_id = body["webhook"]["id"].as_str().unwrap();
+    let raw_token = body["webhook"]["token"].as_str().unwrap();
+    let embed = json!({
+        "title": "Policy kept rich content",
+        "description": "Identity override was stripped"
+    });
+
+    let executed = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!("/api/webhooks/{webhook_id}/{raw_token}"),
+            json!({
+                "content": "deployment shipped",
+                "embeds": [embed.clone()],
+                "username": "Impersonated Bot",
+                "avatar_url": "https://chat.example.com/assets/impersonated.png"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(executed.status(), StatusCode::CREATED);
+    let body = response_json(executed).await;
+    assert_eq!(body["message"]["embeds"], json!([embed]));
+    assert_eq!(body["message"]["webhook_username"], Value::Null);
+    assert_eq!(body["message"]["webhook_avatar_url"], Value::Null);
+
+    let listed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/channels/{channel_id}/messages"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert_eq!(body["messages"][0]["embeds"], json!([embed]));
+    assert_eq!(body["messages"][0]["webhook_username"], Value::Null);
+    assert_eq!(body["messages"][0]["webhook_avatar_url"], Value::Null);
+}
+
+#[tokio::test]
+async fn organization_member_cannot_manage_webhook_policy() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "webhook-policy-admin-owner@example.com").await;
+    let (member_token, member_id) = register(&app, "webhook-policy-admin-member@example.com").await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "policy-admin", "text").await;
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::PUT,
+            &format!("/organizations/{organization_id}/webhook-policy"),
+            &member_token,
+            json!({ "allow_identity_overrides": false }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn channel_manager_can_list_rotate_and_delete_incoming_webhook() {
     let app = test_app();
     let (owner_token, _) = register(&app, "webhook-manage-owner@example.com").await;

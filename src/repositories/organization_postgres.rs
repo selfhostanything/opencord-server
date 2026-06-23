@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::domain::organization::{
     CustomDomain, CustomDomainTenant, OrganizationError, OrganizationMembership, OrganizationStore,
-    StoredCustomDomain, StoredOrganization, StoredOrganizationMember,
+    OrganizationWebhookPolicy, StoredCustomDomain, StoredOrganization, StoredOrganizationMember,
 };
 
 #[derive(Clone)]
@@ -404,6 +404,71 @@ impl OrganizationStore for PostgresOrganizationStore {
 
         row.map(custom_domain_tenant_from_row).transpose()
     }
+
+    async fn get_webhook_policy(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<OrganizationWebhookPolicy, OrganizationError> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT organizations.id::text AS organization_id,
+                       COALESCE(
+                           organization_webhook_policies.allow_identity_overrides,
+                           true
+                       ) AS allow_identity_overrides
+                FROM organizations
+                LEFT JOIN organization_webhook_policies
+                    ON organization_webhook_policies.organization_id = organizations.id
+                WHERE organizations.id = $1::uuid
+                  AND organizations.suspended_at IS NULL
+                "#,
+                values(vec![organization_id.to_string()]),
+            ))
+            .await
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+
+        row.map(webhook_policy_from_row)
+            .transpose()?
+            .ok_or(OrganizationError::NotFound)
+    }
+
+    async fn upsert_webhook_policy(
+        &self,
+        policy: OrganizationWebhookPolicy,
+    ) -> Result<OrganizationWebhookPolicy, OrganizationError> {
+        let result = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO organization_webhook_policies (
+                    organization_id, allow_identity_overrides
+                )
+                VALUES ($1::uuid, $2)
+                ON CONFLICT (organization_id)
+                DO UPDATE SET allow_identity_overrides = EXCLUDED.allow_identity_overrides,
+                              updated_at = now()
+                RETURNING organization_id::text, allow_identity_overrides
+                "#,
+                vec![
+                    Value::from(policy.organization_id.to_string()),
+                    Value::from(policy.allow_identity_overrides),
+                ],
+            ))
+            .await;
+
+        match result {
+            Ok(row) => row
+                .map(webhook_policy_from_row)
+                .transpose()?
+                .ok_or(OrganizationError::StoreUnavailable),
+            Err(error) if is_foreign_key_violation(&error) => Err(OrganizationError::NotFound),
+            Err(_) => Err(OrganizationError::StoreUnavailable),
+        }
+    }
 }
 
 fn organization_from_row(
@@ -503,6 +568,23 @@ fn custom_domain_tenant_from_row(
             .map_err(|_| OrganizationError::StoreUnavailable)?,
         hostname: row
             .try_get::<String>("", "hostname")
+            .map_err(|_| OrganizationError::StoreUnavailable)?,
+    })
+}
+
+fn webhook_policy_from_row(
+    row: sea_orm::QueryResult,
+) -> Result<OrganizationWebhookPolicy, OrganizationError> {
+    let organization_id = row
+        .try_get::<String>("", "organization_id")
+        .map_err(|_| OrganizationError::StoreUnavailable)?;
+    let organization_id =
+        Uuid::parse_str(&organization_id).map_err(|_| OrganizationError::StoreUnavailable)?;
+
+    Ok(OrganizationWebhookPolicy {
+        organization_id,
+        allow_identity_overrides: row
+            .try_get::<bool>("", "allow_identity_overrides")
             .map_err(|_| OrganizationError::StoreUnavailable)?,
     })
 }

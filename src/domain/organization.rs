@@ -52,6 +52,12 @@ pub struct CustomDomainTenant {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationWebhookPolicy {
+    pub organization_id: Uuid,
+    pub allow_identity_overrides: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrganizationMembership {
     pub id: Uuid,
     pub slug: String,
@@ -176,6 +182,16 @@ pub trait OrganizationStore: Send + Sync {
         &self,
         hostname: String,
     ) -> Result<Option<CustomDomainTenant>, OrganizationError>;
+
+    async fn get_webhook_policy(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<OrganizationWebhookPolicy, OrganizationError>;
+
+    async fn upsert_webhook_policy(
+        &self,
+        policy: OrganizationWebhookPolicy,
+    ) -> Result<OrganizationWebhookPolicy, OrganizationError>;
 }
 
 #[derive(Clone)]
@@ -384,6 +400,37 @@ impl OrganizationService {
             .resolve_custom_domain(hostname)
             .await?
             .ok_or(OrganizationError::NotFound)
+    }
+
+    pub async fn webhook_policy(
+        &self,
+        user_id: Uuid,
+        organization_id: Uuid,
+    ) -> Result<OrganizationWebhookPolicy, OrganizationError> {
+        self.require_admin(user_id, organization_id).await?;
+        self.webhook_policy_for_organization(organization_id).await
+    }
+
+    pub async fn upsert_webhook_policy(
+        &self,
+        user_id: Uuid,
+        organization_id: Uuid,
+        allow_identity_overrides: bool,
+    ) -> Result<OrganizationWebhookPolicy, OrganizationError> {
+        self.require_admin(user_id, organization_id).await?;
+        self.store
+            .upsert_webhook_policy(OrganizationWebhookPolicy {
+                organization_id,
+                allow_identity_overrides,
+            })
+            .await
+    }
+
+    pub async fn webhook_policy_for_organization(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<OrganizationWebhookPolicy, OrganizationError> {
+        self.store.get_webhook_policy(organization_id).await
     }
 }
 

@@ -1196,6 +1196,70 @@ paths:
           description: Organization admin permission is required
         "404":
           description: Organization not found
+  /organizations/{organization_id}/webhook-policy:
+    get:
+      summary: Return organization incoming webhook policy
+      description: >
+        Returns whether incoming webhook execution may persist optional
+        username/avatar identity overrides for this organization. Overrides are
+        allowed by default.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Incoming webhook policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookPolicyEnvelope"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization not found
+    put:
+      summary: Configure organization incoming webhook policy
+      description: >
+        Controls whether incoming webhook execution persists optional
+        username/avatar identity overrides. When disabled, content and embeds
+        are still accepted but override metadata is stripped from created
+        messages.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertWebhookPolicyRequest"
+      responses:
+        "200":
+          description: Stored incoming webhook policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookPolicyEnvelope"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization not found
   /organizations/{organization_id}/oidc:
     get:
       summary: Return OIDC provider settings for an organization
@@ -3502,6 +3566,33 @@ components:
           $ref: "#/components/schemas/BotApplication"
         member:
           $ref: "#/components/schemas/SpaceMember"
+    UpsertWebhookPolicyRequest:
+      type: object
+      required:
+        - allow_identity_overrides
+      properties:
+        allow_identity_overrides:
+          type: boolean
+          description: Allow incoming webhook username/avatar identity overrides.
+    WebhookPolicy:
+      type: object
+      required:
+        - organization_id
+        - allow_identity_overrides
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        allow_identity_overrides:
+          type: boolean
+          description: Whether incoming webhook username/avatar overrides are persisted.
+    WebhookPolicyEnvelope:
+      type: object
+      required:
+        - webhook_policy
+      properties:
+        webhook_policy:
+          $ref: "#/components/schemas/WebhookPolicy"
     CreateIncomingWebhookRequest:
       type: object
       required:
@@ -3530,14 +3621,14 @@ components:
             - string
             - "null"
           maxLength: 80
-          description: Optional webhook author username override persisted on the created message.
+          description: Optional webhook author username override persisted on the created message when organization policy allows identity overrides.
         avatar_url:
           type:
             - string
             - "null"
           format: uri
           maxLength: 2048
-          description: Optional webhook author avatar URL override persisted on the created message.
+          description: Optional webhook author avatar URL override persisted on the created message when organization policy allows identity overrides.
     IncomingWebhook:
       type: object
       required:
