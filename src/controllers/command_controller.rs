@@ -352,6 +352,17 @@ pub async fn delete_original_interaction_response(
     }
 
     state.messages.delete(message).await?;
+    state.realtime.publish(RealtimeEvent::channel(
+        "message.deleted",
+        interaction.organization_id,
+        interaction.space_id,
+        interaction.channel_id,
+        serde_json::json!({
+            "id": response_message_id.to_string(),
+            "channel_id": interaction.channel_id.to_string(),
+            "guild_id": interaction.space_id.to_string()
+        }),
+    ));
 
     Ok(StatusCode::NO_CONTENT)
 }

@@ -110,6 +110,17 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                         break;
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                } else if event.event_type == "message.deleted"
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(message) = compat_message_delete_from_event(&event) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "MESSAGE_DELETE", sequence, message).await.is_err() {
+                        break;
+                    }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "interaction.created"
                     && can_bot_receive_event(&state, bot, &event).await
                 {
@@ -333,6 +344,19 @@ fn compat_message_from_event(
 ) -> Option<CompatMessageResponse> {
     let message = event.data.get("message")?;
     compat_message_from_value(message, current_bot)
+}
+
+fn compat_message_delete_from_event(event: &RealtimeEvent) -> Option<Value> {
+    let id = event.data.get("id")?.as_str()?;
+    let channel_id = event.scope.channel_id.as_deref()?;
+    let mut payload = json!({
+        "id": id,
+        "channel_id": channel_id
+    });
+    if let Some(guild_id) = event.scope.space_id.as_deref() {
+        payload["guild_id"] = Value::String(guild_id.to_owned());
+    }
+    Some(payload)
 }
 
 fn compat_message_from_value(

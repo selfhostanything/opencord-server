@@ -423,6 +423,28 @@ async fn send_compat_embed_message(
         .to_owned()
 }
 
+async fn send_compat_text_message(app: &Router, bot_token: &str, channel_id: &str) -> String {
+    let response = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            bot_token,
+            json!({
+                "content": "compat gateway text",
+                "tts": false
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    response_json(response).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
 async fn send_compat_mention_message(
     app: &Router,
     bot_token: &str,
@@ -1133,6 +1155,76 @@ async fn compat_gateway_identify_ready_heartbeat_and_message_create() {
     assert_eq!(event["d"]["author"]["id"], owner_id);
     assert_eq!(event["d"]["author"]["bot"], false);
     assert_eq!(event["d"]["content"], "gateway hello");
+}
+
+#[tokio::test]
+async fn compat_gateway_dispatches_message_delete_for_deleted_compat_message() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-delete-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "delete").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+    assert_eq!(ready["s"], 1);
+
+    let message_id = send_compat_text_message(&app, &bot_token, &channel_id).await;
+    let create_event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("message create dispatch");
+    assert_eq!(create_event["t"], "MESSAGE_CREATE");
+    assert_eq!(create_event["s"], 2);
+    assert_eq!(create_event["d"]["id"], message_id);
+
+    let deleted = app
+        .clone()
+        .oneshot(bot_request(
+            Method::DELETE,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages/{message_id}"),
+            &bot_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let delete_event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("message delete dispatch");
+    assert_eq!(delete_event["op"], 0);
+    assert_eq!(delete_event["t"], "MESSAGE_DELETE");
+    assert_eq!(delete_event["s"], 3);
+    assert_eq!(delete_event["d"]["id"], message_id);
+    assert_eq!(delete_event["d"]["channel_id"], channel_id);
+    assert_eq!(delete_event["d"]["guild_id"], space_id);
 }
 
 #[tokio::test]

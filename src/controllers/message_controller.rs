@@ -174,7 +174,19 @@ pub async fn delete(
             .await?;
     }
 
+    let message_id = message.id;
     state.messages.delete(message).await?;
+    state.realtime.publish(RealtimeEvent::channel(
+        "message.deleted",
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        json!({
+            "id": message_id.to_string(),
+            "channel_id": channel.id.to_string(),
+            "guild_id": channel.space_id.to_string()
+        }),
+    ));
 
     Ok(StatusCode::NO_CONTENT)
 }

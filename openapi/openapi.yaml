@@ -593,8 +593,8 @@ paths:
       description: >
         Upgrades to a WebSocket, sends HELLO, accepts IDENTIFY with an
         OpenCord `ocb_` bot token, emits READY, supports process-local RESUME
-        by `session_id`, acknowledges heartbeats, and dispatches MESSAGE_CREATE
-        and INTERACTION_CREATE events visible to the bot user.
+        by `session_id`, acknowledges heartbeats, and dispatches MESSAGE_CREATE,
+        MESSAGE_DELETE, and INTERACTION_CREATE events visible to the bot user.
       responses:
         "101":
           description: WebSocket protocol switch
