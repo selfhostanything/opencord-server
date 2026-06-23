@@ -5,6 +5,7 @@ pub mod domain;
 pub mod events;
 pub mod http;
 pub mod jobs;
+pub mod local_seed;
 pub mod models;
 pub mod observability;
 pub mod queue;

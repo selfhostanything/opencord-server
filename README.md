@@ -43,10 +43,14 @@ Core stack:
 ```bash
 make dev-deps
 make migrate
+make seed
 make dev-api
 ```
 
-The API defaults to `http://localhost:8080`.
+The API defaults to `http://localhost:8080`. The local seed creates
+`owner@opencord.local` with password `correct horse battery staple` plus a
+demo organization, channels, messages, meeting, bot, and webhook for local
+alpha testing.
 
 ## Repository
 

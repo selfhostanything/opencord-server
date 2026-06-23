@@ -60,6 +60,26 @@ browser origins by default so the official web client can call auth,
 organization, space, channel, message, and meeting endpoints during local
 alpha testing.
 
+Seed deterministic local-alpha data after migrations:
+
+```bash
+make seed
+```
+
+The seed command is idempotent and creates:
+
+- owner `owner@opencord.local` with password `correct horse battery staple`
+- organization `OpenCord Local Alpha`
+- space `Local Alpha`
+- text channel `general`
+- voice channel `Voice Lounge`
+- seeded rich messages and an attachment fixture
+- meeting `OpenCord Local Alpha Standup`
+- local bot and webhook fixtures
+
+The command prints local-only session, bot, and webhook tokens. Treat them as
+developer fixtures and regenerate by rerunning `make seed`.
+
 Kafka and ScyllaDB architecture smokes are opt-in so the normal test loop stays
 fast:
 
@@ -135,6 +155,7 @@ curl -fsS http://localhost:8080/healthz
 curl -fsS http://localhost:8081/healthz
 curl -fsS http://localhost:8082/healthz
 curl -fsS http://localhost:8080/.well-known/opencord
+curl -fsS http://localhost:8080/metrics
 
 OPENCORD_KAFKA_SMOKE=1 \
 KAFKA_BOOTSTRAP_SERVERS=localhost:29092 \
