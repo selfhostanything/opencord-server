@@ -447,7 +447,8 @@ and delete dispatches require the Discord `GUILD_MESSAGES` intent. Channel
 create/update/delete and guild create/update/delete dispatches require `GUILDS`;
 guild-member add/remove dispatches require `GUILD_MEMBERS`. Unknown opcodes
 close with `4001`; malformed payloads close with `4002`; invalid IDENTIFY
-tokens close with `4004`; duplicate IDENTIFY frames close with `4005`; unknown
+tokens close with `4004`; duplicate IDENTIFY frames close with `4005`;
+connections that exceed 5 client frames per second close with `4008`; unknown
 RESUME sessions close with `4009` after OP 9.
 
 `POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands`

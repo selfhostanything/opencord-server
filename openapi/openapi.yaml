@@ -605,7 +605,8 @@ paths:
         `GUILD_MEMBERS`.
         Unknown opcodes close with `4001`; malformed payloads close with
         `4002`; invalid IDENTIFY tokens close with `4004`; duplicate IDENTIFY
-        frames close with `4005`; unknown RESUME sessions close with `4009`
+        frames close with `4005`; connections that exceed 5 client frames per
+        second close with `4008`; unknown RESUME sessions close with `4009`
         after OP 9.
       responses:
         "101":

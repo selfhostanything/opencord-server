@@ -2740,6 +2740,40 @@ async fn compat_gateway_closes_malformed_gateway_payload_with_decode_error() {
 }
 
 #[tokio::test]
+async fn compat_gateway_closes_rate_limited_client_frames() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    for _ in 0..6 {
+        socket
+            .send(WsMessage::Text(
+                json!({
+                    "op": 1,
+                    "d": null
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .expect("send heartbeat burst");
+    }
+
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut socket))
+        .await
+        .expect("rate limit close frame");
+    assert_eq!(code, CloseCode::Library(4008));
+    assert_eq!(reason, "rate limited");
+}
+
+#[tokio::test]
 async fn compat_gateway_rejects_unknown_resume_session() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;

@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use axum::extract::State;
 use axum::extract::ws::{CloseFrame, Message as WebSocketMessage, WebSocket, WebSocketUpgrade};
 use axum::response::{IntoResponse, Response};
@@ -29,7 +31,10 @@ const CLOSE_UNKNOWN_OPCODE: u16 = 4001;
 const CLOSE_DECODE_ERROR: u16 = 4002;
 const CLOSE_AUTHENTICATION_FAILED: u16 = 4004;
 const CLOSE_ALREADY_AUTHENTICATED: u16 = 4005;
+const CLOSE_RATE_LIMITED: u16 = 4008;
 const CLOSE_SESSION_TIMED_OUT: u16 = 4009;
+const GATEWAY_CLIENT_FRAME_LIMIT: u32 = 5;
+const GATEWAY_CLIENT_FRAME_WINDOW: Duration = Duration::from_secs(1);
 const INTENT_GUILDS: u64 = 1 << 0;
 const INTENT_GUILD_MEMBERS: u64 = 1 << 1;
 const INTENT_GUILD_MESSAGES: u64 = 1 << 9;
@@ -83,6 +88,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
     let mut active_session_id: Option<String> = None;
     let mut active_intents: u64 = 0;
     let mut sequence: i64 = 0;
+    let mut client_frame_limiter = GatewayClientFrameRateLimiter::new();
 
     loop {
         tokio::select! {
@@ -90,6 +96,11 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                 let Some(Ok(message)) = message else {
                     break;
                 };
+
+                if !client_frame_limiter.allow() {
+                    let _ = send_close(&mut socket, CLOSE_RATE_LIMITED, "rate limited").await;
+                    break;
+                }
 
                 if !handle_client_message(
                     &state,
@@ -257,6 +268,35 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                 }
             }
         }
+    }
+}
+
+struct GatewayClientFrameRateLimiter {
+    window_started_at: Instant,
+    count: u32,
+}
+
+impl GatewayClientFrameRateLimiter {
+    fn new() -> Self {
+        Self {
+            window_started_at: Instant::now(),
+            count: 0,
+        }
+    }
+
+    fn allow(&mut self) -> bool {
+        let now = Instant::now();
+        if now.duration_since(self.window_started_at) >= GATEWAY_CLIENT_FRAME_WINDOW {
+            self.window_started_at = now;
+            self.count = 0;
+        }
+
+        if self.count >= GATEWAY_CLIENT_FRAME_LIMIT {
+            return false;
+        }
+
+        self.count += 1;
+        true
     }
 }
 
