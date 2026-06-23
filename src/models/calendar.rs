@@ -12,6 +12,14 @@ pub struct ConnectGoogleCalendarRequest {
     pub refresh_token: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ConnectMicrosoftCalendarRequest {
+    pub external_account_id: String,
+    pub calendar_id: Option<String>,
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct CalendarAccountResponse {
     pub id: String,
@@ -59,6 +67,17 @@ pub struct CalendarEventResourceResponse {
 
 impl From<ConnectGoogleCalendarRequest> for ConnectCalendarAccount {
     fn from(request: ConnectGoogleCalendarRequest) -> Self {
+        Self {
+            external_account_id: request.external_account_id,
+            calendar_id: request.calendar_id.unwrap_or_else(|| "primary".to_owned()),
+            access_token: request.access_token,
+            refresh_token: request.refresh_token,
+        }
+    }
+}
+
+impl From<ConnectMicrosoftCalendarRequest> for ConnectCalendarAccount {
+    fn from(request: ConnectMicrosoftCalendarRequest) -> Self {
         Self {
             external_account_id: request.external_account_id,
             calendar_id: request.calendar_id.unwrap_or_else(|| "primary".to_owned()),

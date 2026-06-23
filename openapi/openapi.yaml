@@ -181,6 +181,31 @@ paths:
           description: Invalid Google account payload
         "401":
           description: Missing or invalid bearer session
+  /calendar/accounts/microsoft:
+    post:
+      summary: Connect or update the current user's Microsoft Calendar account
+      description: >
+        Stores write-only Microsoft token material for future provider calls and
+        returns redacted account metadata.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectMicrosoftCalendarRequest"
+      responses:
+        "201":
+          description: Connected Microsoft Calendar account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarAccountResourceResponse"
+        "400":
+          description: Invalid Microsoft account payload
+        "401":
+          description: Missing or invalid bearer session
   /media/rooms/token:
     post:
       summary: Issue a short-lived LiveKit room token
@@ -580,6 +605,37 @@ paths:
                 $ref: "#/components/schemas/CalendarEventResourceResponse"
         "400":
           description: Google Calendar account is not connected
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Current user cannot manage this meeting
+        "404":
+          description: Meeting not found for this user
+  /meetings/{meeting_id}/calendar/microsoft/sync:
+    post:
+      summary: Create or update a Microsoft Calendar event for one meeting
+      description: >
+        Requires a connected Microsoft calendar account and meeting management
+        access. The operation is idempotent for the current user, meeting, and
+        provider account.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: meeting_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Provider calendar event sync metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarEventResourceResponse"
+        "400":
+          description: Microsoft Calendar account is not connected
         "401":
           description: Missing or invalid bearer session
         "403":
@@ -1672,6 +1728,29 @@ components:
             - "null"
           writeOnly: true
           minLength: 8
+    ConnectMicrosoftCalendarRequest:
+      type: object
+      required:
+        - external_account_id
+        - access_token
+      properties:
+        external_account_id:
+          type: string
+          maxLength: 256
+        calendar_id:
+          type: string
+          default: primary
+          maxLength: 256
+        access_token:
+          type: string
+          writeOnly: true
+          minLength: 8
+        refresh_token:
+          type:
+            - string
+            - "null"
+          writeOnly: true
+          minLength: 8
     CalendarAccount:
       type: object
       required:
@@ -1695,6 +1774,7 @@ components:
           type: string
           enum:
             - google
+            - microsoft
         external_account_id:
           type: string
         calendar_id:
@@ -1753,6 +1833,7 @@ components:
           type: string
           enum:
             - google
+            - microsoft
         provider_event_id:
           type: string
         provider_event_url:

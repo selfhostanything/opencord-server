@@ -7,7 +7,7 @@ use crate::domain::attachment::{AttachmentService, AttachmentStore};
 use crate::domain::audit::{AuditService, AuditStore};
 use crate::domain::auth::{AuthService, AuthStore};
 use crate::domain::calendar_sync::{
-    CalendarStore, CalendarSyncService, LocalGoogleCalendarAdapter,
+    CalendarStore, CalendarSyncService, LocalGoogleCalendarAdapter, LocalMicrosoftCalendarAdapter,
 };
 use crate::domain::channel::{ChannelService, ChannelStore};
 use crate::domain::media::MediaControlService;
@@ -112,6 +112,7 @@ impl AppState {
             calendar_sync: Arc::new(CalendarSyncService::new(
                 stores.calendar,
                 Arc::new(LocalGoogleCalendarAdapter),
+                Arc::new(LocalMicrosoftCalendarAdapter),
             )),
             attachments: Arc::new(AttachmentService::new(stores.attachments)),
             audit: Arc::new(AuditService::new(stores.audit)),

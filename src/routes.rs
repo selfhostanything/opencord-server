@@ -42,6 +42,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             post(calendar_controller::connect_google),
         )
         .route(
+            "/calendar/accounts/microsoft",
+            post(calendar_controller::connect_microsoft),
+        )
+        .route(
             "/media/rooms/token",
             post(media_controller::create_room_token),
         )
@@ -82,6 +86,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/meetings/{meeting_id}/calendar/google/sync",
             post(meeting_controller::sync_google_calendar),
+        )
+        .route(
+            "/meetings/{meeting_id}/calendar/microsoft/sync",
+            post(meeting_controller::sync_microsoft_calendar),
         )
         .route(
             "/spaces/{space_id}/channels",

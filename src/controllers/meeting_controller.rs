@@ -202,6 +202,27 @@ pub async fn sync_google_calendar(
     }))
 }
 
+pub async fn sync_microsoft_calendar(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(meeting_id): Path<Uuid>,
+) -> Result<Json<CalendarEventResourceResponse>, MeetingApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let meeting = state.meetings.get(meeting_id).await?;
+    let organization = require_read_meeting(&state, &user, &meeting).await?;
+    require_meeting_manager(&user, &organization, &meeting)?;
+
+    let calendar_event = state
+        .calendar_sync
+        .sync_microsoft_meeting(user.id, meeting, &state.config.public_url)
+        .await?;
+
+    Ok(Json(CalendarEventResourceResponse {
+        calendar_event: CalendarEventResponse::from(calendar_event),
+    }))
+}
+
 fn meeting_response(meeting: MeetingBundle, state: &AppState) -> MeetingResponse {
     MeetingResponse::from_bundle(meeting, &state.config.public_url)
 }
