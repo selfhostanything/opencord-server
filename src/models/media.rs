@@ -14,7 +14,7 @@ pub struct CreateMediaRoomTokenRequest {
     pub can_subscribe: Option<bool>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct MediaTokenGrantsResponse {
     pub can_publish_audio: bool,
     pub can_publish_video: bool,
@@ -22,7 +22,7 @@ pub struct MediaTokenGrantsResponse {
     pub can_subscribe: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct MediaRoomTokenResponse {
     pub provider: String,
     pub server_url: String,

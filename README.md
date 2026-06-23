@@ -89,6 +89,7 @@ POST /auth/login
 POST /auth/logout
 GET /me
 POST /media/rooms/token
+POST /voice/channels/{channel_id}/join
 POST /push-tokens
 GET /push-tokens
 POST /organizations
@@ -121,10 +122,14 @@ Authorization: Bearer <session token>
 
 ## Media Control
 
-`POST /media/rooms/token` issues a short-lived LiveKit participant token after
-auth, channel membership, and media permission checks. It currently supports
-`voice_channel` rooms and prepares the service boundary for the Phase 03 voice
-join flow.
+`POST /voice/channels/{channel_id}/join` is the product voice entrypoint. It
+authenticates the user, requires `VIEW_CHANNEL` and `CONNECT_VOICE`, issues a
+short-lived LiveKit participant token, and publishes a redacted
+`voice.participant_joined` realtime event.
+
+`POST /media/rooms/token` is the lower-level media-control boundary used by the
+voice join flow. It issues a short-lived LiveKit participant token after auth,
+channel membership, and media permission checks.
 
 Local defaults:
 

@@ -136,6 +136,43 @@ paths:
           description: Missing VIEW_CHANNEL, CONNECT_VOICE, or requested publish permission
         "404":
           description: Channel or parent space not found for this user
+  /voice/channels/{channel_id}/join:
+    post:
+      summary: Join a voice channel
+      description: >
+        Authenticates the user, verifies voice channel visibility and
+        CONNECT_VOICE permission, issues a short-lived LiveKit participant token,
+        and publishes a redacted `voice.participant_joined` realtime event.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JoinVoiceChannelRequest"
+      responses:
+        "201":
+          description: Voice participant state and LiveKit connection details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceJoinResponse"
+        "400":
+          description: Channel is not a voice channel or request is invalid
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing VIEW_CHANNEL or CONNECT_VOICE permission
+        "404":
+          description: Channel or parent space not found for this user
   /push-tokens:
     post:
       summary: Register or update a device push token
@@ -971,6 +1008,43 @@ components:
       required:
         - media
       properties:
+        media:
+          $ref: "#/components/schemas/MediaRoomToken"
+    JoinVoiceChannelRequest:
+      type: object
+      properties:
+        self_mute:
+          type: boolean
+          default: false
+        self_deaf:
+          type: boolean
+          default: false
+    VoiceParticipant:
+      type: object
+      required:
+        - channel_id
+        - user_id
+        - self_mute
+        - self_deaf
+      properties:
+        channel_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        self_mute:
+          type: boolean
+        self_deaf:
+          type: boolean
+    VoiceJoinResponse:
+      type: object
+      required:
+        - voice
+        - media
+      properties:
+        voice:
+          $ref: "#/components/schemas/VoiceParticipant"
         media:
           $ref: "#/components/schemas/MediaRoomToken"
     CreateOrganizationRequest:
