@@ -140,6 +140,24 @@ async fn create_space_with_channel(
     (organization_id, space_id, channel_id)
 }
 
+async fn add_space_member(app: &axum::Router, owner_token: &str, space_id: &str, user_id: &str) {
+    let response = app
+        .clone()
+        .oneshot(bearer_json_request(
+            Method::POST,
+            &format!("/spaces/{space_id}/members"),
+            owner_token,
+            json!({
+                "user_id": user_id,
+                "role": "member"
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+}
+
 async fn presign_attachment(app: &axum::Router, token: &str, channel_id: &str) -> Value {
     let response = app
         .clone()
@@ -159,6 +177,33 @@ async fn presign_attachment(app: &axum::Router, token: &str, channel_id: &str) -
 
     assert_eq!(response.status(), StatusCode::CREATED);
     response_json(response).await
+}
+
+#[tokio::test]
+async fn attachment_upload_is_limited_to_original_uploader() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "attachment-upload-owner@example.com").await;
+    let (member_token, member_id) = register(&app, "attachment-upload-member@example.com").await;
+    let (_, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "upload-owner").await;
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+
+    let presigned = presign_attachment(&app, &owner_token, &channel_id).await;
+    let attachment_id = presigned["attachment"]["id"].as_str().unwrap();
+
+    let member_upload = app
+        .clone()
+        .oneshot(bearer_bytes_request(
+            Method::PUT,
+            &format!("/attachments/{attachment_id}/content"),
+            &member_token,
+            "image/png",
+            b"hello image".to_vec(),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(member_upload.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

@@ -237,6 +237,20 @@ stores local subscription state, and updates the organization's local plan
 entitlement. Billing state is stored locally so request handling does not need
 to query a billing provider for every request.
 
+## Security Defaults
+
+API and realtime responses include conservative browser security headers. CORS
+is explicit: by default the server allows browser requests only from the
+configured `OPENCORD_PUBLIC_URL` origin. Add comma-separated origins through
+`OPENCORD_ALLOWED_ORIGINS` when a hosted web client or local Vite dev server
+must connect cross-origin.
+
+Local Compose sets:
+
+```text
+OPENCORD_ALLOWED_ORIGINS=http://localhost:5173
+```
+
 ## Worker
 
 `opencord-worker` polls `meeting_reminders` and fires pending reminders whose

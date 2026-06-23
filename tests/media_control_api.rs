@@ -246,6 +246,7 @@ async fn media_control_issues_room_scoped_livekit_token_for_authorized_member() 
     assert_eq!(payload["video"]["canPublishData"], true);
     assert_eq!(payload["video"]["canPublishSources"], json!(["microphone"]));
     assert!(payload["exp"].as_i64().unwrap() > payload["nbf"].as_i64().unwrap());
+    assert!(payload["exp"].as_i64().unwrap() - payload["nbf"].as_i64().unwrap() <= 600);
     assert_eq!(
         payload["attributes"]["opencord.organization_id"],
         organization_id
@@ -304,6 +305,39 @@ async fn media_control_denies_member_without_voice_permissions() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn media_control_rejects_cross_tenant_channel_claims() {
+    let app = test_app();
+    let (first_owner_token, _) = register(&app, "media-first-owner@example.com").await;
+    let (second_owner_token, _) = register(&app, "media-second-owner@example.com").await;
+    let (first_organization_id, first_space_id, _) =
+        create_space_with_channel(&app, &first_owner_token, "first-tenant").await;
+    let (_, _, second_channel_id) =
+        create_space_with_channel(&app, &second_owner_token, "second-tenant").await;
+
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            "/media/rooms/token",
+            &first_owner_token,
+            json!({
+                "room_type": "voice_channel",
+                "organization_id": first_organization_id,
+                "space_id": first_space_id,
+                "channel_id": second_channel_id,
+                "can_publish_audio": true,
+                "can_publish_video": false,
+                "can_publish_screen": false,
+                "can_subscribe": true
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 fn decode_jwt_payload(token: &str) -> Value {

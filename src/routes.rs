@@ -19,6 +19,7 @@ pub fn api_router(config: AppConfig) -> Router {
 }
 
 pub fn api_router_with_state(state: AppState) -> Router {
+    let cors_state = state.clone();
     Router::new()
         .route("/healthz", get(health_controller::health))
         .route("/metrics", get(metrics_controller::prometheus))
@@ -191,21 +192,24 @@ pub fn api_router_with_state(state: AppState) -> Router {
             "/messages/{message_id}",
             patch(message_controller::update).delete(message_controller::delete),
         )
-        .layer(middleware::from_fn(browser_cors))
+        .layer(middleware::from_fn_with_state(cors_state, browser_cors))
         .with_state(state)
 }
 
 pub fn health_router(config: AppConfig) -> Router {
+    let state = AppState::in_memory(config);
+    let cors_state = state.clone();
     Router::new()
         .route("/healthz", get(health_controller::health))
-        .layer(middleware::from_fn(browser_cors))
-        .with_state(AppState::in_memory(config))
+        .layer(middleware::from_fn_with_state(cors_state, browser_cors))
+        .with_state(state)
 }
 
 pub fn realtime_router_with_state(state: AppState) -> Router {
+    let cors_state = state.clone();
     Router::new()
         .route("/healthz", get(health_controller::health))
         .route("/ws", get(realtime_controller::websocket))
-        .layer(middleware::from_fn(browser_cors))
+        .layer(middleware::from_fn_with_state(cors_state, browser_cors))
         .with_state(state)
 }

@@ -39,6 +39,34 @@ async fn healthz_returns_status_and_version() {
 }
 
 #[tokio::test]
+async fn api_responses_include_security_headers() {
+    let response = test_app()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/healthz")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let headers = response.headers();
+    assert_eq!(headers["x-content-type-options"], "nosniff");
+    assert_eq!(headers["referrer-policy"], "no-referrer");
+    assert_eq!(headers["x-frame-options"], "DENY");
+    assert_eq!(
+        headers["content-security-policy"],
+        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    );
+    assert_eq!(
+        headers["strict-transport-security"],
+        "max-age=31536000; includeSubDomains"
+    );
+}
+
+#[tokio::test]
 async fn discovery_endpoints_return_basic_metadata() {
     let well_known = test_app()
         .oneshot(
@@ -118,7 +146,7 @@ async fn cors_preflight_supports_browser_clients() {
             Request::builder()
                 .method(Method::OPTIONS)
                 .uri("/healthz")
-                .header(header::ORIGIN, "http://localhost:5173")
+                .header(header::ORIGIN, "https://chat.example.com")
                 .header(header::ACCESS_CONTROL_REQUEST_METHOD, "GET")
                 .body(Body::empty())
                 .unwrap(),
@@ -127,7 +155,11 @@ async fn cors_preflight_supports_browser_clients() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert_eq!(response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], "*");
+    assert_eq!(
+        response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+        "https://chat.example.com"
+    );
+    assert_eq!(response.headers()[header::VARY], "Origin");
     assert!(
         response.headers()[header::ACCESS_CONTROL_ALLOW_METHODS]
             .to_str()
@@ -139,5 +171,29 @@ async fn cors_preflight_supports_browser_clients() {
             .to_str()
             .unwrap()
             .contains("PUT")
+    );
+}
+
+#[tokio::test]
+async fn cors_preflight_rejects_unconfigured_origins() {
+    let response = test_app()
+        .oneshot(
+            Request::builder()
+                .method(Method::OPTIONS)
+                .uri("/healthz")
+                .header(header::ORIGIN, "https://untrusted.example")
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "GET")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .is_none()
     );
 }
