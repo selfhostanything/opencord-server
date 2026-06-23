@@ -67,7 +67,7 @@ TURN/coturn planning and verification are documented in
 Local development uses:
 
 ```text
-timescale/timescaledb:2.28.0-pg18
+timescale/timescaledb:2.28.1-pg18-oss
 ```
 
 Run migrations:

@@ -23,7 +23,7 @@ docker run --rm --name opencord-coturn \
   -p 3478:3478/tcp \
   -p 3478:3478/udp \
   -p 49160-49200:49160-49200/udp \
-  coturn/coturn:latest \
+  coturn/coturn:4.14-debian \
   -n \
   --log-file=stdout \
   --lt-cred-mech \
