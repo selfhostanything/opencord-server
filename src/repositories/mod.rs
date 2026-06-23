@@ -1,5 +1,7 @@
 pub mod attachment_memory;
 pub mod attachment_postgres;
+pub mod audit_memory;
+pub mod audit_postgres;
 pub mod auth_memory;
 pub mod auth_postgres;
 pub mod channel_memory;

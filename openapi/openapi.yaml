@@ -373,6 +373,34 @@ paths:
           description: Missing MANAGE_ROLES permission
         "404":
           description: Space, target member, or role not found
+  /spaces/{space_id}/audit-events:
+    get:
+      summary: List space audit events
+      description: >
+        Returns admin-visible audit events for moderation and compliance
+        actions inside a space. Requires MANAGE_SPACE.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Space audit events ordered by creation time
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventListResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_SPACE permission
+        "404":
+          description: Space not found for this user
   /channels/{channel_id}:
     patch:
       summary: Update a text channel
@@ -1025,6 +1053,63 @@ components:
       properties:
         permission_override:
           $ref: "#/components/schemas/ChannelPermissionOverride"
+    AuditEvent:
+      type: object
+      required:
+        - id
+        - organization_id
+        - space_id
+        - actor_user_id
+        - action
+        - target_type
+        - target_id
+        - metadata
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        space_id:
+          type: string
+          format: uuid
+        actor_user_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+          examples:
+            - space.member.added
+            - role.created
+            - role.assigned
+            - channel.permission_override.set
+        target_type:
+          type: string
+          examples:
+            - user
+            - role
+            - role_assignment
+            - channel
+        target_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    AuditEventListResponse:
+      type: object
+      required:
+        - audit_events
+      properties:
+        audit_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
     CreateChannelRequest:
       type: object
       required:

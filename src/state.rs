@@ -4,6 +4,7 @@ use sea_orm::DatabaseConnection;
 
 use crate::config::AppConfig;
 use crate::domain::attachment::{AttachmentService, AttachmentStore};
+use crate::domain::audit::{AuditService, AuditStore};
 use crate::domain::auth::{AuthService, AuthStore};
 use crate::domain::channel::{ChannelService, ChannelStore};
 use crate::domain::message::{MessageService, MessageStore};
@@ -13,6 +14,8 @@ use crate::domain::realtime::RealtimeHub;
 use crate::domain::space::{SpaceService, SpaceStore};
 use crate::repositories::attachment_memory::MemoryAttachmentStore;
 use crate::repositories::attachment_postgres::PostgresAttachmentStore;
+use crate::repositories::audit_memory::MemoryAuditStore;
+use crate::repositories::audit_postgres::PostgresAuditStore;
 use crate::repositories::auth_memory::MemoryAuthStore;
 use crate::repositories::auth_postgres::PostgresAuthStore;
 use crate::repositories::channel_memory::MemoryChannelStore;
@@ -35,6 +38,7 @@ pub struct AppState {
     pub channels: Arc<ChannelService>,
     pub messages: Arc<MessageService>,
     pub attachments: Arc<AttachmentService>,
+    pub audit: Arc<AuditService>,
     pub permissions: Arc<PermissionService>,
     pub realtime: Arc<RealtimeHub>,
 }
@@ -50,6 +54,7 @@ impl AppState {
                 channels: Arc::new(MemoryChannelStore::default()),
                 messages: Arc::new(MemoryMessageStore::default()),
                 attachments: Arc::new(MemoryAttachmentStore::default()),
+                audit: Arc::new(MemoryAuditStore::default()),
                 permissions: Arc::new(MemoryPermissionStore::default()),
             },
         )
@@ -65,6 +70,7 @@ impl AppState {
                 channels: Arc::new(PostgresChannelStore::new(db.clone())),
                 messages: Arc::new(PostgresMessageStore::new(db.clone())),
                 attachments: Arc::new(PostgresAttachmentStore::new(db.clone())),
+                audit: Arc::new(PostgresAuditStore::new(db.clone())),
                 permissions: Arc::new(PostgresPermissionStore::new(db)),
             },
         )
@@ -79,6 +85,7 @@ impl AppState {
             channels: Arc::new(ChannelService::new(stores.channels)),
             messages: Arc::new(MessageService::new(stores.messages)),
             attachments: Arc::new(AttachmentService::new(stores.attachments)),
+            audit: Arc::new(AuditService::new(stores.audit)),
             permissions: Arc::new(PermissionService::new(stores.permissions)),
             realtime: Arc::new(RealtimeHub::default()),
         }
@@ -92,5 +99,6 @@ pub struct AppStores {
     pub channels: Arc<dyn ChannelStore>,
     pub messages: Arc<dyn MessageStore>,
     pub attachments: Arc<dyn AttachmentStore>,
+    pub audit: Arc<dyn AuditStore>,
     pub permissions: Arc<dyn PermissionStore>,
 }

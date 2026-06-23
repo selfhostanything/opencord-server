@@ -1,4 +1,5 @@
 pub mod attachment_controller;
+pub mod audit_controller;
 pub mod auth_controller;
 pub mod channel_controller;
 pub mod discovery_controller;

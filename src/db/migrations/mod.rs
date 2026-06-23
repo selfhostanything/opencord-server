@@ -8,6 +8,7 @@ mod m20260623020400_channels;
 mod m20260623022000_messages;
 mod m20260623023500_permissions;
 mod m20260623032000_attachments;
+mod m20260623034000_audit_events;
 
 pub struct Migrator;
 
@@ -23,6 +24,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623022000_messages::Migration),
             Box::new(m20260623023500_permissions::Migration),
             Box::new(m20260623032000_attachments::Migration),
+            Box::new(m20260623034000_audit_events::Migration),
         ]
     }
 }

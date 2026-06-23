@@ -4,9 +4,9 @@ use axum::routing::{get, patch, post, put};
 
 use crate::config::AppConfig;
 use crate::controllers::{
-    attachment_controller, auth_controller, channel_controller, discovery_controller,
-    health_controller, message_controller, organization_controller, permission_controller,
-    realtime_controller, space_controller,
+    attachment_controller, audit_controller, auth_controller, channel_controller,
+    discovery_controller, health_controller, message_controller, organization_controller,
+    permission_controller, realtime_controller, space_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -48,6 +48,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/spaces/{space_id}/members",
             post(permission_controller::add_space_member),
+        )
+        .route(
+            "/spaces/{space_id}/audit-events",
+            get(audit_controller::list_for_space),
         )
         .route(
             "/spaces/{space_id}/roles",

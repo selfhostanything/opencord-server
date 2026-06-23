@@ -89,6 +89,7 @@ GET /spaces/{space_id}/channels
 POST /spaces/{space_id}/members
 POST /spaces/{space_id}/roles
 POST /spaces/{space_id}/roles/{role_id}/assignments
+GET /spaces/{space_id}/audit-events
 PATCH /channels/{channel_id}
 POST /channels/{channel_id}/permission-overrides
 POST /channels/{channel_id}/messages
