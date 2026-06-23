@@ -297,6 +297,55 @@ async fn organization_admin_can_export_audit_events_by_date_range() {
 }
 
 #[tokio::test]
+async fn audit_export_writes_audit_event_for_next_export_window() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "audit-export-record-owner@example.com").await;
+    let (organization_id, _, _) =
+        create_space_with_channel(&app, &owner_token, "export-record").await;
+
+    let first = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!(
+                "/organizations/{organization_id}/audit-events/export?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z"
+            ),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+
+    let second = app
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!(
+                "/organizations/{organization_id}/audit-events/export?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z"
+            ),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(second.status(), StatusCode::OK);
+    let body = response_json(second).await;
+    let events = body["export"]["audit_events"].as_array().unwrap();
+    let event = events
+        .iter()
+        .find(|event| event["action"] == "audit_export.created")
+        .expect("audit export should write an audit event");
+
+    assert_eq!(event["organization_id"], organization_id);
+    assert_eq!(event["target_type"], "export");
+    assert_eq!(event["target_id"], organization_id);
+    assert_eq!(event["metadata"]["export_type"], "audit");
+    assert_eq!(event["metadata"]["format"], "json");
+    assert!(event["metadata"]["audit_event_count"].as_u64().is_some());
+    assert!(event["metadata"].get("audit_events").is_none());
+}
+
+#[tokio::test]
 async fn audit_events_require_bearer_auth() {
     let response = test_app()
         .oneshot(json_request(

@@ -3,9 +3,11 @@ use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::controllers::message_controller::attachment_response;
+use crate::domain::audit::{AuditError, NewAuditEvent};
 use crate::domain::auth::AuthError;
 use crate::domain::data_export::DataExportError;
 use crate::domain::organization::OrganizationError;
@@ -30,12 +32,33 @@ pub async fn export_for_organization(
         .data_exports
         .export_for_organization(organization_id, query.from, query.to)
         .await?;
+    let message_count = export.messages.len();
+    let file_count = export.files.len();
     let files = export
         .files
         .iter()
         .cloned()
         .map(|file| attachment_response(file, &state.config.public_url))
         .collect();
+    state
+        .audit
+        .record(NewAuditEvent {
+            organization_id,
+            space_id: organization_id,
+            actor_user_id: user.id,
+            action: "data_export.created",
+            target_type: "export",
+            target_id: organization_id,
+            metadata: json!({
+                "export_type": "data",
+                "format": export.format,
+                "from": export.from,
+                "to": export.to,
+                "message_count": message_count,
+                "file_count": file_count
+            }),
+        })
+        .await?;
 
     Ok(Json(DataExportEnvelope {
         export: DataExportResponse::from_export(export, files),
@@ -53,6 +76,7 @@ pub enum DataExportApiError {
     Auth(AuthError),
     Organization(OrganizationError),
     DataExport(DataExportError),
+    Audit(AuditError),
 }
 
 impl From<AuthError> for DataExportApiError {
@@ -73,12 +97,19 @@ impl From<DataExportError> for DataExportApiError {
     }
 }
 
+impl From<AuditError> for DataExportApiError {
+    fn from(error: AuditError) -> Self {
+        Self::Audit(error)
+    }
+}
+
 impl IntoResponse for DataExportApiError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
             Self::Auth(error) => (error.status_code(), error.code(), error.message()),
             Self::Organization(error) => (error.status_code(), error.code(), error.message()),
             Self::DataExport(error) => (error.status_code(), error.code(), error.message()),
+            Self::Audit(error) => (error.status_code(), error.code(), error.message()),
         };
 
         (

@@ -152,6 +152,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             get(retention_controller::get_policy).put(retention_controller::upsert_policy),
         )
         .route(
+            "/organizations/{organization_id}/retention-runs",
+            get(retention_controller::list_runs),
+        )
+        .route(
             "/organizations/{organization_id}/webhook-policy",
             get(organization_controller::get_webhook_policy)
                 .put(organization_controller::upsert_webhook_policy),

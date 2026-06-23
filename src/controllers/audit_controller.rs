@@ -3,9 +3,10 @@ use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
+use serde_json::json;
 use uuid::Uuid;
 
-use crate::domain::audit::AuditError;
+use crate::domain::audit::{AuditError, NewAuditEvent};
 use crate::domain::auth::AuthError;
 use crate::domain::organization::OrganizationError;
 use crate::domain::permission::{Permission, PermissionError};
@@ -55,6 +56,25 @@ pub async fn export_for_organization(
     let export = state
         .audit
         .export_for_organization(organization_id, query.from, query.to)
+        .await?;
+    let audit_event_count = export.audit_events.len();
+    state
+        .audit
+        .record(NewAuditEvent {
+            organization_id,
+            space_id: organization_id,
+            actor_user_id: user.id,
+            action: "audit_export.created",
+            target_type: "export",
+            target_id: organization_id,
+            metadata: json!({
+                "export_type": "audit",
+                "format": export.format,
+                "from": export.from,
+                "to": export.to,
+                "audit_event_count": audit_event_count
+            }),
+        })
         .await?;
 
     Ok(Json(AuditExportEnvelope {

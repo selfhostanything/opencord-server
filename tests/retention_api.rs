@@ -1,15 +1,70 @@
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
 use opencord_server::config::AppConfig;
-use opencord_server::routes::api_router;
+use opencord_server::domain::ids;
+use opencord_server::domain::retention::{RetentionRun, RetentionStore};
+use opencord_server::repositories::attachment_memory::MemoryAttachmentStore;
+use opencord_server::repositories::audit_memory::MemoryAuditStore;
+use opencord_server::repositories::auth_memory::MemoryAuthStore;
+use opencord_server::repositories::billing_memory::MemoryBillingStore;
+use opencord_server::repositories::bot_memory::MemoryBotStore;
+use opencord_server::repositories::calendar_memory::MemoryCalendarStore;
+use opencord_server::repositories::channel_memory::MemoryChannelStore;
+use opencord_server::repositories::command_memory::MemoryCommandStore;
+use opencord_server::repositories::compat_gateway_memory::MemoryCompatGatewaySessionStore;
+use opencord_server::repositories::meeting_memory::MemoryMeetingStore;
+use opencord_server::repositories::message_memory::MemoryMessageStore;
+use opencord_server::repositories::organization_memory::MemoryOrganizationStore;
+use opencord_server::repositories::permission_memory::MemoryPermissionStore;
+use opencord_server::repositories::push_memory::MemoryPushTokenStore;
+use opencord_server::repositories::retention_memory::MemoryRetentionStore;
+use opencord_server::repositories::scim_memory::MemoryScimStore;
+use opencord_server::repositories::space_memory::MemorySpaceStore;
+use opencord_server::repositories::webhook_memory::MemoryIncomingWebhookStore;
+use opencord_server::routes::{api_router, api_router_with_state};
+use opencord_server::state::{AppState, AppStores};
 use serde_json::{Value, json};
+use std::sync::Arc;
 use tower::ServiceExt;
+use uuid::Uuid;
 
 fn test_app() -> axum::Router {
     api_router(AppConfig {
         version: "test-version".to_owned(),
         public_url: "https://chat.example.com".to_owned(),
     })
+}
+
+fn test_app_with_retention_store() -> (axum::Router, Arc<MemoryRetentionStore>) {
+    let retention = Arc::new(MemoryRetentionStore::default());
+    let state = AppState::with_stores(
+        AppConfig {
+            version: "test-version".to_owned(),
+            public_url: "https://chat.example.com".to_owned(),
+        },
+        AppStores {
+            auth: Arc::new(MemoryAuthStore::default()),
+            organizations: Arc::new(MemoryOrganizationStore::default()),
+            spaces: Arc::new(MemorySpaceStore::default()),
+            channels: Arc::new(MemoryChannelStore::default()),
+            messages: Arc::new(MemoryMessageStore::default()),
+            meetings: Arc::new(MemoryMeetingStore::default()),
+            calendar: Arc::new(MemoryCalendarStore::default()),
+            attachments: Arc::new(MemoryAttachmentStore::default()),
+            audit: Arc::new(MemoryAuditStore::default()),
+            permissions: Arc::new(MemoryPermissionStore::default()),
+            push: Arc::new(MemoryPushTokenStore::default()),
+            billing: Arc::new(MemoryBillingStore::default()),
+            scim: Arc::new(MemoryScimStore::default()),
+            retention: retention.clone(),
+            bots: Arc::new(MemoryBotStore::default()),
+            webhooks: Arc::new(MemoryIncomingWebhookStore::default()),
+            commands: Arc::new(MemoryCommandStore::default()),
+            compat_gateway_sessions: Arc::new(MemoryCompatGatewaySessionStore::default()),
+        },
+    );
+
+    (api_router_with_state(state), retention)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -171,6 +226,75 @@ async fn organization_admin_can_configure_retention_policy() {
                 "audit_logs_retain_days": 1,
                 "deleted_message_purge_days": 1
             }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn organization_admin_can_list_retention_run_history() {
+    let (app, retention_store) = test_app_with_retention_store();
+    let (owner_token, _) = register(&app, "retention-runs-owner@example.com").await;
+    let (member_token, member_id) = register(&app, "retention-runs-member@example.com").await;
+    let (organization_id, space_id) = create_space(&app, &owner_token, "runs").await;
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+    let organization_uuid = Uuid::parse_str(&organization_id).unwrap();
+
+    retention_store
+        .record_run(RetentionRun {
+            id: ids::new_uuid_v7(),
+            organization_id: organization_uuid,
+            dry_run: true,
+            messages_purged: 3,
+            files_purged: 2,
+            audit_events_purged: 1,
+            ran_at: "2026-06-23T10:00:00.000Z".to_owned(),
+        })
+        .await
+        .expect("first run should save");
+    retention_store
+        .record_run(RetentionRun {
+            id: ids::new_uuid_v7(),
+            organization_id: organization_uuid,
+            dry_run: false,
+            messages_purged: 4,
+            files_purged: 1,
+            audit_events_purged: 0,
+            ran_at: "2026-06-23T11:00:00.000Z".to_owned(),
+        })
+        .await
+        .expect("second run should save");
+
+    let listed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/retention-runs"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    let runs = body["retention_runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 2);
+    assert_eq!(runs[0]["organization_id"], organization_id);
+    assert_eq!(runs[0]["dry_run"], true);
+    assert_eq!(runs[0]["messages_purged"], 3);
+    assert_eq!(runs[0]["files_purged"], 2);
+    assert_eq!(runs[0]["audit_events_purged"], 1);
+    assert_eq!(runs[0]["ran_at"], "2026-06-23T10:00:00.000Z");
+    assert_eq!(runs[1]["dry_run"], false);
+    assert_eq!(runs[1]["messages_purged"], 4);
+
+    let forbidden = app
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/retention-runs"),
+            &member_token,
+            json!({}),
         ))
         .await
         .unwrap();

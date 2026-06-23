@@ -274,3 +274,58 @@ async fn organization_admin_can_export_messages_and_file_manifest() {
         .unwrap();
     assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn data_export_writes_audit_event_without_export_payload() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "data-export-audit-owner@example.com").await;
+    let (organization_id, _, channel_id) =
+        create_space_with_channel(&app, &owner_token, "audit-event").await;
+    let (message_id, attachment_id) =
+        create_linked_attachment_message(&app, &owner_token, &channel_id).await;
+
+    let exported = app
+        .clone()
+        .oneshot(bearer_json_request(
+            Method::GET,
+            &format!(
+                "/organizations/{organization_id}/data-export?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z"
+            ),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(exported.status(), StatusCode::OK);
+
+    let audit = app
+        .oneshot(bearer_json_request(
+            Method::GET,
+            &format!(
+                "/organizations/{organization_id}/audit-events/export?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z"
+            ),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(audit.status(), StatusCode::OK);
+    let body = response_json(audit).await;
+    let events = body["export"]["audit_events"].as_array().unwrap();
+    let event = events
+        .iter()
+        .find(|event| event["action"] == "data_export.created")
+        .expect("data export should write an audit event");
+
+    assert_eq!(event["organization_id"], organization_id);
+    assert_eq!(event["target_type"], "export");
+    assert_eq!(event["target_id"], organization_id);
+    assert_eq!(event["metadata"]["export_type"], "data");
+    assert_eq!(event["metadata"]["format"], "json");
+    assert_eq!(event["metadata"]["message_count"], 1);
+    assert_eq!(event["metadata"]["file_count"], 1);
+    assert!(event["metadata"].get("messages").is_none());
+    assert!(event["metadata"].get("files").is_none());
+    assert!(!event["metadata"].to_string().contains(&message_id));
+    assert!(!event["metadata"].to_string().contains(&attachment_id));
+}

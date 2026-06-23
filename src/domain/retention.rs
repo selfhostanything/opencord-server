@@ -142,6 +142,13 @@ impl RetentionService {
             .await?
             .ok_or(RetentionError::NotFound)
     }
+
+    pub async fn list_runs_for_organization(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<Vec<RetentionRun>, RetentionError> {
+        self.store.list_runs_for_organization(organization_id).await
+    }
 }
 
 #[derive(Clone)]

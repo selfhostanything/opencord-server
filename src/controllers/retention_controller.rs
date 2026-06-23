@@ -10,7 +10,8 @@ use crate::domain::retention::{RetentionError, RetentionPolicy};
 use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
 use crate::models::retention::{
-    RetentionPolicyEnvelope, RetentionPolicyResponse, UpsertRetentionPolicyRequest,
+    RetentionPolicyEnvelope, RetentionPolicyResponse, RetentionRunListResponse,
+    RetentionRunResponse, UpsertRetentionPolicyRequest,
 };
 use crate::state::AppState;
 
@@ -57,6 +58,27 @@ pub async fn upsert_policy(
 
     Ok(Json(RetentionPolicyEnvelope {
         policy: RetentionPolicyResponse::from(policy),
+    }))
+}
+
+pub async fn list_runs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization_id): Path<Uuid>,
+) -> Result<Json<RetentionRunListResponse>, RetentionApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    state
+        .organizations
+        .require_admin(user.id, organization_id)
+        .await?;
+    let runs = state
+        .retention
+        .list_runs_for_organization(organization_id)
+        .await?;
+
+    Ok(Json(RetentionRunListResponse {
+        retention_runs: runs.into_iter().map(RetentionRunResponse::from).collect(),
     }))
 }
 

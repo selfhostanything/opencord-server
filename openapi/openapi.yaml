@@ -1196,6 +1196,34 @@ paths:
           description: Organization admin permission is required
         "404":
           description: Organization not found
+  /organizations/{organization_id}/retention-runs:
+    get:
+      summary: List organization retention run history
+      description: >
+        Returns recorded dry-run and destructive purge counts for retention
+        worker runs scoped to the organization.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Retention run history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetentionRunListResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization not found
   /organizations/{organization_id}/webhook-policy:
     get:
       summary: Return organization incoming webhook policy
@@ -5541,6 +5569,46 @@ components:
       properties:
         policy:
           $ref: "#/components/schemas/RetentionPolicy"
+    RetentionRun:
+      type: object
+      required:
+        - id
+        - organization_id
+        - dry_run
+        - messages_purged
+        - files_purged
+        - audit_events_purged
+        - ran_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        dry_run:
+          type: boolean
+        messages_purged:
+          type: integer
+          minimum: 0
+        files_purged:
+          type: integer
+          minimum: 0
+        audit_events_purged:
+          type: integer
+          minimum: 0
+        ran_at:
+          type: string
+          format: date-time
+    RetentionRunListResponse:
+      type: object
+      required:
+        - retention_runs
+      properties:
+        retention_runs:
+          type: array
+          items:
+            $ref: "#/components/schemas/RetentionRun"
     CreateChannelRequest:
       type: object
       required:

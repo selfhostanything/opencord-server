@@ -123,6 +123,7 @@ GET /organizations/{organization_id}/audit-events/export
 GET /organizations/{organization_id}/data-export
 GET /organizations/{organization_id}/retention-policy
 PUT /organizations/{organization_id}/retention-policy
+GET /organizations/{organization_id}/retention-runs
 GET /organizations/{organization_id}/oidc
 PUT /organizations/{organization_id}/oidc
 POST /organizations/{organization_id}/scim/token
@@ -237,23 +238,26 @@ membership status.
 
 `GET /organizations/{organization_id}/audit-events/export?from=<rfc3339>&to=<rfc3339>`
 exports organization audit events in JSON for organization owners/admins. The
-initial export path is synchronous and date-range scoped; asynchronous export
-jobs with signed downloads remain future work.
+initial export path is synchronous and date-range scoped. Successful exports
+write a summary audit event without embedding the exported audit payload.
+Asynchronous export jobs with signed downloads remain future work.
 
 ## Data Export
 
 `GET /organizations/{organization_id}/data-export?from=<rfc3339>&to=<rfc3339>`
 exports organization messages and a linked file manifest in JSON for
 organization owners/admins. The first implementation exports metadata and
-attachment download URLs synchronously; asynchronous export packaging, signed
-download archives, and export job audit events remain future work.
+attachment download URLs synchronously. Successful exports write a summary audit
+event without message bodies, file manifests, or attachment identifiers.
+Asynchronous export packaging and signed download archives remain future work.
 
 ## Retention
 
 `PUT /organizations/{organization_id}/retention-policy` lets an organization
 owner/admin configure message, file, audit-log, and deleted-message retention
 windows in days. `GET /organizations/{organization_id}/retention-policy` returns
-the stored policy.
+the stored policy. `GET /organizations/{organization_id}/retention-runs`
+returns recorded dry-run and purge history for the organization.
 
 `opencord-worker` evaluates retention policies on a timer, records each
 retention run, and purges expired messages, files, and audit events when dry-run
