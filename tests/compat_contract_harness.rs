@@ -53,6 +53,7 @@ async fn harness_validates_rest_gateway_and_interaction_contracts() {
         &bot.bot_user_id,
         "contract hello",
         true,
+        json!([]),
     );
 
     let gateway_message = harness.next_gateway_json(&mut gateway).await;
@@ -63,6 +64,51 @@ async fn harness_validates_rest_gateway_and_interaction_contracts() {
         &bot.bot_user_id,
         "contract hello",
         true,
+        json!([]),
+    );
+
+    let embed = json!({
+        "title": "Deploy ready",
+        "description": "Release 1.2.3 passed checks",
+        "color": 5793266
+    });
+    let (embed_status, embed_body) = harness
+        .bot_json(
+            Method::POST,
+            &format!(
+                "/api/compat/discord/v10/channels/{}/messages",
+                space.channel_id
+            ),
+            &bot.bot_token,
+            json!({
+                "content": "",
+                "embeds": [embed.clone()],
+                "allowed_mentions": {
+                    "parse": []
+                }
+            }),
+        )
+        .await;
+    assert_eq!(embed_status, StatusCode::OK);
+    let embed_message = embed_body.expect("embed message create response");
+    assert_message_contract(
+        &embed_message,
+        &space.channel_id,
+        &bot.bot_user_id,
+        "",
+        true,
+        json!([embed.clone()]),
+    );
+
+    let gateway_embed_message = harness.next_gateway_json(&mut gateway).await;
+    assert_dispatch(&gateway_embed_message, "MESSAGE_CREATE", 3);
+    assert_message_contract(
+        &gateway_embed_message["d"],
+        &space.channel_id,
+        &bot.bot_user_id,
+        "",
+        true,
+        json!([embed.clone()]),
     );
 
     let (command_status, command_body) = harness
@@ -135,7 +181,7 @@ async fn harness_validates_rest_gateway_and_interaction_contracts() {
     assert_eq!(interaction["status"], "pending");
 
     let gateway_interaction = harness.next_gateway_json(&mut gateway).await;
-    assert_dispatch(&gateway_interaction, "INTERACTION_CREATE", 3);
+    assert_dispatch(&gateway_interaction, "INTERACTION_CREATE", 4);
     assert_eq!(gateway_interaction["d"]["id"], interaction_id);
     assert_eq!(
         gateway_interaction["d"]["application_id"],
@@ -177,13 +223,14 @@ async fn harness_validates_rest_gateway_and_interaction_contracts() {
     assert!(callback_body.is_none());
 
     let callback_message = harness.next_gateway_json(&mut gateway).await;
-    assert_dispatch(&callback_message, "MESSAGE_CREATE", 4);
+    assert_dispatch(&callback_message, "MESSAGE_CREATE", 5);
     assert_message_contract(
         &callback_message["d"],
         &space.channel_id,
         &bot.bot_user_id,
         "deploy queued",
         true,
+        json!([]),
     );
 }
 
@@ -199,6 +246,7 @@ fn assert_message_contract(
     author_id: &str,
     content: &str,
     author_is_bot: bool,
+    expected_embeds: Value,
 ) {
     assert_uuid_v7_string(message["id"].as_str().expect("message id"));
     assert_eq!(message["channel_id"], channel_id);
@@ -221,7 +269,7 @@ fn assert_message_contract(
             .expect("attachments")
             .is_empty()
     );
-    assert!(message["embeds"].as_array().expect("embeds").is_empty());
+    assert_eq!(message["embeds"], expected_embeds);
     assert_eq!(message["pinned"], false);
     assert!(message["timestamp"].as_str().is_some());
 }
