@@ -434,10 +434,10 @@ minute per bot application bucket. Successful responses include
 
 `GET /api/compat/discord/gateway` upgrades to a Discord-shaped WebSocket. The
 initial implementation sends HELLO, accepts IDENTIFY with an OpenCord bot
-token, emits READY, supports process-local RESUME by `session_id`, acknowledges
-heartbeats, and dispatches CHANNEL_CREATE, CHANNEL_UPDATE, GUILD_MEMBER_ADD,
-MESSAGE_CREATE, MESSAGE_UPDATE, and MESSAGE_DELETE for resources visible to the
-bot user.
+token, emits READY with bot-visible spaces as guilds, supports process-local
+RESUME by `session_id`, acknowledges heartbeats, and dispatches CHANNEL_CREATE,
+CHANNEL_UPDATE, GUILD_MEMBER_ADD, MESSAGE_CREATE, MESSAGE_UPDATE, and
+MESSAGE_DELETE for resources visible to the bot user.
 
 `POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands`
 registers a space-scoped chat input command for the current bot application.

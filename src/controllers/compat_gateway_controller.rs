@@ -12,7 +12,8 @@ use crate::domain::command::{
 use crate::domain::ids;
 use crate::domain::permission::Permission;
 use crate::domain::realtime::RealtimeEvent;
-use crate::models::compat::{CompatMessageResponse, CompatUserResponse};
+use crate::domain::space::SpaceMembership;
+use crate::models::compat::{CompatGuildResponse, CompatMessageResponse, CompatUserResponse};
 use crate::state::AppState;
 
 const OP_DISPATCH: i32 = 0;
@@ -262,6 +263,18 @@ async fn identify_bot(
         let _ = send_invalid_session(socket).await;
         return false;
     };
+    let Ok(guilds) = state
+        .spaces
+        .list_for_user(bot.bot_user_id, bot.organization_id)
+        .await
+    else {
+        let _ = send_invalid_session(socket).await;
+        return true;
+    };
+    let guilds = guilds
+        .into_iter()
+        .map(compat_guild_from_space)
+        .collect::<Vec<_>>();
 
     *sequence += 1;
     let session_id = format!("gw_{}", ids::new_uuid_v7());
@@ -274,7 +287,7 @@ async fn identify_bot(
             "username": bot.name.clone(),
             "bot": true
         },
-        "guilds": [],
+        "guilds": guilds,
         "application": {
             "id": bot.application_id.to_string()
         },
@@ -290,6 +303,14 @@ async fn identify_bot(
     send_dispatch(socket, "READY", *sequence, ready)
         .await
         .is_ok()
+}
+
+fn compat_guild_from_space(space: SpaceMembership) -> CompatGuildResponse {
+    CompatGuildResponse {
+        id: space.id.to_string(),
+        name: space.name,
+        unavailable: false,
+    }
 }
 
 async fn resume_bot(
