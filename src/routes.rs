@@ -5,11 +5,11 @@ use axum::routing::{get, patch, post, put};
 use crate::config::AppConfig;
 use crate::controllers::{
     attachment_controller, audit_controller, auth_controller, billing_controller, bot_controller,
-    calendar_controller, channel_controller, compat_controller, data_export_controller,
-    discovery_controller, health_controller, media_controller, meeting_controller,
-    message_controller, metrics_controller, organization_controller, permission_controller,
-    push_controller, realtime_controller, retention_controller, scim_controller, space_controller,
-    usage_controller, voice_controller, webhook_controller,
+    calendar_controller, channel_controller, compat_controller, compat_gateway_controller,
+    data_export_controller, discovery_controller, health_controller, media_controller,
+    meeting_controller, message_controller, metrics_controller, organization_controller,
+    permission_controller, push_controller, realtime_controller, retention_controller,
+    scim_controller, space_controller, usage_controller, voice_controller, webhook_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -42,6 +42,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/api/compat/discord/v10/channels/{channel_id}/messages/{message_id}",
             patch(compat_controller::update_message).delete(compat_controller::delete_message),
+        )
+        .route(
+            "/api/compat/discord/gateway",
+            get(compat_gateway_controller::gateway),
         )
         .route(
             "/webhooks/{webhook_id}/{webhook_token}",

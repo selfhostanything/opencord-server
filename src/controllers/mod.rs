@@ -6,6 +6,7 @@ pub mod bot_controller;
 pub mod calendar_controller;
 pub mod channel_controller;
 pub mod compat_controller;
+pub mod compat_gateway_controller;
 pub mod data_export_controller;
 pub mod discovery_controller;
 pub mod health_controller;

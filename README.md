@@ -90,6 +90,7 @@ POST /api/compat/discord/v10/channels/{channel_id}/messages
 GET /api/compat/discord/v10/channels/{channel_id}/messages
 PATCH /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
 DELETE /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
+GET /api/compat/discord/gateway
 POST /auth/register
 POST /auth/login
 GET /auth/oidc/providers
@@ -351,6 +352,11 @@ Discord-compatible bot message routes: send, list, edit, and delete. Requests
 use `Authorization: Bot ocb_...`. The bot user must be added to the target
 space through the normal member endpoint, and channel permissions are enforced
 against that bot user.
+
+`GET /api/compat/discord/gateway` upgrades to a Discord-shaped WebSocket. The
+initial implementation sends HELLO, accepts IDENTIFY with an OpenCord bot
+token, emits READY, acknowledges heartbeats, and dispatches MESSAGE_CREATE for
+messages visible to the bot user.
 
 ## License
 

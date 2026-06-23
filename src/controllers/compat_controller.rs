@@ -4,10 +4,12 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
 
+use crate::controllers::message_controller::message_response;
 use crate::domain::bot::{AuthenticatedBot, BotError};
 use crate::domain::channel::{Channel, ChannelError};
 use crate::domain::message::{Message, MessageError};
 use crate::domain::permission::{Permission, PermissionError};
+use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::{SpaceError, SpaceMembership};
 use crate::models::compat::{
     CompatErrorResponse, CompatMessageResponse, CompatUserResponse, CreateCompatMessageRequest,
@@ -39,6 +41,15 @@ pub async fn create_message(
             false,
         )
         .await?;
+    state.realtime.publish(RealtimeEvent::channel(
+        "message.created",
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        serde_json::json!({
+            "message": message_response(message.clone(), Vec::new(), &state.config.public_url)
+        }),
+    ));
 
     Ok(Json(compat_message_response(message, &bot)))
 }

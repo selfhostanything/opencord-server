@@ -246,6 +246,18 @@ paths:
           description: Missing SEND_MESSAGES or MANAGE_MESSAGES permission
         "404":
           description: Channel, message, or parent space not found for this bot
+  /api/compat/discord/gateway:
+    get:
+      summary: Discord-compatible gateway websocket
+      description: >
+        Upgrades to a WebSocket, sends HELLO, accepts IDENTIFY with an
+        OpenCord `ocb_` bot token, emits READY, acknowledges heartbeats, and
+        dispatches content-only MESSAGE_CREATE events visible to the bot user.
+      responses:
+        "101":
+          description: WebSocket protocol switch
+        "400":
+          description: WebSocket upgrade failed
   /auth/register:
     post:
       summary: Register a user and create a bearer session

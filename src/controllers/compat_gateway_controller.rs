@@ -1,0 +1,287 @@
+use axum::extract::State;
+use axum::extract::ws::{Message as WebSocketMessage, WebSocket, WebSocketUpgrade};
+use axum::response::{IntoResponse, Response};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use uuid::Uuid;
+
+use crate::domain::bot::AuthenticatedBot;
+use crate::domain::ids;
+use crate::domain::permission::Permission;
+use crate::domain::realtime::RealtimeEvent;
+use crate::models::compat::{CompatMessageResponse, CompatUserResponse};
+use crate::state::AppState;
+
+const OP_DISPATCH: i32 = 0;
+const OP_HEARTBEAT: i32 = 1;
+const OP_IDENTIFY: i32 = 2;
+const OP_INVALID_SESSION: i32 = 9;
+const OP_HELLO: i32 = 10;
+const OP_HEARTBEAT_ACK: i32 = 11;
+const HEARTBEAT_INTERVAL_MS: u64 = 45_000;
+
+#[derive(Debug, Deserialize)]
+struct GatewayMessage {
+    op: i32,
+    d: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IdentifyPayload {
+    token: String,
+    intents: Option<u64>,
+}
+
+pub async fn gateway(
+    State(state): State<AppState>,
+    upgrade: WebSocketUpgrade,
+) -> Result<Response, std::convert::Infallible> {
+    Ok(upgrade
+        .on_upgrade(move |socket| handle_gateway_socket(state, socket))
+        .into_response())
+}
+
+async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
+    if send_json(
+        &mut socket,
+        &json!({
+            "op": OP_HELLO,
+            "d": {
+                "heartbeat_interval": HEARTBEAT_INTERVAL_MS
+            }
+        }),
+    )
+    .await
+    .is_err()
+    {
+        return;
+    }
+
+    let mut events = state.realtime.subscribe();
+    let mut identified_bot: Option<AuthenticatedBot> = None;
+    let mut sequence: i64 = 0;
+
+    loop {
+        tokio::select! {
+            message = socket.recv() => {
+                let Some(Ok(message)) = message else {
+                    break;
+                };
+
+                if !handle_client_message(&state, &mut socket, message, &mut identified_bot, &mut sequence).await {
+                    break;
+                }
+            }
+            event = events.recv() => {
+                let Ok(event) = event else {
+                    continue;
+                };
+                let Some(bot) = identified_bot.as_ref() else {
+                    continue;
+                };
+
+                if event.event_type == "message.created"
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(message) = compat_message_from_event(&event, bot) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "MESSAGE_CREATE", sequence, message).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn handle_client_message(
+    state: &AppState,
+    socket: &mut WebSocket,
+    message: WebSocketMessage,
+    identified_bot: &mut Option<AuthenticatedBot>,
+    sequence: &mut i64,
+) -> bool {
+    match message {
+        WebSocketMessage::Text(text) => {
+            let Ok(message) = serde_json::from_str::<GatewayMessage>(&text) else {
+                let _ = send_invalid_session(socket).await;
+                return true;
+            };
+
+            match message.op {
+                OP_HEARTBEAT => send_json(socket, &json!({ "op": OP_HEARTBEAT_ACK }))
+                    .await
+                    .is_ok(),
+                OP_IDENTIFY => {
+                    identify_bot(state, socket, message.d, identified_bot, sequence).await
+                }
+                _ => {
+                    let _ = send_invalid_session(socket).await;
+                    true
+                }
+            }
+        }
+        WebSocketMessage::Ping(payload) => {
+            socket.send(WebSocketMessage::Pong(payload)).await.is_ok()
+        }
+        WebSocketMessage::Pong(_) => true,
+        WebSocketMessage::Close(_) => false,
+        WebSocketMessage::Binary(_) => {
+            let _ = send_invalid_session(socket).await;
+            true
+        }
+    }
+}
+
+async fn identify_bot(
+    state: &AppState,
+    socket: &mut WebSocket,
+    payload: Option<Value>,
+    identified_bot: &mut Option<AuthenticatedBot>,
+    sequence: &mut i64,
+) -> bool {
+    let Some(payload) = payload else {
+        let _ = send_invalid_session(socket).await;
+        return true;
+    };
+    let Ok(payload) = serde_json::from_value::<IdentifyPayload>(payload) else {
+        let _ = send_invalid_session(socket).await;
+        return true;
+    };
+
+    let Ok(bot) = state.bots.authenticate_token(&payload.token).await else {
+        let _ = send_invalid_session(socket).await;
+        return false;
+    };
+
+    *sequence += 1;
+    let ready = json!({
+        "v": 10,
+        "session_id": format!("gw_{}", ids::new_uuid_v7()),
+        "resume_gateway_url": "/api/compat/discord/gateway",
+        "user": {
+            "id": bot.bot_user_id.to_string(),
+            "username": bot.name.clone(),
+            "bot": true
+        },
+        "guilds": [],
+        "application": {
+            "id": bot.application_id.to_string()
+        },
+        "intents": payload.intents.unwrap_or_default()
+    });
+
+    *identified_bot = Some(bot);
+
+    send_dispatch(socket, "READY", *sequence, ready)
+        .await
+        .is_ok()
+}
+
+async fn can_bot_receive_event(
+    state: &AppState,
+    bot: &AuthenticatedBot,
+    event: &RealtimeEvent,
+) -> bool {
+    let Some(channel_id) = event.scope.channel_id.as_deref() else {
+        return true;
+    };
+    let Ok(channel_id) = Uuid::parse_str(channel_id) else {
+        return false;
+    };
+    let Ok(channel) = state.channels.get(channel_id).await else {
+        return false;
+    };
+    if channel.organization_id != bot.organization_id {
+        return false;
+    }
+    let Ok(space) = state
+        .spaces
+        .get_for_user(bot.bot_user_id, channel.space_id)
+        .await
+    else {
+        return false;
+    };
+
+    state
+        .permissions
+        .can_in_channel(bot.bot_user_id, &space, &channel, Permission::ViewChannel)
+        .await
+        .unwrap_or(false)
+}
+
+fn compat_message_from_event(
+    event: &RealtimeEvent,
+    current_bot: &AuthenticatedBot,
+) -> Option<CompatMessageResponse> {
+    let message = event.data.get("message")?;
+    let author_user_id = message.get("author_user_id")?.as_str()?.to_owned();
+    let author_is_current_bot = author_user_id == current_bot.bot_user_id.to_string();
+
+    Some(CompatMessageResponse {
+        id: message.get("id")?.as_str()?.to_owned(),
+        channel_id: message.get("channel_id")?.as_str()?.to_owned(),
+        author: CompatUserResponse {
+            id: author_user_id,
+            username: if author_is_current_bot {
+                current_bot.name.clone()
+            } else {
+                "OpenCord User".to_owned()
+            },
+            bot: author_is_current_bot,
+        },
+        content: message.get("content")?.as_str()?.to_owned(),
+        timestamp: message.get("created_at")?.as_str()?.to_owned(),
+        edited_timestamp: message
+            .get("edited_at")
+            .and_then(|value| value.as_str())
+            .map(str::to_owned),
+        tts: false,
+        mention_everyone: false,
+        mentions: Vec::new(),
+        mention_roles: Vec::new(),
+        attachments: Vec::new(),
+        embeds: Vec::new(),
+        pinned: false,
+        kind: 0,
+    })
+}
+
+async fn send_dispatch<T: serde::Serialize>(
+    socket: &mut WebSocket,
+    event_type: &str,
+    sequence: i64,
+    data: T,
+) -> Result<(), ()> {
+    send_json(
+        socket,
+        &json!({
+            "op": OP_DISPATCH,
+            "t": event_type,
+            "s": sequence,
+            "d": data
+        }),
+    )
+    .await
+}
+
+async fn send_invalid_session(socket: &mut WebSocket) -> Result<(), ()> {
+    send_json(
+        socket,
+        &json!({
+            "op": OP_INVALID_SESSION,
+            "d": false
+        }),
+    )
+    .await
+}
+
+async fn send_json<T: serde::Serialize>(socket: &mut WebSocket, value: &T) -> Result<(), ()> {
+    let text = serde_json::to_string(value).map_err(|_| ())?;
+    socket
+        .send(WebSocketMessage::Text(text.into()))
+        .await
+        .map_err(|_| ())
+}
