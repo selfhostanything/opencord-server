@@ -259,6 +259,7 @@ fn test_message(
         author_user_id: fixture.user_id,
         content: content.to_owned(),
         content_format: "plain".to_owned(),
+        embeds: Vec::new(),
         edited_at: None,
         deleted_at: deleted_at.map(str::to_owned),
         created_at: created_at.to_owned(),

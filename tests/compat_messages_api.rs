@@ -285,6 +285,71 @@ async fn bot_can_send_list_edit_and_delete_messages_through_compat_routes() {
 }
 
 #[tokio::test]
+async fn bot_can_send_and_list_basic_embeds_through_compat_routes() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "compat-embed-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "embeds").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id, "member").await;
+
+    let embed = json!({
+        "title": "Deploy ready",
+        "description": "Release 1.2.3 passed checks",
+        "url": "https://chat.example.com/releases/1.2.3",
+        "color": 5793266,
+        "fields": [
+            {
+                "name": "Environment",
+                "value": "production",
+                "inline": true
+            }
+        ]
+    });
+    let created = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({
+                "content": "",
+                "embeds": [embed.clone()],
+                "allowed_mentions": {
+                    "parse": []
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(created.status(), StatusCode::OK);
+    let body = response_json(created).await;
+    let message_id = body["id"].as_str().unwrap();
+    assert_eq!(body["author"]["id"], bot_user_id);
+    assert_eq!(body["content"], "");
+    assert_eq!(body["embeds"], json!([embed]));
+    assert!(body["mentions"].as_array().unwrap().is_empty());
+    assert!(body["mention_roles"].as_array().unwrap().is_empty());
+
+    let listed = app
+        .clone()
+        .oneshot(bot_request(
+            Method::GET,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["id"], message_id);
+    assert_eq!(body[0]["embeds"], json!([embed]));
+}
+
+#[tokio::test]
 async fn compat_messages_require_valid_bot_token() {
     let app = test_app();
 

@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::controllers::message_controller::message_response;
 use crate::domain::bot::{AuthenticatedBot, BotError};
 use crate::domain::channel::{Channel, ChannelError};
-use crate::domain::message::{Message, MessageError};
+use crate::domain::message::{CreateMessageInput, Message, MessageError};
 use crate::domain::permission::{Permission, PermissionError, Role};
 use crate::domain::rate_limit::{RateLimitDecision, compat_rest_bot_bucket};
 use crate::domain::realtime::RealtimeEvent;
@@ -110,16 +110,24 @@ pub async fn create_message(
         .require_channel(bot.bot_user_id, &space, &channel, Permission::SendMessages)
         .await?;
 
+    let CreateCompatMessageRequest {
+        content,
+        embeds,
+        allowed_mentions: _,
+        tts: _,
+    } = request;
+    let allow_empty_content = !embeds.is_empty();
     let message = state
         .messages
-        .create(
-            channel.organization_id,
-            Some(channel.space_id),
-            channel.id,
-            bot.bot_user_id,
-            request.content,
-            false,
-        )
+        .create_with_embeds(CreateMessageInput {
+            organization_id: channel.organization_id,
+            space_id: Some(channel.space_id),
+            channel_id: channel.id,
+            author_user_id: bot.bot_user_id,
+            content: content.unwrap_or_default(),
+            allow_empty_content,
+            embeds,
+        })
         .await?;
     state.realtime.publish(RealtimeEvent::channel(
         "message.created",
@@ -402,7 +410,7 @@ fn compat_message_response(
         mentions: Vec::new(),
         mention_roles: Vec::new(),
         attachments: Vec::new(),
-        embeds: Vec::new(),
+        embeds: message.embeds,
         pinned: false,
         kind: 0,
     }

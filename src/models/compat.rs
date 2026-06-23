@@ -2,7 +2,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct CreateCompatMessageRequest {
-    pub content: String,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub embeds: Vec<serde_json::Value>,
+    pub allowed_mentions: Option<serde_json::Value>,
     pub tts: Option<bool>,
 }
 

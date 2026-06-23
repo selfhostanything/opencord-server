@@ -3319,13 +3319,21 @@ components:
             $ref: "#/components/schemas/IncomingWebhook"
     CreateCompatMessageRequest:
       type: object
-      required:
-        - content
+      description: Content is required unless one or more embeds are supplied.
       properties:
         content:
           type: string
-          minLength: 1
+          minLength: 0
           maxLength: 4000
+        embeds:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+          description: Basic Discord-shaped embeds are persisted and returned without field-level rendering guarantees.
+        allowed_mentions:
+          type: object
+          description: Accepted for SDK compatibility; mention expansion is not implemented yet.
         tts:
           type: boolean
           description: Accepted for compatibility; ignored in Phase 07.
@@ -3480,7 +3488,8 @@ components:
           items: {}
         embeds:
           type: array
-          items: {}
+          items:
+            type: object
         pinned:
           type: boolean
         type:

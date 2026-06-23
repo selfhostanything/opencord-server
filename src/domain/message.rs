@@ -1,10 +1,11 @@
 use axum::http::StatusCode;
 use chrono::{SecondsFormat, Utc};
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::domain::ids;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Message {
     pub id: Uuid,
     pub organization_id: Uuid,
@@ -13,9 +14,20 @@ pub struct Message {
     pub author_user_id: Uuid,
     pub content: String,
     pub content_format: String,
+    pub embeds: Vec<Value>,
     pub edited_at: Option<String>,
     pub deleted_at: Option<String>,
     pub created_at: String,
+}
+
+pub struct CreateMessageInput {
+    pub organization_id: Uuid,
+    pub space_id: Option<Uuid>,
+    pub channel_id: Uuid,
+    pub author_user_id: Uuid,
+    pub content: String,
+    pub allow_empty_content: bool,
+    pub embeds: Vec<Value>,
 }
 
 #[derive(Debug)]
@@ -92,6 +104,32 @@ impl MessageService {
         content: String,
         allow_empty_content: bool,
     ) -> Result<Message, MessageError> {
+        self.create_with_embeds(CreateMessageInput {
+            organization_id,
+            space_id,
+            channel_id,
+            author_user_id,
+            content,
+            allow_empty_content,
+            embeds: Vec::new(),
+        })
+        .await
+    }
+
+    pub async fn create_with_embeds(
+        &self,
+        input: CreateMessageInput,
+    ) -> Result<Message, MessageError> {
+        let CreateMessageInput {
+            organization_id,
+            space_id,
+            channel_id,
+            author_user_id,
+            content,
+            allow_empty_content,
+            embeds,
+        } = input;
+        let embeds = normalize_embeds(embeds)?;
         let message = Message {
             id: ids::new_uuid_v7(),
             organization_id,
@@ -100,6 +138,7 @@ impl MessageService {
             author_user_id,
             content: normalize_content(content, allow_empty_content)?,
             content_format: "plain".to_owned(),
+            embeds,
             edited_at: None,
             deleted_at: None,
             created_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
@@ -159,4 +198,18 @@ fn normalize_content(content: String, allow_empty: bool) -> Result<String, Messa
             "message content must be between 1 and 4000 characters unless attachments are present",
         ))
     }
+}
+
+fn normalize_embeds(embeds: Vec<Value>) -> Result<Vec<Value>, MessageError> {
+    if embeds.len() > 10 {
+        return Err(MessageError::InvalidInput(
+            "message embeds must contain 10 or fewer embeds",
+        ));
+    }
+
+    if embeds.iter().any(|embed| !embed.is_object()) {
+        return Err(MessageError::InvalidInput("message embeds must be objects"));
+    }
+
+    Ok(embeds)
 }

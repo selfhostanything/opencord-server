@@ -23,11 +23,11 @@ impl MessageStore for PostgresMessageStore {
                 r#"
                 INSERT INTO messages (
                     id, organization_id, space_id, channel_id, author_user_id,
-                    content, content_format, created_at
+                    content, content_format, embeds, created_at
                 )
                 VALUES (
                     $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
-                    $6, $7, $8::timestamptz
+                    $6, $7, $8::jsonb, $9::timestamptz
                 )
                 "#,
                 message_values(&message),
@@ -123,7 +123,7 @@ impl MessageStore for PostgresMessageStore {
                 WHERE id = $1::uuid
                   AND deleted_at IS NULL
                 RETURNING id::text, organization_id::text, space_id::text, channel_id::text,
-                          author_user_id::text, content, content_format,
+                          author_user_id::text, content, content_format, embeds::text,
                           edited_at::text, deleted_at::text, created_at::text
                 "#,
                 vec![
@@ -225,7 +225,7 @@ fn message_select_sql(where_clause: &str) -> String {
     format!(
         r#"
         SELECT id::text, organization_id::text, space_id::text, channel_id::text,
-               author_user_id::text, content, content_format,
+               author_user_id::text, content, content_format, embeds::text,
                edited_at::text, deleted_at::text, created_at::text
         FROM messages
         {where_clause}
@@ -264,6 +264,10 @@ fn message_from_row(row: sea_orm::QueryResult) -> Result<Message, MessageError> 
         content_format: row
             .try_get::<String>("", "content_format")
             .map_err(|_| MessageError::StoreUnavailable)?,
+        embeds: parse_embeds(
+            &row.try_get::<String>("", "embeds")
+                .map_err(|_| MessageError::StoreUnavailable)?,
+        )?,
         edited_at: row
             .try_get::<Option<String>>("", "edited_at")
             .map_err(|_| MessageError::StoreUnavailable)?,
@@ -289,6 +293,11 @@ fn message_values(message: &Message) -> Vec<Value> {
         Value::from(message.author_user_id.to_string()),
         Value::from(message.content.clone()),
         Value::from(message.content_format.clone()),
+        Value::from(serde_json::Value::Array(message.embeds.clone()).to_string()),
         Value::from(message.created_at.clone()),
     ]
+}
+
+fn parse_embeds(value: &str) -> Result<Vec<serde_json::Value>, MessageError> {
+    serde_json::from_str(value).map_err(|_| MessageError::StoreUnavailable)
 }
