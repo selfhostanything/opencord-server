@@ -2,6 +2,7 @@ pub mod attachment;
 pub mod audit;
 pub mod auth;
 pub mod billing;
+pub mod bot;
 pub mod calendar;
 pub mod channel;
 pub mod data_export;

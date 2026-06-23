@@ -327,6 +327,13 @@ Ports:
 7882/udp LiveKit RTC UDP
 ```
 
+## Bots
+
+`POST /organizations/{organization_id}/bot-applications` lets an organization
+admin create a bot application, internal bot user, and shown-once bot token.
+Bot tokens are stored hashed and are issued with the `ocb_` prefix for later
+compatibility routes under `/api/compat/discord/v10`.
+
 ## License
 
 Elastic License 2.0 (`Elastic-2.0`).

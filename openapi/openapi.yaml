@@ -739,6 +739,39 @@ paths:
           description: Organization admin permission is required
         "404":
           description: Organization not found for this user
+  /organizations/{organization_id}/bot-applications:
+    post:
+      summary: Create a bot application, bot user, and shown-once bot token
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBotApplicationRequest"
+      responses:
+        "201":
+          description: Bot application, bot user ID, and shown-once token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotApplicationCreatedResponse"
+        "400":
+          description: Invalid bot application input
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization not found for this user
   /organizations/{organization_id}/custom-domains:
     post:
       summary: Create a custom domain mapping for an organization
@@ -2291,6 +2324,82 @@ components:
       properties:
         tenant:
           $ref: "#/components/schemas/Tenant"
+    CreateBotApplicationRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+    BotApplication:
+      type: object
+      required:
+        - id
+        - organization_id
+        - bot_user_id
+        - created_by_user_id
+        - name
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        bot_user_id:
+          type: string
+          format: uuid
+        created_by_user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+    BotToken:
+      type: object
+      required:
+        - id
+        - application_id
+        - token
+        - token_last_four
+      properties:
+        id:
+          type: string
+          format: uuid
+        application_id:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: Shown once when the token is created.
+        token_last_four:
+          type: string
+    BotApplicationCreatedResponse:
+      type: object
+      required:
+        - bot_application
+        - bot_token
+      properties:
+        bot_application:
+          $ref: "#/components/schemas/BotApplication"
+        bot_token:
+          $ref: "#/components/schemas/BotToken"
     CreateCustomDomainRequest:
       type: object
       required:

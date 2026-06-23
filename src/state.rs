@@ -7,6 +7,7 @@ use crate::domain::attachment::{AttachmentService, AttachmentStore};
 use crate::domain::audit::{AuditService, AuditStore};
 use crate::domain::auth::{AuthService, AuthStore};
 use crate::domain::billing::{BillingService, BillingStore};
+use crate::domain::bot::{BotService, BotStore};
 use crate::domain::calendar_sync::{
     CalendarStore, CalendarSyncService, LocalCaldavCalendarAdapter, LocalGoogleCalendarAdapter,
     LocalMicrosoftCalendarAdapter,
@@ -33,6 +34,8 @@ use crate::repositories::auth_memory::MemoryAuthStore;
 use crate::repositories::auth_postgres::PostgresAuthStore;
 use crate::repositories::billing_memory::MemoryBillingStore;
 use crate::repositories::billing_postgres::PostgresBillingStore;
+use crate::repositories::bot_memory::MemoryBotStore;
+use crate::repositories::bot_postgres::PostgresBotStore;
 use crate::repositories::calendar_memory::MemoryCalendarStore;
 use crate::repositories::calendar_postgres::PostgresCalendarStore;
 use crate::repositories::channel_memory::MemoryChannelStore;
@@ -76,6 +79,7 @@ pub struct AppState {
     pub billing: Arc<BillingService>,
     pub scim: Arc<ScimService>,
     pub retention: Arc<RetentionService>,
+    pub bots: Arc<BotService>,
 }
 
 impl AppState {
@@ -97,6 +101,7 @@ impl AppState {
                 billing: Arc::new(MemoryBillingStore::default()),
                 scim: Arc::new(MemoryScimStore::default()),
                 retention: Arc::new(MemoryRetentionStore::default()),
+                bots: Arc::new(MemoryBotStore::default()),
             },
         )
     }
@@ -119,6 +124,7 @@ impl AppState {
                 billing: Arc::new(PostgresBillingStore::new(db.clone())),
                 scim: Arc::new(PostgresScimStore::new(db.clone())),
                 retention: Arc::new(PostgresRetentionStore::new(db.clone())),
+                bots: Arc::new(PostgresBotStore::new(db.clone())),
             },
         )
     }
@@ -138,6 +144,7 @@ impl AppState {
             stores.auth.clone(),
             stores.organizations.clone(),
         ));
+        let bots = Arc::new(BotService::new(stores.bots.clone(), stores.auth.clone()));
         let data_exports = Arc::new(DataExportService::new(
             stores.messages.clone(),
             stores.attachments.clone(),
@@ -169,6 +176,7 @@ impl AppState {
             billing,
             scim,
             retention: Arc::new(RetentionService::new(stores.retention)),
+            bots,
         }
     }
 }
@@ -188,4 +196,5 @@ pub struct AppStores {
     pub billing: Arc<dyn BillingStore>,
     pub scim: Arc<dyn ScimStore>,
     pub retention: Arc<dyn RetentionStore>,
+    pub bots: Arc<dyn BotStore>,
 }

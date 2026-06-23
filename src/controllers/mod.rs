@@ -2,6 +2,7 @@ pub mod attachment_controller;
 pub mod audit_controller;
 pub mod auth_controller;
 pub mod billing_controller;
+pub mod bot_controller;
 pub mod calendar_controller;
 pub mod channel_controller;
 pub mod data_export_controller;

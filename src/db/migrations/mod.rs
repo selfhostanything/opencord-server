@@ -19,6 +19,7 @@ mod m20260623051000_custom_domains;
 mod m20260623052000_oidc_identity;
 mod m20260623053000_scim;
 mod m20260623054000_retention;
+mod m20260623055000_bots;
 
 pub struct Migrator;
 
@@ -45,6 +46,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623052000_oidc_identity::Migration),
             Box::new(m20260623053000_scim::Migration),
             Box::new(m20260623054000_retention::Migration),
+            Box::new(m20260623055000_bots::Migration),
         ]
     }
 }
