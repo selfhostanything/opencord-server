@@ -19,6 +19,13 @@ async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&bytes).expect("response should be json")
 }
 
+async fn response_bytes(response: axum::response::Response) -> Vec<u8> {
+    to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read response body")
+        .to_vec()
+}
+
 fn json_request(method: Method, uri: &str, body: Value) -> Request<Body> {
     Request::builder()
         .method(method)
@@ -62,6 +69,51 @@ fn bot_request(method: Method, uri: &str, token: &str, body: Value) -> Request<B
         .header(header::AUTHORIZATION, format!("Bot {token}"))
         .body(Body::from(body.to_string()))
         .unwrap()
+}
+
+fn bot_multipart_request(
+    method: Method,
+    uri: &str,
+    token: &str,
+    boundary: &str,
+    body: Vec<u8>,
+) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .header(header::AUTHORIZATION, format!("Bot {token}"))
+        .body(Body::from(body))
+        .unwrap()
+}
+
+fn multipart_message_body(
+    boundary: &str,
+    payload: Value,
+    filename: &str,
+    content_type: &str,
+    file_bytes: &[u8],
+) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n{}\r\n",
+            payload
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(file_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    body
 }
 
 async fn register(app: &axum::Router, email: &str) -> (String, String) {
@@ -255,6 +307,91 @@ async fn create_uploaded_attachment(app: &axum::Router, token: &str, channel_id:
     assert_eq!(upload.status(), StatusCode::OK);
 
     attachment_id
+}
+
+#[tokio::test]
+async fn bot_can_send_multipart_file_upload_through_compat_routes() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "compat-upload-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "upload").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id, "member").await;
+
+    let boundary = "opencord-compat-upload-boundary";
+    let file_bytes = b"hello report";
+    let created = app
+        .clone()
+        .oneshot(bot_multipart_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            boundary,
+            multipart_message_body(
+                boundary,
+                json!({
+                    "content": "",
+                    "allowed_mentions": {
+                        "parse": []
+                    }
+                }),
+                "report.txt",
+                "text/plain",
+                file_bytes,
+            ),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(created.status(), StatusCode::OK);
+    let body = response_json(created).await;
+    let message_id = body["id"].as_str().unwrap().to_owned();
+    assert_eq!(body["author"]["id"], bot_user_id);
+    assert_eq!(body["content"], "");
+    assert_eq!(body["attachments"].as_array().unwrap().len(), 1);
+    let attachment = &body["attachments"][0];
+    let attachment_id = attachment["id"].as_str().unwrap();
+    assert_eq!(attachment["filename"], "report.txt");
+    assert_eq!(attachment["size"], file_bytes.len() as i64);
+    assert_eq!(attachment["content_type"], "text/plain");
+    assert_eq!(
+        attachment["url"],
+        format!("https://chat.example.com/attachments/{attachment_id}/content")
+    );
+
+    let listed = app
+        .clone()
+        .oneshot(bot_request(
+            Method::GET,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["id"], message_id);
+    assert_eq!(body[0]["attachments"][0]["id"], attachment_id);
+    assert_eq!(body[0]["attachments"][0]["filename"], "report.txt");
+
+    let download = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/attachments/{attachment_id}/content"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(download.status(), StatusCode::OK);
+    assert_eq!(
+        download.headers().get(header::CONTENT_TYPE).unwrap(),
+        "text/plain"
+    );
+    assert_eq!(response_bytes(download).await, file_bytes);
 }
 
 #[tokio::test]

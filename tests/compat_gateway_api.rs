@@ -88,6 +88,51 @@ fn bot_request(method: Method, uri: &str, token: &str, body: Value) -> Request<B
         .unwrap()
 }
 
+fn bot_multipart_request(
+    method: Method,
+    uri: &str,
+    token: &str,
+    boundary: &str,
+    body: Vec<u8>,
+) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={boundary}"),
+        )
+        .header(header::AUTHORIZATION, format!("Bot {token}"))
+        .body(Body::from(body))
+        .unwrap()
+}
+
+fn multipart_message_body(
+    boundary: &str,
+    payload: Value,
+    filename: &str,
+    content_type: &str,
+    file_bytes: &[u8],
+) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"payload_json\"\r\nContent-Type: application/json\r\n\r\n{}\r\n",
+            payload
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"files[0]\"; filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(file_bytes);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    body
+}
+
 async fn register(app: &Router, email: &str) -> (String, String) {
     let response = app
         .clone()
@@ -439,6 +484,43 @@ async fn send_compat_component_message(
         .as_str()
         .unwrap()
         .to_owned()
+}
+
+async fn send_compat_multipart_message(
+    app: &Router,
+    bot_token: &str,
+    channel_id: &str,
+) -> (String, String) {
+    let boundary = "opencord-compat-gateway-upload-boundary";
+    let response = app
+        .clone()
+        .oneshot(bot_multipart_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            bot_token,
+            boundary,
+            multipart_message_body(
+                boundary,
+                json!({
+                    "content": "",
+                    "allowed_mentions": {
+                        "parse": []
+                    }
+                }),
+                "gateway-report.txt",
+                "text/plain",
+                b"gateway report",
+            ),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_json(response).await;
+    (
+        body["id"].as_str().unwrap().to_owned(),
+        body["attachments"][0]["id"].as_str().unwrap().to_owned(),
+    )
 }
 
 async fn send_compat_reply_message(
@@ -816,6 +898,70 @@ async fn compat_gateway_message_create_includes_native_attachments() {
     );
     assert_eq!(
         event["d"]["attachments"][0]["proxy_url"],
+        format!("https://chat.example.com/attachments/{attachment_id}/content")
+    );
+}
+
+#[tokio::test]
+async fn compat_gateway_message_create_includes_multipart_attachments() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-multipart-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "multipart").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+
+    let (message_id, attachment_id) =
+        send_compat_multipart_message(&app, &bot_token, &channel_id).await;
+    let event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("message create dispatch");
+
+    assert_eq!(event["op"], 0);
+    assert_eq!(event["t"], "MESSAGE_CREATE");
+    assert_eq!(event["d"]["id"], message_id);
+    assert_eq!(event["d"]["author"]["id"], bot_user_id);
+    assert_eq!(event["d"]["author"]["bot"], true);
+    assert_eq!(event["d"]["content"], "");
+    assert_eq!(event["d"]["attachments"].as_array().unwrap().len(), 1);
+    assert_eq!(event["d"]["attachments"][0]["id"], attachment_id);
+    assert_eq!(
+        event["d"]["attachments"][0]["filename"],
+        "gateway-report.txt"
+    );
+    assert_eq!(event["d"]["attachments"][0]["content_type"], "text/plain");
+    assert_eq!(event["d"]["attachments"][0]["size"], 14);
+    assert_eq!(
+        event["d"]["attachments"][0]["url"],
         format!("https://chat.example.com/attachments/{attachment_id}/content")
     );
 }

@@ -285,6 +285,9 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/CreateCompatMessageRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CreateCompatMultipartMessageRequest"
       responses:
         "200":
           description: Created Discord-compatible message object
@@ -300,6 +303,8 @@ paths:
           description: Missing SEND_MESSAGES permission
         "404":
           description: Channel or parent space not found for this bot
+        "415":
+          description: Request content type is not JSON or multipart form data
         "429":
           $ref: "#/components/responses/CompatRateLimited"
     get:
@@ -3396,6 +3401,19 @@ components:
         tts:
           type: boolean
           description: Accepted for compatibility; ignored in Phase 07.
+    CreateCompatMultipartMessageRequest:
+      type: object
+      description: Discord-compatible multipart message create. `payload_json` must contain a JSON-encoded `CreateCompatMessageRequest`; file parts are uploaded, stored, linked to the new message, and returned as Discord-shaped attachment metadata.
+      required:
+        - payload_json
+      properties:
+        payload_json:
+          type: string
+          description: JSON-encoded `CreateCompatMessageRequest`.
+        files[0]:
+          type: string
+          format: binary
+          description: First uploaded file. Additional parts may use `files[1]` through `files[9]`; each file is limited to 10 MiB.
     PatchCompatMessageRequest:
       type: object
       required:

@@ -1,13 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::body::to_bytes;
+use axum::extract::{FromRequest, Multipart, Path, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
 
 use crate::controllers::message_controller::{attachment_download_url, message_response};
-use crate::domain::attachment::{Attachment, AttachmentError};
+use crate::domain::attachment::{
+    Attachment, AttachmentError, MAX_ATTACHMENT_SIZE_BYTES, MAX_ATTACHMENTS_PER_MESSAGE,
+    NewAttachment,
+};
 use crate::domain::auth::{AuthError, AuthUser};
 use crate::domain::bot::{AuthenticatedBot, BotError};
 use crate::domain::channel::{Channel, ChannelError};
@@ -105,7 +109,7 @@ pub async fn create_message(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(channel_id): Path<Uuid>,
-    Json(request): Json<CreateCompatMessageRequest>,
+    request: Request,
 ) -> Result<impl IntoResponse, CompatApiError> {
     let bot = authenticate_bot(&state, &headers).await?;
     let rate_limit = compat_rest_rate_limit(&state, &bot)?;
@@ -115,6 +119,9 @@ pub async fn create_message(
         .require_channel(bot.bot_user_id, &space, &channel, Permission::SendMessages)
         .await?;
 
+    let payload = parse_create_message_payload(&headers, request).await?;
+    let attachment_ids =
+        upload_compat_multipart_attachments(&state, &channel, &bot, payload.files).await?;
     let CreateCompatMessageRequest {
         content,
         embeds,
@@ -122,7 +129,7 @@ pub async fn create_message(
         allowed_mentions,
         message_reference,
         tts: _,
-    } = request;
+    } = payload.request;
     let content = content.unwrap_or_default();
     let mention_ids =
         resolve_allowed_mentions(&state, &space, &content, allowed_mentions.as_ref()).await?;
@@ -131,7 +138,8 @@ pub async fn create_message(
     let referenced_attachments =
         attachments_for_message(&state, referenced_message.as_ref()).await?;
     let reply_to_message_id = referenced_message.as_ref().map(|message| message.id);
-    let allow_empty_content = !embeds.is_empty() || !components.is_empty();
+    let allow_empty_content =
+        !embeds.is_empty() || !components.is_empty() || !attachment_ids.is_empty();
     let message = state
         .messages
         .create_with_embeds(CreateMessageInput {
@@ -149,6 +157,10 @@ pub async fn create_message(
             reply_to_message_id,
         })
         .await?;
+    let attachments = state
+        .attachments
+        .link_to_message(message.id, &attachment_ids)
+        .await?;
     let mentions = compat_mentions_for_message(&state, &message, &bot).await?;
     let referenced_mentions = match referenced_message.as_ref() {
         Some(message) => compat_mentions_for_message(&state, message, &bot).await?,
@@ -162,6 +174,7 @@ pub async fn create_message(
         serde_json::json!({
             "message": realtime_message_payload(
                 message.clone(),
+                attachments.clone(),
                 mentions.clone(),
                 referenced_message.clone().map(|message| ReferencedCompatMessage {
                     message,
@@ -177,7 +190,7 @@ pub async fn create_message(
         rate_limit_headers(&rate_limit),
         Json(compat_message_response(
             message,
-            Vec::new(),
+            attachments,
             mentions,
             referenced_message.map(|message| ReferencedCompatMessage {
                 message,
@@ -386,6 +399,10 @@ pub enum CompatApiError {
     Attachment(AttachmentError),
     Auth(AuthError),
     RateLimited(RateLimitDecision),
+    InvalidRequest {
+        status: StatusCode,
+        message: &'static str,
+    },
 }
 
 impl From<BotError> for CompatApiError {
@@ -453,11 +470,181 @@ impl IntoResponse for CompatApiError {
             Self::Attachment(error) => (error.status_code(), error.message()),
             Self::Auth(error) => (error.status_code(), error.message()),
             Self::RateLimited(_) => unreachable!("rate limited responses are returned above"),
+            Self::InvalidRequest { status, message } => (status, message),
         };
 
         (status, Json(CompatErrorResponse { message, code: 0 })).into_response()
     }
 }
+
+struct CompatCreateMessagePayload {
+    request: CreateCompatMessageRequest,
+    files: Vec<CompatMultipartFile>,
+}
+
+struct CompatMultipartFile {
+    file_name: String,
+    content_type: String,
+    bytes: Vec<u8>,
+}
+
+async fn parse_create_message_payload(
+    headers: &HeaderMap,
+    request: Request,
+) -> Result<CompatCreateMessagePayload, CompatApiError> {
+    let content_type = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if content_type.starts_with("multipart/form-data") {
+        return parse_multipart_message_payload(request).await;
+    }
+
+    if content_type.starts_with("application/json") || content_type.ends_with("+json") {
+        return parse_json_message_payload(request).await;
+    }
+
+    Err(CompatApiError::InvalidRequest {
+        status: StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        message: "compatibility message request must be JSON or multipart form data",
+    })
+}
+
+async fn parse_json_message_payload(
+    request: Request,
+) -> Result<CompatCreateMessagePayload, CompatApiError> {
+    let bytes = to_bytes(request.into_body(), MAX_COMPAT_MESSAGE_BODY_BYTES)
+        .await
+        .map_err(|_| CompatApiError::InvalidRequest {
+            status: StatusCode::BAD_REQUEST,
+            message: "compatibility message JSON body is too large",
+        })?;
+    let request = serde_json::from_slice::<CreateCompatMessageRequest>(&bytes).map_err(|_| {
+        CompatApiError::InvalidRequest {
+            status: StatusCode::BAD_REQUEST,
+            message: "compatibility message JSON body is invalid",
+        }
+    })?;
+
+    Ok(CompatCreateMessagePayload {
+        request,
+        files: Vec::new(),
+    })
+}
+
+async fn parse_multipart_message_payload(
+    request: Request,
+) -> Result<CompatCreateMessagePayload, CompatApiError> {
+    let mut multipart = Multipart::from_request(request, &()).await.map_err(|_| {
+        CompatApiError::InvalidRequest {
+            status: StatusCode::BAD_REQUEST,
+            message: "compatibility multipart message body is invalid",
+        }
+    })?;
+    let mut payload = None;
+    let mut files = Vec::new();
+
+    while let Some(field) =
+        multipart
+            .next_field()
+            .await
+            .map_err(|_| CompatApiError::InvalidRequest {
+                status: StatusCode::BAD_REQUEST,
+                message: "compatibility multipart field is invalid",
+            })?
+    {
+        let name = field.name().unwrap_or_default().to_owned();
+        let file_name = field.file_name().map(str::to_owned);
+        let content_type = field
+            .content_type()
+            .map(str::to_owned)
+            .unwrap_or_else(|| "application/octet-stream".to_owned());
+        let bytes = field
+            .bytes()
+            .await
+            .map_err(|_| CompatApiError::InvalidRequest {
+                status: StatusCode::BAD_REQUEST,
+                message: "compatibility multipart field body is invalid",
+            })?
+            .to_vec();
+
+        if name == "payload_json" {
+            payload = Some(
+                serde_json::from_slice::<CreateCompatMessageRequest>(&bytes).map_err(|_| {
+                    CompatApiError::InvalidRequest {
+                        status: StatusCode::BAD_REQUEST,
+                        message: "compatibility multipart payload_json is invalid",
+                    }
+                })?,
+            );
+        } else if name.starts_with("files[") || name == "file" {
+            let file_name = file_name.ok_or(CompatApiError::InvalidRequest {
+                status: StatusCode::BAD_REQUEST,
+                message: "compatibility multipart file requires a filename",
+            })?;
+            files.push(CompatMultipartFile {
+                file_name,
+                content_type,
+                bytes,
+            });
+        }
+    }
+
+    if files.len() > MAX_ATTACHMENTS_PER_MESSAGE {
+        return Err(AttachmentError::InvalidInput(
+            "message cannot include more than 10 attachments",
+        )
+        .into());
+    }
+
+    let request = payload.ok_or(CompatApiError::InvalidRequest {
+        status: StatusCode::BAD_REQUEST,
+        message: "compatibility multipart message requires payload_json",
+    })?;
+
+    Ok(CompatCreateMessagePayload { request, files })
+}
+
+async fn upload_compat_multipart_attachments(
+    state: &AppState,
+    channel: &Channel,
+    bot: &AuthenticatedBot,
+    files: Vec<CompatMultipartFile>,
+) -> Result<Vec<Uuid>, CompatApiError> {
+    let mut attachment_ids = Vec::with_capacity(files.len());
+    for file in files {
+        if file.bytes.len() > MAX_ATTACHMENT_SIZE_BYTES as usize {
+            return Err(AttachmentError::InvalidInput(
+                "attachment size must be between 1 byte and 10 MiB",
+            )
+            .into());
+        }
+        let attachment = state
+            .attachments
+            .create_pending(NewAttachment {
+                organization_id: channel.organization_id,
+                space_id: channel.space_id,
+                channel_id: channel.id,
+                uploader_user_id: bot.bot_user_id,
+                file_name: file.file_name,
+                content_type: file.content_type.clone(),
+                size_bytes: file.bytes.len() as i64,
+            })
+            .await?;
+        let attachment = state
+            .attachments
+            .upload(attachment, bot.bot_user_id, file.content_type, file.bytes)
+            .await?;
+        attachment_ids.push(attachment.id);
+    }
+
+    Ok(attachment_ids)
+}
+
+const MAX_COMPAT_MESSAGE_BODY_BYTES: usize =
+    (MAX_ATTACHMENT_SIZE_BYTES as usize * MAX_ATTACHMENTS_PER_MESSAGE) + (64 * 1024);
 
 async fn authenticate_bot(
     state: &AppState,
@@ -635,11 +822,12 @@ fn compat_attachment_response(attachment: Attachment, public_url: &str) -> serde
 
 fn realtime_message_payload(
     message: Message,
+    attachments: Vec<Attachment>,
     mentions: CompatResolvedMentions,
     referenced_message: Option<ReferencedCompatMessage>,
     public_url: &str,
 ) -> serde_json::Value {
-    let mut value = realtime_message_value(message, Vec::new(), mentions, public_url);
+    let mut value = realtime_message_value(message, attachments, mentions, public_url);
     if let Some(object) = value.as_object_mut()
         && let Some(referenced_message) = referenced_message
     {

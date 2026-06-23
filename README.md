@@ -186,8 +186,10 @@ metadata through REST and gateway; reply payloads also include a hydrated
 Discord-shaped `referenced_message` when the referenced message is still
 available. `allowed_mentions` now controls Discord-shaped user, role, and
 everyone mention expansion in compatibility REST create/list/edit and gateway
-payloads. Compatibility file upload and component interaction callbacks remain
-future work.
+payloads. Discord-compatible multipart message creates with `payload_json` and
+`files[n]` store uploaded files as OpenCord attachments, link them to the new
+message, and return them through REST and gateway payloads. Component
+interaction callbacks remain future work.
 
 ## Enterprise OIDC
 
