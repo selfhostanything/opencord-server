@@ -6,6 +6,7 @@ use crate::config::AppConfig;
 use crate::domain::attachment::{AttachmentService, AttachmentStore};
 use crate::domain::audit::{AuditService, AuditStore};
 use crate::domain::auth::{AuthService, AuthStore};
+use crate::domain::billing::{BillingService, BillingStore};
 use crate::domain::calendar_sync::{
     CalendarStore, CalendarSyncService, LocalCaldavCalendarAdapter, LocalGoogleCalendarAdapter,
     LocalMicrosoftCalendarAdapter,
@@ -27,6 +28,8 @@ use crate::repositories::audit_memory::MemoryAuditStore;
 use crate::repositories::audit_postgres::PostgresAuditStore;
 use crate::repositories::auth_memory::MemoryAuthStore;
 use crate::repositories::auth_postgres::PostgresAuthStore;
+use crate::repositories::billing_memory::MemoryBillingStore;
+use crate::repositories::billing_postgres::PostgresBillingStore;
 use crate::repositories::calendar_memory::MemoryCalendarStore;
 use crate::repositories::calendar_postgres::PostgresCalendarStore;
 use crate::repositories::channel_memory::MemoryChannelStore;
@@ -62,6 +65,7 @@ pub struct AppState {
     pub metrics: Arc<MediaMetrics>,
     pub realtime: Arc<RealtimeHub>,
     pub usage: Arc<UsageService>,
+    pub billing: Arc<BillingService>,
 }
 
 impl AppState {
@@ -80,6 +84,7 @@ impl AppState {
                 audit: Arc::new(MemoryAuditStore::default()),
                 permissions: Arc::new(MemoryPermissionStore::default()),
                 push: Arc::new(MemoryPushTokenStore::default()),
+                billing: Arc::new(MemoryBillingStore::default()),
             },
         )
     }
@@ -98,7 +103,8 @@ impl AppState {
                 attachments: Arc::new(PostgresAttachmentStore::new(db.clone())),
                 audit: Arc::new(PostgresAuditStore::new(db.clone())),
                 permissions: Arc::new(PostgresPermissionStore::new(db.clone())),
-                push: Arc::new(PostgresPushTokenStore::new(db)),
+                push: Arc::new(PostgresPushTokenStore::new(db.clone())),
+                billing: Arc::new(PostgresBillingStore::new(db.clone())),
             },
         )
     }
@@ -108,6 +114,10 @@ impl AppState {
             stores.organizations.clone(),
             stores.attachments.clone(),
             stores.calendar.clone(),
+        ));
+        let billing = Arc::new(BillingService::new(
+            stores.billing.clone(),
+            stores.organizations.clone(),
         ));
 
         Self {
@@ -132,6 +142,7 @@ impl AppState {
             metrics: Arc::new(MediaMetrics::default()),
             realtime: Arc::new(RealtimeHub::default()),
             usage,
+            billing,
         }
     }
 }
@@ -148,4 +159,5 @@ pub struct AppStores {
     pub audit: Arc<dyn AuditStore>,
     pub permissions: Arc<dyn PermissionStore>,
     pub push: Arc<dyn PushTokenStore>,
+    pub billing: Arc<dyn BillingStore>,
 }

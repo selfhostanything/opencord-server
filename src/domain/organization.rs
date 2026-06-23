@@ -100,6 +100,12 @@ pub trait OrganizationStore: Send + Sync {
         organization_id: Uuid,
     ) -> Result<Vec<Uuid>, OrganizationError>;
 
+    async fn update_plan(
+        &self,
+        organization_id: Uuid,
+        plan: String,
+    ) -> Result<(), OrganizationError>;
+
     async fn add_member_if_missing(
         &self,
         member: StoredOrganizationMember,

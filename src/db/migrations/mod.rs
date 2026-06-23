@@ -14,6 +14,7 @@ mod m20260623041000_meetings;
 mod m20260623043000_calendar_sync;
 mod m20260623044000_microsoft_calendar_sync;
 mod m20260623045000_caldav_calendar_sync;
+mod m20260623050000_billing;
 
 pub struct Migrator;
 
@@ -35,6 +36,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623043000_calendar_sync::Migration),
             Box::new(m20260623044000_microsoft_calendar_sync::Migration),
             Box::new(m20260623045000_caldav_calendar_sync::Migration),
+            Box::new(m20260623050000_billing::Migration),
         ]
     }
 }

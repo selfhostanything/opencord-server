@@ -141,6 +141,23 @@ impl OrganizationStore for MemoryOrganizationStore {
         Ok(user_ids)
     }
 
+    async fn update_plan(
+        &self,
+        organization_id: Uuid,
+        plan: String,
+    ) -> Result<(), OrganizationError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+        let Some(organization) = state.organizations_by_id.get_mut(&organization_id) else {
+            return Err(OrganizationError::NotFound);
+        };
+
+        organization.plan = plan;
+        Ok(())
+    }
+
     async fn add_member_if_missing(
         &self,
         member: StoredOrganizationMember,

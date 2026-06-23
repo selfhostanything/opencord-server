@@ -169,6 +169,34 @@ paths:
           description: Missing or invalid bearer session
         "409":
           description: Organization slug already exists
+  /billing/provider-events:
+    post:
+      summary: Apply a billing provider event to local entitlement state
+      description: >
+        Stores local billing subscription state and updates the organization's
+        local plan entitlement without querying the billing provider on future
+        requests.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingProviderEventRequest"
+      responses:
+        "200":
+          description: Updated local billing state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingStateResourceResponse"
+        "400":
+          description: Invalid billing provider event
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Organization not found
   /calendar/accounts:
     get:
       summary: List connected calendar accounts for the current user
@@ -1600,6 +1628,118 @@ components:
       properties:
         tenant:
           $ref: "#/components/schemas/Tenant"
+    BillingProviderEventRequest:
+      type: object
+      required:
+        - organization_id
+        - provider
+        - event_type
+        - external_customer_id
+        - external_subscription_id
+        - plan
+        - status
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum:
+            - stripe
+        event_type:
+          type: string
+          enum:
+            - subscription.created
+            - subscription.updated
+            - subscription.cancelled
+            - invoice.payment_failed
+            - invoice.paid
+            - plan.changed
+        external_customer_id:
+          type: string
+          maxLength: 256
+        external_subscription_id:
+          type: string
+          maxLength: 256
+        plan:
+          type: string
+          enum:
+            - free
+            - team
+            - business
+            - enterprise
+        status:
+          type: string
+          enum:
+            - active
+            - trialing
+            - past_due
+            - cancelled
+            - unpaid
+        current_period_end:
+          type:
+            - string
+            - "null"
+          format: date-time
+    BillingState:
+      type: object
+      required:
+        - id
+        - organization_id
+        - provider
+        - event_type
+        - external_customer_id
+        - external_subscription_id
+        - plan
+        - status
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum:
+            - stripe
+        event_type:
+          type: string
+        external_customer_id:
+          type: string
+        external_subscription_id:
+          type: string
+        plan:
+          type: string
+          enum:
+            - free
+            - team
+            - business
+            - enterprise
+        status:
+          type: string
+          enum:
+            - active
+            - trialing
+            - past_due
+            - cancelled
+            - unpaid
+        current_period_end:
+          type:
+            - string
+            - "null"
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    BillingStateResourceResponse:
+      type: object
+      required:
+        - billing
+      properties:
+        billing:
+          $ref: "#/components/schemas/BillingState"
     Membership:
       type: object
       required:

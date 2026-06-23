@@ -170,6 +170,33 @@ impl OrganizationStore for PostgresOrganizationStore {
             .collect()
     }
 
+    async fn update_plan(
+        &self,
+        organization_id: Uuid,
+        plan: String,
+    ) -> Result<(), OrganizationError> {
+        let result = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                UPDATE organizations
+                SET plan = $2,
+                    updated_at = now()
+                WHERE id = $1::uuid
+                "#,
+                values(vec![organization_id.to_string(), plan]),
+            ))
+            .await
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+
+        if result.rows_affected() == 0 {
+            Err(OrganizationError::NotFound)
+        } else {
+            Ok(())
+        }
+    }
+
     async fn add_member_if_missing(
         &self,
         member: StoredOrganizationMember,

@@ -89,6 +89,7 @@ POST /auth/register
 POST /auth/login
 POST /auth/logout
 GET /me
+POST /billing/provider-events
 POST /cloud/tenants
 GET /calendar/accounts
 POST /calendar/accounts/caldav
@@ -146,6 +147,13 @@ store transaction while setting the initial `plan`, `deployment_mode`, and
 `GET /organizations/{organization_id}/usage` exposes billing/admin usage
 counters for visible organizations, including active users, stored attachment
 bytes, and connected calendar accounts for active members.
+
+## Billing
+
+`POST /billing/provider-events` accepts normalized billing provider events,
+stores local subscription state, and updates the organization's local plan
+entitlement. Billing state is stored locally so request handling does not need
+to query a billing provider for every request.
 
 ## Worker
 
