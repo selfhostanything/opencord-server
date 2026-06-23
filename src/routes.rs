@@ -5,11 +5,12 @@ use axum::routing::{get, patch, post, put};
 use crate::config::AppConfig;
 use crate::controllers::{
     attachment_controller, audit_controller, auth_controller, billing_controller, bot_controller,
-    calendar_controller, channel_controller, compat_controller, compat_gateway_controller,
-    data_export_controller, discovery_controller, health_controller, media_controller,
-    meeting_controller, message_controller, metrics_controller, organization_controller,
-    permission_controller, push_controller, realtime_controller, retention_controller,
-    scim_controller, space_controller, usage_controller, voice_controller, webhook_controller,
+    calendar_controller, channel_controller, command_controller, compat_controller,
+    compat_gateway_controller, data_export_controller, discovery_controller, health_controller,
+    media_controller, meeting_controller, message_controller, metrics_controller,
+    organization_controller, permission_controller, push_controller, realtime_controller,
+    retention_controller, scim_controller, space_controller, usage_controller, voice_controller,
+    webhook_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -42,6 +43,14 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/api/compat/discord/v10/channels/{channel_id}/messages/{message_id}",
             patch(compat_controller::update_message).delete(compat_controller::delete_message),
+        )
+        .route(
+            "/api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands",
+            post(command_controller::create_compat_space_command),
+        )
+        .route(
+            "/api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback",
+            post(command_controller::create_interaction_callback),
         )
         .route(
             "/api/compat/discord/gateway",
@@ -206,6 +215,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/channels/{channel_id}/webhooks",
             post(webhook_controller::create),
+        )
+        .route(
+            "/channels/{channel_id}/command-interactions",
+            post(command_controller::create_channel_interaction),
         )
         .route(
             "/channels/{channel_id}/messages",

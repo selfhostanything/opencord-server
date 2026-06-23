@@ -90,6 +90,8 @@ POST /api/compat/discord/v10/channels/{channel_id}/messages
 GET /api/compat/discord/v10/channels/{channel_id}/messages
 PATCH /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
 DELETE /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
+POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands
+POST /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback
 GET /api/compat/discord/gateway
 POST /auth/register
 POST /auth/login
@@ -145,6 +147,7 @@ GET /spaces/{space_id}/audit-events
 PATCH /channels/{channel_id}
 POST /channels/{channel_id}/permission-overrides
 POST /channels/{channel_id}/webhooks
+POST /channels/{channel_id}/command-interactions
 POST /channels/{channel_id}/messages
 GET /channels/{channel_id}/messages
 POST /attachments/presign
@@ -357,6 +360,14 @@ against that bot user.
 initial implementation sends HELLO, accepts IDENTIFY with an OpenCord bot
 token, emits READY, acknowledges heartbeats, and dispatches MESSAGE_CREATE for
 messages visible to the bot user.
+
+`POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands`
+registers a space-scoped chat input command for the current bot application.
+`POST /channels/{channel_id}/command-interactions` creates a local interaction
+for a visible command and dispatches `INTERACTION_CREATE` to compatible gateway
+sessions. Bots respond through
+`POST /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback`
+with callback type `4` to post a bot-authored channel message.
 
 ## License
 

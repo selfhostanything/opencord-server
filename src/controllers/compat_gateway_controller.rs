@@ -90,6 +90,16 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "MESSAGE_CREATE", sequence, message).await.is_err() {
                         break;
                     }
+                } else if event.event_type == "interaction.created"
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(interaction) = compat_interaction_from_event(&event, bot) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "INTERACTION_CREATE", sequence, interaction).await.is_err() {
+                        break;
+                    }
                 }
             }
         }
@@ -247,6 +257,41 @@ fn compat_message_from_event(
         pinned: false,
         kind: 0,
     })
+}
+
+fn compat_interaction_from_event(
+    event: &RealtimeEvent,
+    current_bot: &AuthenticatedBot,
+) -> Option<Value> {
+    let interaction = event.data.get("interaction")?;
+    let application_id = interaction.get("application_id")?.as_str()?;
+    if application_id != current_bot.application_id.to_string() {
+        return None;
+    }
+    let command = event.data.get("command")?;
+
+    Some(json!({
+        "id": interaction.get("id")?.as_str()?,
+        "application_id": application_id,
+        "type": 2,
+        "token": interaction.get("token")?.as_str()?,
+        "guild_id": interaction.get("space_id")?.as_str()?,
+        "channel_id": interaction.get("channel_id")?.as_str()?,
+        "member": {
+            "user": {
+                "id": interaction.get("invoking_user_id")?.as_str()?
+            }
+        },
+        "data": {
+            "id": command.get("id")?.as_str()?,
+            "name": command.get("name")?.as_str()?,
+            "type": command.get("type")?.as_i64().unwrap_or(1),
+            "options": interaction
+                .get("options")
+                .cloned()
+                .unwrap_or_else(|| json!([]))
+        }
+    }))
 }
 
 async fn send_dispatch<T: serde::Serialize>(

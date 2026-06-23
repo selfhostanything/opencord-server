@@ -6,6 +6,7 @@ pub mod bot;
 pub mod calendar;
 pub mod calendar_sync;
 pub mod channel;
+pub mod command;
 pub mod data_export;
 pub mod ids;
 pub mod media;

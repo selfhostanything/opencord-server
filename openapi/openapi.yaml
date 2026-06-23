@@ -246,13 +246,91 @@ paths:
           description: Missing SEND_MESSAGES or MANAGE_MESSAGES permission
         "404":
           description: Channel, message, or parent space not found for this bot
+  /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands:
+    post:
+      summary: Register a Discord-compatible space command
+      description: >
+        Creates a space-scoped chat input command for the authenticated bot
+        application. Requires `Authorization: Bot ocb_...`; the bot user must
+        be a member of the target space.
+      security:
+        - botAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompatApplicationCommandRequest"
+      responses:
+        "201":
+          description: Created Discord-compatible application command
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompatApplicationCommand"
+        "400":
+          description: Invalid command name, description, type, or options
+        "401":
+          description: Missing or invalid bot token
+        "404":
+          description: Application or target space not found for this bot
+  /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback:
+    post:
+      summary: Respond to a Discord-compatible interaction
+      description: >
+        Accepts callback type `4` for a bot-authored channel message response.
+        The interaction token is a shown-once `oci_` token generated when the
+        interaction is created and delivered through the compatibility gateway.
+      parameters:
+        - name: interaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: interaction_token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInteractionCallbackRequest"
+      responses:
+        "204":
+          description: Interaction response accepted and message created
+        "400":
+          description: Unsupported callback type or invalid message data
+        "401":
+          description: Missing or invalid interaction token
+        "404":
+          description: Interaction, command, or channel not found
+        "409":
+          description: Interaction has already been responded to
   /api/compat/discord/gateway:
     get:
       summary: Discord-compatible gateway websocket
       description: >
         Upgrades to a WebSocket, sends HELLO, accepts IDENTIFY with an
         OpenCord `ocb_` bot token, emits READY, acknowledges heartbeats, and
-        dispatches content-only MESSAGE_CREATE events visible to the bot user.
+        dispatches content-only MESSAGE_CREATE and INTERACTION_CREATE events
+        visible to the bot user.
       responses:
         "101":
           description: WebSocket protocol switch
@@ -1726,6 +1804,43 @@ paths:
           description: Missing MANAGE_CHANNELS permission
         "404":
           description: Channel or parent space not found for this user
+  /channels/{channel_id}/command-interactions:
+    post:
+      summary: Create a local command interaction in a channel
+      description: >
+        Creates a pending interaction for a registered space command, returns
+        the shown-once `oci_` interaction token to the caller, and dispatches an
+        `interaction.created` realtime event for compatibility gateway sessions.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommandInteractionRequest"
+      responses:
+        "201":
+          description: Created pending command interaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandInteractionCreatedResponse"
+        "400":
+          description: Invalid command interaction payload
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing VIEW_CHANNEL permission
+        "404":
+          description: Channel, space, or command not found for this user
   /channels/{channel_id}/messages:
     post:
       summary: Send a message to a channel
@@ -2798,6 +2913,159 @@ components:
           type: boolean
         type:
           type: integer
+    CreateCompatApplicationCommandRequest:
+      type: object
+      required:
+        - name
+        - description
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 32
+        description:
+          type: string
+          minLength: 1
+          maxLength: 100
+        type:
+          type: integer
+          enum:
+            - 1
+          default: 1
+        options:
+          type: array
+          maxItems: 25
+          items:
+            type: object
+    CompatApplicationCommand:
+      type: object
+      required:
+        - id
+        - application_id
+        - guild_id
+        - name
+        - description
+        - type
+        - options
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        application_id:
+          type: string
+          format: uuid
+        guild_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        type:
+          type: integer
+        options:
+          type: array
+          items:
+            type: object
+        version:
+          type: string
+    CreateCommandInteractionRequest:
+      type: object
+      required:
+        - command_id
+      properties:
+        command_id:
+          type: string
+          format: uuid
+        options:
+          type: array
+          items:
+            type: object
+    CommandInteraction:
+      type: object
+      required:
+        - id
+        - application_id
+        - space_id
+        - channel_id
+        - command_id
+        - invoking_user_id
+        - token
+        - token_last_four
+        - status
+        - options
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        application_id:
+          type: string
+          format: uuid
+        space_id:
+          type: string
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        command_id:
+          type: string
+          format: uuid
+        invoking_user_id:
+          type: string
+          format: uuid
+        token:
+          type: string
+          description: Shown once when the interaction is created.
+        token_last_four:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - responded
+            - expired
+        options:
+          type: array
+          items:
+            type: object
+        created_at:
+          type: string
+          format: date-time
+        responded_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+    CommandInteractionCreatedResponse:
+      type: object
+      required:
+        - interaction
+      properties:
+        interaction:
+          $ref: "#/components/schemas/CommandInteraction"
+    CreateInteractionCallbackRequest:
+      type: object
+      required:
+        - type
+        - data
+      properties:
+        type:
+          type: integer
+          enum:
+            - 4
+        data:
+          $ref: "#/components/schemas/InteractionCallbackData"
+    InteractionCallbackData:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
     CreateCustomDomainRequest:
       type: object
       required:

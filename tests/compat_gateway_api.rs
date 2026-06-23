@@ -62,6 +62,16 @@ fn bearer_request(method: Method, uri: &str, token: &str, body: Value) -> Reques
         .unwrap()
 }
 
+fn bot_request(method: Method, uri: &str, token: &str, body: Value) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(header::AUTHORIZATION, format!("Bot {token}"))
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
 async fn register(app: &Router, email: &str) -> (String, String) {
     let response = app
         .clone()
@@ -167,6 +177,37 @@ async fn create_bot(app: &Router, owner_token: &str, organization_id: &str) -> (
     )
 }
 
+async fn create_bot_with_application(
+    app: &Router,
+    owner_token: &str,
+    organization_id: &str,
+) -> (String, String, String) {
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/bot-applications"),
+            owner_token,
+            json!({
+                "name": "Gateway Command Bot",
+                "description": "Exercises Discord-compatible interaction gateway"
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = response_json(response).await;
+    (
+        body["bot_application"]["id"].as_str().unwrap().to_owned(),
+        body["bot_token"]["token"].as_str().unwrap().to_owned(),
+        body["bot_application"]["bot_user_id"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
+    )
+}
+
 async fn add_space_member(app: &Router, owner_token: &str, space_id: &str, user_id: &str) {
     let response = app
         .clone()
@@ -199,6 +240,76 @@ async fn send_message(app: &Router, token: &str, channel_id: &str, content: &str
 
     assert_eq!(response.status(), StatusCode::CREATED);
     response_json(response).await["message"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+async fn create_command(
+    app: &Router,
+    bot_token: &str,
+    application_id: &str,
+    space_id: &str,
+) -> String {
+    let response = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!(
+                "/api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands"
+            ),
+            bot_token,
+            json!({
+                "name": "deploy",
+                "description": "Deploy a release",
+                "type": 1,
+                "options": [
+                    {
+                        "type": 3,
+                        "name": "version",
+                        "description": "Release version",
+                        "required": true
+                    }
+                ]
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    response_json(response).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+async fn create_interaction(
+    app: &Router,
+    token: &str,
+    channel_id: &str,
+    command_id: &str,
+) -> String {
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/command-interactions"),
+            token,
+            json!({
+                "command_id": command_id,
+                "options": [
+                    {
+                        "name": "version",
+                        "value": "1.2.3"
+                    }
+                ]
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    response_json(response).await["interaction"]["id"]
         .as_str()
         .unwrap()
         .to_owned()
@@ -290,6 +401,73 @@ async fn compat_gateway_identify_ready_heartbeat_and_message_create() {
     assert_eq!(event["d"]["author"]["id"], owner_id);
     assert_eq!(event["d"]["author"]["bot"], false);
     assert_eq!(event["d"]["content"], "gateway hello");
+}
+
+#[tokio::test]
+async fn compat_gateway_dispatches_interaction_create_for_visible_command() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, owner_id) = register(&app, "compat-gateway-command-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "command").await;
+    let (application_id, bot_token, bot_user_id) =
+        create_bot_with_application(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {
+                        "os": "test",
+                        "browser": "opencord-test",
+                        "device": "opencord-test"
+                    }
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+
+    let command_id = create_command(&app, &bot_token, &application_id, &space_id).await;
+    let interaction_id = create_interaction(&app, &owner_token, &channel_id, &command_id).await;
+    let event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("interaction create dispatch");
+
+    assert_eq!(event["op"], 0);
+    assert_eq!(event["t"], "INTERACTION_CREATE");
+    assert_eq!(event["s"], 2);
+    assert_eq!(event["d"]["id"], interaction_id);
+    assert_eq!(event["d"]["application_id"], application_id);
+    assert_eq!(event["d"]["guild_id"], space_id);
+    assert_eq!(event["d"]["channel_id"], channel_id);
+    assert_eq!(event["d"]["member"]["user"]["id"], owner_id);
+    assert!(event["d"]["token"].as_str().unwrap().starts_with("oci_"));
+    assert_eq!(event["d"]["data"]["id"], command_id);
+    assert_eq!(event["d"]["data"]["name"], "deploy");
+    assert_eq!(event["d"]["data"]["type"], 1);
+    assert_eq!(event["d"]["data"]["options"][0]["name"], "version");
+    assert_eq!(event["d"]["data"]["options"][0]["value"], "1.2.3");
 }
 
 #[tokio::test]

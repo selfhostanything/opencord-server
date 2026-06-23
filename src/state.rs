@@ -13,6 +13,7 @@ use crate::domain::calendar_sync::{
     LocalMicrosoftCalendarAdapter,
 };
 use crate::domain::channel::{ChannelService, ChannelStore};
+use crate::domain::command::{CommandService, CommandStore};
 use crate::domain::data_export::DataExportService;
 use crate::domain::media::MediaControlService;
 use crate::domain::meeting::{MeetingService, MeetingStore};
@@ -41,6 +42,8 @@ use crate::repositories::calendar_memory::MemoryCalendarStore;
 use crate::repositories::calendar_postgres::PostgresCalendarStore;
 use crate::repositories::channel_memory::MemoryChannelStore;
 use crate::repositories::channel_postgres::PostgresChannelStore;
+use crate::repositories::command_memory::MemoryCommandStore;
+use crate::repositories::command_postgres::PostgresCommandStore;
 use crate::repositories::meeting_memory::MemoryMeetingStore;
 use crate::repositories::meeting_postgres::PostgresMeetingStore;
 use crate::repositories::message_memory::MemoryMessageStore;
@@ -84,6 +87,7 @@ pub struct AppState {
     pub retention: Arc<RetentionService>,
     pub bots: Arc<BotService>,
     pub webhooks: Arc<IncomingWebhookService>,
+    pub commands: Arc<CommandService>,
 }
 
 impl AppState {
@@ -107,6 +111,7 @@ impl AppState {
                 retention: Arc::new(MemoryRetentionStore::default()),
                 bots: Arc::new(MemoryBotStore::default()),
                 webhooks: Arc::new(MemoryIncomingWebhookStore::default()),
+                commands: Arc::new(MemoryCommandStore::default()),
             },
         )
     }
@@ -131,6 +136,7 @@ impl AppState {
                 retention: Arc::new(PostgresRetentionStore::new(db.clone())),
                 bots: Arc::new(PostgresBotStore::new(db.clone())),
                 webhooks: Arc::new(PostgresIncomingWebhookStore::new(db.clone())),
+                commands: Arc::new(PostgresCommandStore::new(db.clone())),
             },
         )
     }
@@ -159,6 +165,7 @@ impl AppState {
             stores.messages.clone(),
             stores.attachments.clone(),
         ));
+        let commands = Arc::new(CommandService::new(stores.commands.clone()));
 
         Self {
             config,
@@ -188,6 +195,7 @@ impl AppState {
             retention: Arc::new(RetentionService::new(stores.retention)),
             bots,
             webhooks,
+            commands,
         }
     }
 }
@@ -209,4 +217,5 @@ pub struct AppStores {
     pub retention: Arc<dyn RetentionStore>,
     pub bots: Arc<dyn BotStore>,
     pub webhooks: Arc<dyn IncomingWebhookStore>,
+    pub commands: Arc<dyn CommandStore>,
 }
