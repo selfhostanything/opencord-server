@@ -1,0 +1,26 @@
+{
+  "d": {
+    "application": {
+      "id": "<uuid-v7>"
+    },
+    "guilds": [
+      {
+        "id": "<uuid-v7>",
+        "name": "Compat Contract Space contract",
+        "unavailable": false
+      }
+    ],
+    "intents": 512,
+    "resume_gateway_url": "/api/compat/discord/gateway",
+    "session_id": "<session-id>",
+    "user": {
+      "bot": true,
+      "id": "<uuid-v7>",
+      "username": "Contract Bot"
+    },
+    "v": 10
+  },
+  "op": 0,
+  "s": 1,
+  "t": "READY"
+}

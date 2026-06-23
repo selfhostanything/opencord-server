@@ -1,0 +1,26 @@
+{
+  "d": {
+    "attachments": [],
+    "author": {
+      "bot": true,
+      "id": "<uuid-v7>",
+      "username": "Contract Bot"
+    },
+    "channel_id": "<uuid-v7>",
+    "components": [],
+    "content": "deploy queued",
+    "edited_timestamp": null,
+    "embeds": [],
+    "id": "<uuid-v7>",
+    "mention_everyone": false,
+    "mention_roles": [],
+    "mentions": [],
+    "pinned": false,
+    "timestamp": "<timestamp>",
+    "tts": false,
+    "type": 0
+  },
+  "op": 0,
+  "s": 5,
+  "t": "MESSAGE_CREATE"
+}

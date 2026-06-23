@@ -1,0 +1,28 @@
+{
+  "attachments": [],
+  "author": {
+    "bot": true,
+    "id": "<uuid-v7>",
+    "username": "Contract Bot"
+  },
+  "channel_id": "<uuid-v7>",
+  "components": [],
+  "content": "",
+  "edited_timestamp": null,
+  "embeds": [
+    {
+      "color": 5793266,
+      "description": "Release 1.2.3 passed checks",
+      "title": "Deploy ready",
+      "type": "rich"
+    }
+  ],
+  "id": "<uuid-v7>",
+  "mention_everyone": false,
+  "mention_roles": [],
+  "mentions": [],
+  "pinned": false,
+  "timestamp": "<timestamp>",
+  "tts": false,
+  "type": 0
+}

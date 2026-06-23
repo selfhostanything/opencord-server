@@ -1,0 +1,17 @@
+{
+  "application_id": "<uuid-v7>",
+  "description": "Deploy a release",
+  "guild_id": "<uuid-v7>",
+  "id": "<uuid-v7>",
+  "name": "deploy",
+  "options": [
+    {
+      "description": "Release version",
+      "name": "version",
+      "required": true,
+      "type": 3
+    }
+  ],
+  "type": 1,
+  "version": "<uuid-v7>"
+}

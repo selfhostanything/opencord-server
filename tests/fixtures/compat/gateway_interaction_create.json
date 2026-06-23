@@ -1,0 +1,29 @@
+{
+  "d": {
+    "application_id": "<uuid-v7>",
+    "channel_id": "<uuid-v7>",
+    "data": {
+      "id": "<uuid-v7>",
+      "name": "deploy",
+      "options": [
+        {
+          "name": "version",
+          "value": "1.2.3"
+        }
+      ],
+      "type": 1
+    },
+    "guild_id": "<uuid-v7>",
+    "id": "<uuid-v7>",
+    "member": {
+      "user": {
+        "id": "<uuid-v7>"
+      }
+    },
+    "token": "<interaction-token>",
+    "type": 2
+  },
+  "op": 0,
+  "s": 4,
+  "t": "INTERACTION_CREATE"
+}

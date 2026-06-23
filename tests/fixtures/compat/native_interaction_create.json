@@ -1,0 +1,22 @@
+{
+  "interaction": {
+    "application_id": "<uuid-v7>",
+    "channel_id": "<uuid-v7>",
+    "command_id": "<uuid-v7>",
+    "created_at": "<timestamp>",
+    "id": "<uuid-v7>",
+    "invoking_user_id": "<uuid-v7>",
+    "options": [
+      {
+        "name": "version",
+        "value": "1.2.3"
+      }
+    ],
+    "responded_at": null,
+    "space_id": "<uuid-v7>",
+    "status": "pending",
+    "token": "<interaction-token>",
+    "token_last_four": "<token-last-four>",
+    "type": 2
+  }
+}
