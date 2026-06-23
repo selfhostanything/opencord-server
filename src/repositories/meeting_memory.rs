@@ -76,6 +76,22 @@ impl MeetingStore for MemoryMeetingStore {
             .map(|meeting| bundle_for_meeting(&state, meeting)))
     }
 
+    async fn get_meeting_by_join_slug(
+        &self,
+        join_slug: String,
+    ) -> Result<Option<MeetingBundle>, MeetingError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| MeetingError::StoreUnavailable)?;
+        Ok(state
+            .meetings_by_id
+            .values()
+            .find(|meeting| meeting.join_slug == join_slug)
+            .cloned()
+            .map(|meeting| bundle_for_meeting(&state, meeting)))
+    }
+
     async fn update_meeting(&self, meeting: Meeting) -> Result<MeetingBundle, MeetingError> {
         let mut state = self
             .state

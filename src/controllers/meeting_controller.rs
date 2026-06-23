@@ -59,7 +59,7 @@ pub async fn create(
     Ok((
         StatusCode::CREATED,
         Json(MeetingResourceResponse {
-            meeting: MeetingResponse::from(meeting),
+            meeting: meeting_response(meeting, &state),
         }),
     ))
 }
@@ -83,7 +83,7 @@ pub async fn list(
     let mut visible = Vec::new();
     for meeting in meetings {
         if can_read_meeting(&state, &user, &meeting).await? {
-            visible.push(MeetingResponse::from(meeting));
+            visible.push(meeting_response(meeting, &state));
         }
     }
 
@@ -101,7 +101,22 @@ pub async fn get(
     require_read_meeting(&state, &user, &meeting).await?;
 
     Ok(Json(MeetingResourceResponse {
-        meeting: MeetingResponse::from(meeting),
+        meeting: meeting_response(meeting, &state),
+    }))
+}
+
+pub async fn resolve_join(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(join_slug): Path<String>,
+) -> Result<Json<MeetingResourceResponse>, MeetingApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let meeting = state.meetings.get_by_join_slug(join_slug).await?;
+    require_read_meeting(&state, &user, &meeting).await?;
+
+    Ok(Json(MeetingResourceResponse {
+        meeting: meeting_response(meeting, &state),
     }))
 }
 
@@ -120,7 +135,7 @@ pub async fn update(
     let meeting = state.meetings.update(meeting, request.into()).await?;
 
     Ok(Json(MeetingResourceResponse {
-        meeting: MeetingResponse::from(meeting),
+        meeting: meeting_response(meeting, &state),
     }))
 }
 
@@ -138,8 +153,12 @@ pub async fn cancel(
     let meeting = state.meetings.cancel(meeting).await?;
 
     Ok(Json(MeetingResourceResponse {
-        meeting: MeetingResponse::from(meeting),
+        meeting: meeting_response(meeting, &state),
     }))
+}
+
+fn meeting_response(meeting: MeetingBundle, state: &AppState) -> MeetingResponse {
+    MeetingResponse::from_bundle(meeting, &state.config.public_url)
 }
 
 async fn validate_meeting_context(

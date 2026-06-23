@@ -60,6 +60,7 @@ pub struct MeetingResponse {
     pub ends_at: String,
     pub timezone: String,
     pub join_slug: String,
+    pub join_url: String,
     pub cancelled_at: Option<String>,
     pub attendees: Vec<MeetingAttendeeResponse>,
     pub reminders: Vec<MeetingReminderResponse>,
@@ -134,6 +135,13 @@ impl From<CreateMeetingReminderRequest> for NewMeetingReminder {
 
 impl From<MeetingBundle> for MeetingResponse {
     fn from(bundle: MeetingBundle) -> Self {
+        Self::from_bundle(bundle, "")
+    }
+}
+
+impl MeetingResponse {
+    pub fn from_bundle(bundle: MeetingBundle, public_url: &str) -> Self {
+        let join_url = join_url(public_url, &bundle.meeting.join_slug);
         Self {
             id: bundle.meeting.id.to_string(),
             organization_id: bundle.meeting.organization_id.to_string(),
@@ -147,6 +155,7 @@ impl From<MeetingBundle> for MeetingResponse {
             ends_at: bundle.meeting.ends_at,
             timezone: bundle.meeting.timezone,
             join_slug: bundle.meeting.join_slug,
+            join_url,
             cancelled_at: bundle.meeting.cancelled_at,
             attendees: bundle
                 .attendees
@@ -159,6 +168,15 @@ impl From<MeetingBundle> for MeetingResponse {
                 .map(MeetingReminderResponse::from)
                 .collect(),
         }
+    }
+}
+
+fn join_url(public_url: &str, join_slug: &str) -> String {
+    let public_url = public_url.trim_end_matches('/');
+    if public_url.is_empty() {
+        format!("/join/{join_slug}")
+    } else {
+        format!("{public_url}/join/{join_slug}")
     }
 }
 

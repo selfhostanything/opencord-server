@@ -117,6 +117,10 @@ pub trait MeetingStore: Send + Sync {
         organization_id: Uuid,
     ) -> Result<Vec<MeetingBundle>, MeetingError>;
     async fn get_meeting(&self, meeting_id: Uuid) -> Result<Option<MeetingBundle>, MeetingError>;
+    async fn get_meeting_by_join_slug(
+        &self,
+        join_slug: String,
+    ) -> Result<Option<MeetingBundle>, MeetingError>;
     async fn update_meeting(&self, meeting: Meeting) -> Result<MeetingBundle, MeetingError>;
 }
 
@@ -194,6 +198,13 @@ impl MeetingService {
     pub async fn get(&self, meeting_id: Uuid) -> Result<MeetingBundle, MeetingError> {
         self.store
             .get_meeting(meeting_id)
+            .await?
+            .ok_or(MeetingError::NotFound)
+    }
+
+    pub async fn get_by_join_slug(&self, join_slug: String) -> Result<MeetingBundle, MeetingError> {
+        self.store
+            .get_meeting_by_join_slug(join_slug)
             .await?
             .ok_or(MeetingError::NotFound)
     }

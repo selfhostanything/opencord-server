@@ -81,6 +81,7 @@ make migrate
 ```text
 GET /healthz
 GET /ws
+GET /join/{join_slug}
 GET /.well-known/opencord
 GET /api/version
 GET /api/capabilities

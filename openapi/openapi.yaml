@@ -42,6 +42,28 @@ paths:
           description: WebSocket protocol switch
         "401":
           description: Missing or invalid bearer session
+  /join/{join_slug}:
+    get:
+      summary: Resolve a stable meeting join URL
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: join_slug
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Meeting resolved from the join URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Meeting not found for this user
   /.well-known/opencord:
     get:
       summary: OpenCord server discovery metadata
@@ -1372,6 +1394,7 @@ components:
         - ends_at
         - timezone
         - join_slug
+        - join_url
         - attendees
         - reminders
       properties:
@@ -1415,6 +1438,9 @@ components:
           type: string
         join_slug:
           type: string
+        join_url:
+          type: string
+          format: uri
         cancelled_at:
           type:
             - string

@@ -129,6 +129,27 @@ impl MeetingStore for PostgresMeetingStore {
         }
     }
 
+    async fn get_meeting_by_join_slug(
+        &self,
+        join_slug: String,
+    ) -> Result<Option<MeetingBundle>, MeetingError> {
+        let meeting = self
+            .query_meetings(
+                r#"
+                WHERE join_slug = $1
+                "#,
+                vec![Value::from(join_slug)],
+            )
+            .await?
+            .into_iter()
+            .next();
+
+        match meeting {
+            Some(meeting) => Ok(Some(self.bundle_for_meeting(meeting).await?)),
+            None => Ok(None),
+        }
+    }
+
     async fn update_meeting(&self, meeting: Meeting) -> Result<MeetingBundle, MeetingError> {
         let result = self
             .db

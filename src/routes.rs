@@ -21,6 +21,7 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route("/healthz", get(health_controller::health))
         .route("/metrics", get(metrics_controller::prometheus))
         .route("/ws", get(realtime_controller::websocket))
+        .route("/join/{join_slug}", get(meeting_controller::resolve_join))
         .route(
             "/.well-known/opencord",
             get(discovery_controller::well_known),

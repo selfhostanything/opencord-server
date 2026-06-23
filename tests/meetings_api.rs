@@ -301,6 +301,61 @@ async fn meeting_endpoints_require_bearer_auth_and_membership() {
 }
 
 #[tokio::test]
+async fn meeting_join_url_resolves_to_visible_meeting() {
+    let app = test_app();
+    let (token, _) = register(&app, "meeting-link-owner@example.com").await;
+    let (outsider_token, _) = register(&app, "meeting-link-outsider@example.com").await;
+    let organization_id = create_organization(&app, &token, "Meeting Link Parent").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/meetings"),
+            &token,
+            json!({
+                "title": "Join Link Meeting",
+                "starts_at": "2026-06-24T09:00:00Z",
+                "ends_at": "2026-06-24T09:30:00Z"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let body = response_json(created).await;
+    let meeting_id = body["meeting"]["id"].as_str().unwrap();
+    let join_slug = body["meeting"]["join_slug"].as_str().unwrap();
+    assert_eq!(
+        body["meeting"]["join_url"],
+        format!("https://chat.example.com/join/{join_slug}")
+    );
+
+    let resolved = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/join/{join_slug}"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resolved.status(), StatusCode::OK);
+    assert_eq!(response_json(resolved).await["meeting"]["id"], meeting_id);
+
+    let outsider = app
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/join/{join_slug}"),
+            &outsider_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(outsider.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn meeting_create_validates_schedule() {
     let app = test_app();
     let (token, _) = register(&app, "meeting-validation-owner@example.com").await;
