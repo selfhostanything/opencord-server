@@ -1,7 +1,7 @@
 COMPOSE_FILE ?= deploy/docker-compose/compose.yaml
 DATABASE_URL ?= postgres://opencord:opencord@localhost:5432/opencord?sslmode=disable
 
-.PHONY: test fmt lint dev-deps compose-app compose-config dev-api dev-realtime dev-worker migrate
+.PHONY: test fmt lint dev-deps dev-media compose-app compose-media compose-config dev-api dev-realtime dev-worker migrate
 
 test:
 	cargo test --all-targets
@@ -15,8 +15,14 @@ lint:
 dev-deps:
 	docker compose -f $(COMPOSE_FILE) up timescaledb redis minio meilisearch mailpit
 
+dev-media:
+	docker compose -f $(COMPOSE_FILE) --profile media up livekit
+
 compose-app:
 	docker compose -f $(COMPOSE_FILE) --profile app up
+
+compose-media:
+	docker compose -f $(COMPOSE_FILE) --profile app --profile media up
 
 compose-config:
 	docker compose -f $(COMPOSE_FILE) config

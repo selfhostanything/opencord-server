@@ -33,3 +33,20 @@ OPENCORD_MEDIA_REGION=local
 
 The local defaults are development-only. Production deployments must provide
 unique LiveKit credentials.
+
+## Local LiveKit
+
+The Docker Compose `media` profile runs LiveKit in development mode:
+
+```bash
+make dev-media
+```
+
+or together with the app containers:
+
+```bash
+make compose-media
+```
+
+The Compose API container points `OPENCORD_LIVEKIT_URL` at
+`ws://livekit:7880`; host development uses the default `ws://localhost:7880`.

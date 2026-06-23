@@ -53,6 +53,12 @@ Run the full backend stack in Docker Compose:
 make compose-app
 ```
 
+Run the optional local LiveKit media server:
+
+```bash
+make dev-media
+```
+
 ## Database
 
 Local development uses:
@@ -125,6 +131,22 @@ OPENCORD_LIVEKIT_API_KEY=devkey
 OPENCORD_LIVEKIT_API_SECRET=secret
 OPENCORD_MEDIA_TOKEN_TTL_SECONDS=600
 OPENCORD_MEDIA_REGION=local
+```
+
+Docker Compose exposes optional LiveKit development mode through the `media`
+profile:
+
+```bash
+make dev-media
+make compose-media
+```
+
+Ports:
+
+```text
+7880/tcp LiveKit signal/API
+7881/tcp LiveKit TCP fallback
+7882/udp LiveKit RTC UDP
 ```
 
 ## License

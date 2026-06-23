@@ -47,6 +47,15 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  livekit:
+    profiles: ["media"]
+    image: livekit/livekit-server:latest
+    command: --dev --bind 0.0.0.0
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+
   api:
     profiles: ["app"]
     build:
@@ -61,6 +70,10 @@ services:
       S3_ENDPOINT: http://minio:9000
       SEARCH_URL: http://meilisearch:7700
       SMTP_URL: smtp://mailpit:1025
+      OPENCORD_LIVEKIT_URL: ws://livekit:7880
+      OPENCORD_LIVEKIT_API_KEY: devkey
+      OPENCORD_LIVEKIT_API_SECRET: secret
+      OPENCORD_MEDIA_REGION: local
     ports:
       - "8080:8080"
     depends_on:
