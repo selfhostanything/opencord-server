@@ -5,6 +5,7 @@ pub mod billing;
 pub mod bot;
 pub mod calendar;
 pub mod channel;
+pub mod compat;
 pub mod data_export;
 pub mod media;
 pub mod meeting;

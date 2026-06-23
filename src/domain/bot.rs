@@ -41,6 +41,14 @@ pub struct BotApplicationCreated {
     pub token: BotToken,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedBot {
+    pub application_id: Uuid,
+    pub organization_id: Uuid,
+    pub bot_user_id: Uuid,
+    pub name: String,
+}
+
 #[derive(Debug)]
 pub struct CreateBotApplicationInput {
     pub organization_id: Uuid,
@@ -52,6 +60,7 @@ pub struct CreateBotApplicationInput {
 #[derive(Debug)]
 pub enum BotError {
     InvalidInput(&'static str),
+    Unauthorized,
     StoreUnavailable,
 }
 
@@ -59,6 +68,7 @@ impl BotError {
     pub fn status_code(&self) -> StatusCode {
         match self {
             Self::InvalidInput(_) => StatusCode::BAD_REQUEST,
+            Self::Unauthorized => StatusCode::UNAUTHORIZED,
             Self::StoreUnavailable => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -66,6 +76,7 @@ impl BotError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::InvalidInput(_) => "invalid_request",
+            Self::Unauthorized => "unauthorized",
             Self::StoreUnavailable => "bot_store_unavailable",
         }
     }
@@ -73,6 +84,7 @@ impl BotError {
     pub fn message(&self) -> &'static str {
         match self {
             Self::InvalidInput(message) => message,
+            Self::Unauthorized => "valid bot token is required",
             Self::StoreUnavailable => "bot store is unavailable",
         }
     }
@@ -94,6 +106,10 @@ pub trait BotStore: Send + Sync {
         application: BotApplication,
         token: StoredBotToken,
     ) -> Result<(), BotError>;
+    async fn find_bot_by_token_hash(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<AuthenticatedBot>, BotError>;
 }
 
 #[derive(Clone)]
@@ -154,6 +170,17 @@ impl BotService {
                 token_last_four: stored_token.token_last_four,
             },
         })
+    }
+
+    pub async fn authenticate_token(&self, token: &str) -> Result<AuthenticatedBot, BotError> {
+        if !token.starts_with("ocb_") {
+            return Err(BotError::Unauthorized);
+        }
+
+        self.store
+            .find_bot_by_token_hash(&hash_bot_token(token))
+            .await?
+            .ok_or(BotError::Unauthorized)
     }
 }
 

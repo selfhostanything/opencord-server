@@ -1,6 +1,8 @@
 use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value};
 
-use crate::domain::bot::{BotApplication, BotError, BotStore, StoredBotToken};
+use uuid::Uuid;
+
+use crate::domain::bot::{AuthenticatedBot, BotApplication, BotError, BotStore, StoredBotToken};
 
 #[derive(Clone)]
 pub struct PostgresBotStore {
@@ -65,4 +67,56 @@ impl BotStore for PostgresBotStore {
 
         Ok(())
     }
+
+    async fn find_bot_by_token_hash(
+        &self,
+        token_hash: &str,
+    ) -> Result<Option<AuthenticatedBot>, BotError> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT bot_applications.id::text AS application_id,
+                       bot_applications.organization_id::text AS organization_id,
+                       bot_applications.bot_user_id::text AS bot_user_id,
+                       bot_applications.name AS name
+                FROM bot_tokens
+                INNER JOIN bot_applications
+                  ON bot_applications.id = bot_tokens.application_id
+                WHERE bot_tokens.token_hash = $1
+                  AND bot_tokens.active = true
+                  AND bot_applications.status = 'active'
+                "#,
+                vec![Value::from(token_hash.to_owned())],
+            ))
+            .await
+            .map_err(|_| BotError::StoreUnavailable)?;
+
+        row.map(bot_from_row).transpose()
+    }
+}
+
+fn bot_from_row(row: sea_orm::QueryResult) -> Result<AuthenticatedBot, BotError> {
+    Ok(AuthenticatedBot {
+        application_id: parse_uuid(
+            &row.try_get::<String>("", "application_id")
+                .map_err(|_| BotError::StoreUnavailable)?,
+        )?,
+        organization_id: parse_uuid(
+            &row.try_get::<String>("", "organization_id")
+                .map_err(|_| BotError::StoreUnavailable)?,
+        )?,
+        bot_user_id: parse_uuid(
+            &row.try_get::<String>("", "bot_user_id")
+                .map_err(|_| BotError::StoreUnavailable)?,
+        )?,
+        name: row
+            .try_get::<String>("", "name")
+            .map_err(|_| BotError::StoreUnavailable)?,
+    })
+}
+
+fn parse_uuid(value: &str) -> Result<Uuid, BotError> {
+    Uuid::parse_str(value).map_err(|_| BotError::StoreUnavailable)
 }

@@ -86,6 +86,10 @@ GET /.well-known/opencord
 GET /api/version
 GET /api/capabilities
 POST /api/webhooks/{webhook_id}/{webhook_token}
+POST /api/compat/discord/v10/channels/{channel_id}/messages
+GET /api/compat/discord/v10/channels/{channel_id}/messages
+PATCH /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
+DELETE /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
 POST /auth/register
 POST /auth/login
 GET /auth/oidc/providers
@@ -341,6 +345,12 @@ webhook for a text channel. The server creates an internal webhook bot user and
 returns a shown-once `ocw_` token plus an execute URL. `POST
 /api/webhooks/{webhook_id}/{webhook_token}` accepts a Discord-style webhook
 payload with `content` and posts the message as the webhook bot user.
+
+`/api/compat/discord/v10/channels/{channel_id}/messages` supports the first
+Discord-compatible bot message routes: send, list, edit, and delete. Requests
+use `Authorization: Bot ocb_...`. The bot user must be added to the target
+space through the normal member endpoint, and channel permissions are enforced
+against that bot user.
 
 ## License
 
