@@ -37,6 +37,10 @@ api secret: secret
 ports: 7880/tcp, 7881/tcp, 7882/udp
 ```
 
+TURN/coturn is not required for same-machine media development. Use
+[`docs/coturn.md`](coturn.md) when testing relay fallback or production media
+networking.
+
 ## Verification
 
 ```bash

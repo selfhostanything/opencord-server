@@ -59,6 +59,9 @@ Run the optional local LiveKit media server:
 make dev-media
 ```
 
+TURN/coturn planning and verification are documented in
+[docs/coturn.md](docs/coturn.md).
+
 ## Database
 
 Local development uses:
