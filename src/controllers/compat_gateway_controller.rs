@@ -154,6 +154,17 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                         break;
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                } else if event.event_type == "space.member.added"
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(member) = compat_guild_member_from_event(&event) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "GUILD_MEMBER_ADD", sequence, member).await.is_err() {
+                        break;
+                    }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "interaction.created"
                     && can_bot_receive_event(&state, bot, &event).await
                 {
@@ -345,7 +356,16 @@ async fn can_bot_receive_event(
     event: &RealtimeEvent,
 ) -> bool {
     let Some(channel_id) = event.scope.channel_id.as_deref() else {
-        return true;
+        let Some(space_id) = event.scope.space_id.as_deref() else {
+            return true;
+        };
+        let Ok(space_id) = Uuid::parse_str(space_id) else {
+            return false;
+        };
+        let Ok(space) = state.spaces.get_for_user(bot.bot_user_id, space_id).await else {
+            return false;
+        };
+        return space.organization_id == bot.organization_id;
     };
     let Ok(channel_id) = Uuid::parse_str(channel_id) else {
         return false;
@@ -411,6 +431,10 @@ fn compat_channel_kind(kind: &str) -> i32 {
         "voice" => 2,
         _ => 0,
     }
+}
+
+fn compat_guild_member_from_event(event: &RealtimeEvent) -> Option<Value> {
+    event.data.get("member").cloned()
 }
 
 fn compat_message_from_value(

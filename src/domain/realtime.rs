@@ -24,6 +24,20 @@ pub struct RealtimeEvent {
 }
 
 impl RealtimeEvent {
+    pub fn space(event_type: &str, organization_id: Uuid, space_id: Uuid, data: Value) -> Self {
+        Self {
+            id: format!("evt_{}", ids::new_uuid_v7()),
+            event_type: event_type.to_owned(),
+            organization_id: organization_id.to_string(),
+            scope: RealtimeScope {
+                space_id: Some(space_id.to_string()),
+                channel_id: None,
+            },
+            occurred_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            data,
+        }
+    }
+
     pub fn channel(
         event_type: &str,
         organization_id: Uuid,

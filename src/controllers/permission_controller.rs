@@ -13,6 +13,7 @@ use crate::domain::permission::{
     ChannelPermissionOverride, Permission, PermissionError, PermissionTargetKind, Role,
     RoleAssignment, permission_names,
 };
+use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::{SpaceError, SpaceMembership};
 use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
@@ -39,6 +40,7 @@ pub async fn add_space_member(
         .await?;
 
     let user_id = parse_uuid(&request.user_id, "valid user_id is required")?;
+    let added_user = state.auth.user_by_id(user_id).await?;
     state
         .organizations
         .add_member_if_missing(space.organization_id, user_id, "member".to_owned())
@@ -64,6 +66,28 @@ pub async fn add_space_member(
             metadata: json!({ "role": member_role }),
         })
         .await?;
+    state.realtime.publish(RealtimeEvent::space(
+        "space.member.added",
+        space.organization_id,
+        space.id,
+        json!({
+            "member": {
+                "guild_id": space.id.to_string(),
+                "user": {
+                    "id": user_id.to_string(),
+                    "username": added_user
+                        .map(|user| user.display_name)
+                        .unwrap_or_else(|| "OpenCord User".to_owned()),
+                    "bot": false
+                },
+                "roles": [],
+                "joined_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                "deaf": false,
+                "mute": false,
+                "pending": false
+            }
+        }),
+    ));
 
     Ok((
         StatusCode::CREATED,
