@@ -11,6 +11,7 @@ use crate::domain::bot::{
     BotApplication, BotError, CreateBotApplicationInput, RotateBotTokenInput,
 };
 use crate::domain::organization::OrganizationError;
+use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::SpaceError;
 use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
@@ -190,6 +191,31 @@ pub async fn invite_to_space(
             }),
         })
         .await?;
+    state.realtime.publish(RealtimeEvent::space(
+        "space.bot.invited",
+        organization_id,
+        space_id,
+        json!({
+            "guild": {
+                "id": space.id.to_string(),
+                "name": space.name,
+                "unavailable": false
+            },
+            "member": {
+                "guild_id": space.id.to_string(),
+                "user": {
+                    "id": application.bot_user_id.to_string(),
+                    "username": application.name,
+                    "bot": true
+                },
+                "roles": [],
+                "joined_at": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                "deaf": false,
+                "mute": false,
+                "pending": false
+            }
+        }),
+    ));
 
     Ok((
         StatusCode::CREATED,

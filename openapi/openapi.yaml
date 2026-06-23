@@ -595,8 +595,8 @@ paths:
         OpenCord `ocb_` bot token, emits READY with bot-visible spaces as
         guilds, supports process-local RESUME by `session_id`, acknowledges
         heartbeats, and dispatches CHANNEL_CREATE, CHANNEL_UPDATE,
-        GUILD_MEMBER_ADD, MESSAGE_CREATE, MESSAGE_UPDATE, MESSAGE_DELETE, and
-        INTERACTION_CREATE events visible to the bot user.
+        GUILD_CREATE, GUILD_MEMBER_ADD, MESSAGE_CREATE, MESSAGE_UPDATE,
+        MESSAGE_DELETE, and INTERACTION_CREATE events visible to the bot user.
       responses:
         "101":
           description: WebSocket protocol switch

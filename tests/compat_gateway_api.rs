@@ -287,6 +287,29 @@ async fn add_space_member(app: &Router, owner_token: &str, space_id: &str, user_
     assert_eq!(response.status(), StatusCode::CREATED);
 }
 
+async fn invite_bot_to_space(
+    app: &Router,
+    owner_token: &str,
+    organization_id: &str,
+    application_id: &str,
+    space_id: &str,
+) {
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!(
+                "/organizations/{organization_id}/bot-applications/{application_id}/spaces/{space_id}/invite"
+            ),
+            owner_token,
+            json!({ "role": "member" }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+}
+
 async fn create_role(app: &Router, owner_token: &str, space_id: &str, name: &str) -> String {
     let response = app
         .clone()
@@ -1078,6 +1101,65 @@ async fn compat_gateway_message_create_includes_basic_embeds() {
     assert_eq!(event["d"]["author"]["bot"], true);
     assert_eq!(event["d"]["content"], "");
     assert_eq!(event["d"]["embeds"], json!([embed]));
+}
+
+#[tokio::test]
+async fn compat_gateway_dispatches_guild_create_when_bot_invited_to_space() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-guild-create-owner@example.com").await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "guild-create").await;
+    let (application_id, bot_token, _) =
+        create_bot_with_application(&app, &owner_token, &organization_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 1,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+    assert_eq!(ready["d"]["guilds"].as_array().map(Vec::len), Some(0));
+
+    invite_bot_to_space(
+        &app,
+        &owner_token,
+        &organization_id,
+        &application_id,
+        &space_id,
+    )
+    .await;
+
+    let event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("guild create dispatch");
+    assert_eq!(event["op"], 0);
+    assert_eq!(event["t"], "GUILD_CREATE");
+    assert_eq!(event["s"], 2);
+    assert_eq!(event["d"]["id"], space_id);
+    assert_eq!(event["d"]["name"], "Compat Gateway Space guild-create");
+    assert_eq!(event["d"]["unavailable"], false);
 }
 
 #[tokio::test]
