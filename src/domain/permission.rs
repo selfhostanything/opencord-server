@@ -12,6 +12,10 @@ pub const MANAGE_CHANNELS: u64 = 1 << 3;
 pub const MANAGE_ROLES: u64 = 1 << 4;
 pub const INVITE_MEMBERS: u64 = 1 << 5;
 pub const MANAGE_SPACE: u64 = 1 << 6;
+pub const CONNECT_VOICE: u64 = 1 << 7;
+pub const SPEAK: u64 = 1 << 8;
+pub const SHARE_SCREEN: u64 = 1 << 9;
+pub const USE_VIDEO: u64 = 1 << 10;
 
 const ALL_MINIMAL_PERMISSIONS: u64 = VIEW_CHANNEL
     | SEND_MESSAGES
@@ -19,7 +23,11 @@ const ALL_MINIMAL_PERMISSIONS: u64 = VIEW_CHANNEL
     | MANAGE_CHANNELS
     | MANAGE_ROLES
     | INVITE_MEMBERS
-    | MANAGE_SPACE;
+    | MANAGE_SPACE
+    | CONNECT_VOICE
+    | SPEAK
+    | SHARE_SCREEN
+    | USE_VIDEO;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Permission {
@@ -30,6 +38,10 @@ pub enum Permission {
     ManageRoles,
     InviteMembers,
     ManageSpace,
+    ConnectVoice,
+    Speak,
+    ShareScreen,
+    UseVideo,
 }
 
 impl Permission {
@@ -42,6 +54,10 @@ impl Permission {
             Self::ManageRoles => MANAGE_ROLES,
             Self::InviteMembers => INVITE_MEMBERS,
             Self::ManageSpace => MANAGE_SPACE,
+            Self::ConnectVoice => CONNECT_VOICE,
+            Self::Speak => SPEAK,
+            Self::ShareScreen => SHARE_SCREEN,
+            Self::UseVideo => USE_VIDEO,
         }
     }
 
@@ -54,6 +70,10 @@ impl Permission {
             Self::ManageRoles => "MANAGE_ROLES",
             Self::InviteMembers => "INVITE_MEMBERS",
             Self::ManageSpace => "MANAGE_SPACE",
+            Self::ConnectVoice => "CONNECT_VOICE",
+            Self::Speak => "SPEAK",
+            Self::ShareScreen => "SHARE_SCREEN",
+            Self::UseVideo => "USE_VIDEO",
         }
     }
 
@@ -66,6 +86,10 @@ impl Permission {
             "MANAGE_ROLES" => Ok(Self::ManageRoles),
             "INVITE_MEMBERS" => Ok(Self::InviteMembers),
             "MANAGE_SPACE" => Ok(Self::ManageSpace),
+            "CONNECT_VOICE" => Ok(Self::ConnectVoice),
+            "SPEAK" => Ok(Self::Speak),
+            "SHARE_SCREEN" => Ok(Self::ShareScreen),
+            "USE_VIDEO" => Ok(Self::UseVideo),
             _ => Err(PermissionError::InvalidInput(
                 "permission name is not supported",
             )),
@@ -82,6 +106,10 @@ pub fn permission_names(bitset: u64) -> Vec<&'static str> {
         Permission::ManageRoles,
         Permission::InviteMembers,
         Permission::ManageSpace,
+        Permission::ConnectVoice,
+        Permission::Speak,
+        Permission::ShareScreen,
+        Permission::UseVideo,
     ]
     .into_iter()
     .filter(|permission| bitset & permission.bit() != 0)

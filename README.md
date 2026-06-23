@@ -20,7 +20,7 @@ src/bin/migrate.rs    SeaORM migration runner
 src/controllers       HTTP controllers
 src/models            response/request DTOs
 src/routes.rs         Axum route composition
-src/domain            auth service and domain helpers such as UUIDv7 IDs
+src/domain            auth, permissions, media-control, and domain helpers
 src/repositories      in-memory and Postgres persistence adapters
 src/db/migrations     SeaORM migrations
 ```
@@ -79,6 +79,7 @@ POST /auth/register
 POST /auth/login
 POST /auth/logout
 GET /me
+POST /media/rooms/token
 POST /push-tokens
 GET /push-tokens
 POST /organizations
@@ -107,6 +108,23 @@ Auth endpoints use bearer session tokens:
 
 ```text
 Authorization: Bearer <session token>
+```
+
+## Media Control
+
+`POST /media/rooms/token` issues a short-lived LiveKit participant token after
+auth, channel membership, and media permission checks. It currently supports
+`voice_channel` rooms and prepares the service boundary for the Phase 03 voice
+join flow.
+
+Local defaults:
+
+```text
+OPENCORD_LIVEKIT_URL=ws://localhost:7880
+OPENCORD_LIVEKIT_API_KEY=devkey
+OPENCORD_LIVEKIT_API_SECRET=secret
+OPENCORD_MEDIA_TOKEN_TTL_SECONDS=600
+OPENCORD_MEDIA_REGION=local
 ```
 
 ## License

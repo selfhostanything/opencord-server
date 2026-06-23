@@ -36,6 +36,7 @@ pub async fn capabilities() -> Json<CapabilitiesResponse> {
             "attachments",
             "audit",
             "push_tokens",
+            "media_control",
         ],
     })
 }

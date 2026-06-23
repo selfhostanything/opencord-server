@@ -2,6 +2,7 @@ pub mod attachment;
 pub mod audit;
 pub mod auth;
 pub mod channel;
+pub mod media;
 pub mod message;
 pub mod organization;
 pub mod permission;

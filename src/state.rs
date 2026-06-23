@@ -7,6 +7,7 @@ use crate::domain::attachment::{AttachmentService, AttachmentStore};
 use crate::domain::audit::{AuditService, AuditStore};
 use crate::domain::auth::{AuthService, AuthStore};
 use crate::domain::channel::{ChannelService, ChannelStore};
+use crate::domain::media::MediaControlService;
 use crate::domain::message::{MessageService, MessageStore};
 use crate::domain::organization::{OrganizationService, OrganizationStore};
 use crate::domain::permission::{PermissionService, PermissionStore};
@@ -44,6 +45,7 @@ pub struct AppState {
     pub audit: Arc<AuditService>,
     pub permissions: Arc<PermissionService>,
     pub push: Arc<PushService>,
+    pub media: Arc<MediaControlService>,
     pub realtime: Arc<RealtimeHub>,
 }
 
@@ -94,6 +96,7 @@ impl AppState {
             audit: Arc::new(AuditService::new(stores.audit)),
             permissions: Arc::new(PermissionService::new(stores.permissions)),
             push: Arc::new(PushService::new(stores.push)),
+            media: Arc::new(MediaControlService::from_env()),
             realtime: Arc::new(RealtimeHub::default()),
         }
     }

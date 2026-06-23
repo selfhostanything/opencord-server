@@ -106,6 +106,36 @@ paths:
                 $ref: "#/components/schemas/MeResponse"
         "401":
           description: Missing or invalid bearer session
+  /media/rooms/token:
+    post:
+      summary: Issue a short-lived LiveKit room token
+      description: >
+        Authenticates the user, verifies channel membership and media
+        permissions, and returns a room-scoped participant token. The token is
+        never broad enough to join arbitrary rooms.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMediaRoomTokenRequest"
+      responses:
+        "201":
+          description: LiveKit connection details and participant token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaRoomTokenResourceResponse"
+        "400":
+          description: Invalid room type, IDs, or grant request
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing VIEW_CHANNEL, CONNECT_VOICE, or requested publish permission
+        "404":
+          description: Channel or parent space not found for this user
   /push-tokens:
     post:
       summary: Register or update a device push token
@@ -839,6 +869,110 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PushToken"
+    CreateMediaRoomTokenRequest:
+      type: object
+      required:
+        - room_type
+        - organization_id
+        - space_id
+        - channel_id
+      properties:
+        room_type:
+          type: string
+          enum:
+            - voice_channel
+        organization_id:
+          type: string
+          format: uuid
+        space_id:
+          type: string
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        can_publish_audio:
+          type: boolean
+          default: false
+        can_publish_video:
+          type: boolean
+          default: false
+        can_publish_screen:
+          type: boolean
+          default: false
+        can_subscribe:
+          type: boolean
+          default: true
+    MediaTokenGrants:
+      type: object
+      required:
+        - can_publish_audio
+        - can_publish_video
+        - can_publish_screen
+        - can_subscribe
+      properties:
+        can_publish_audio:
+          type: boolean
+        can_publish_video:
+          type: boolean
+        can_publish_screen:
+          type: boolean
+        can_subscribe:
+          type: boolean
+    MediaRoomToken:
+      type: object
+      required:
+        - provider
+        - server_url
+        - region
+        - room_type
+        - room_name
+        - organization_id
+        - space_id
+        - channel_id
+        - participant_identity
+        - participant_token
+        - expires_at
+        - grants
+      properties:
+        provider:
+          type: string
+          enum:
+            - livekit
+        server_url:
+          type: string
+        region:
+          type: string
+        room_type:
+          type: string
+          enum:
+            - voice_channel
+        room_name:
+          type: string
+        organization_id:
+          type: string
+          format: uuid
+        space_id:
+          type: string
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        participant_identity:
+          type: string
+        participant_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        grants:
+          $ref: "#/components/schemas/MediaTokenGrants"
+    MediaRoomTokenResourceResponse:
+      type: object
+      required:
+        - media
+      properties:
+        media:
+          $ref: "#/components/schemas/MediaRoomToken"
     CreateOrganizationRequest:
       type: object
       required:
@@ -1009,6 +1143,10 @@ components:
         - MANAGE_ROLES
         - INVITE_MEMBERS
         - MANAGE_SPACE
+        - CONNECT_VOICE
+        - SPEAK
+        - SHARE_SCREEN
+        - USE_VIDEO
     CreateRoleRequest:
       type: object
       required:
