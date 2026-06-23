@@ -37,6 +37,18 @@ pub fn api_router_with_state(state: AppState) -> Router {
             post(webhook_controller::execute),
         )
         .route(
+            "/api/compat/discord/v10/users/@me",
+            get(compat_controller::get_current_user),
+        )
+        .route(
+            "/api/compat/discord/v10/guilds/{space_id}",
+            get(compat_controller::get_guild),
+        )
+        .route(
+            "/api/compat/discord/v10/guilds/{space_id}/channels",
+            get(compat_controller::list_guild_channels),
+        )
+        .route(
             "/api/compat/discord/v10/channels/{channel_id}/messages",
             post(compat_controller::create_message).get(compat_controller::list_messages),
         )

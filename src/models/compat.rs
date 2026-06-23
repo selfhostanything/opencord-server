@@ -19,6 +19,25 @@ pub struct CompatUserResponse {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct CompatGuildResponse {
+    pub id: String,
+    pub name: String,
+    pub unavailable: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct CompatChannelResponse {
+    pub id: String,
+    pub guild_id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: i32,
+    pub position: i32,
+    pub topic: Option<String>,
+    pub nsfw: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct CompatMessageResponse {
     pub id: String,
     pub channel_id: String,

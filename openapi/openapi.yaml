@@ -154,6 +154,79 @@ paths:
               schema:
                 type: integer
               description: Seconds until retry is allowed.
+  /api/compat/discord/v10/users/@me:
+    get:
+      summary: Get the current Discord-compatible bot user
+      description: >
+        Compatibility route for bot SDK migrations. Requires
+        `Authorization: Bot ocb_...` and returns the authenticated bot user
+        using a Discord-shaped user object.
+      security:
+        - botAuth: []
+      responses:
+        "200":
+          description: Current bot user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompatUser"
+        "401":
+          description: Missing or invalid bot token
+  /api/compat/discord/v10/guilds/{space_id}:
+    get:
+      summary: Get a Discord-compatible guild
+      description: >
+        Maps an OpenCord space to a Discord-shaped guild object. The bot user
+        must belong to the target space and organization.
+      security:
+        - botAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Discord-compatible guild object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompatGuild"
+        "401":
+          description: Missing or invalid bot token
+        "404":
+          description: Space not found for this bot
+  /api/compat/discord/v10/guilds/{space_id}/channels:
+    get:
+      summary: List Discord-compatible guild channels
+      description: >
+        Maps visible OpenCord space channels to Discord-shaped channel
+        objects. Channel visibility uses normal OpenCord bot-user permission
+        checks.
+      security:
+        - botAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Visible Discord-compatible channel objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CompatChannel"
+        "401":
+          description: Missing or invalid bot token
+        "404":
+          description: Space not found for this bot
   /api/compat/discord/v10/channels/{channel_id}/messages:
     post:
       summary: Create a Discord-compatible channel message
@@ -3198,6 +3271,50 @@ components:
         username:
           type: string
         bot:
+          type: boolean
+    CompatGuild:
+      type: object
+      required:
+        - id
+        - name
+        - unavailable
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        unavailable:
+          type: boolean
+    CompatChannel:
+      type: object
+      required:
+        - id
+        - guild_id
+        - name
+        - type
+        - position
+        - topic
+        - nsfw
+      properties:
+        id:
+          type: string
+          format: uuid
+        guild_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: integer
+          description: Discord-compatible channel type. `0` is text, `2` is voice.
+        position:
+          type: integer
+        topic:
+          type:
+            - string
+            - "null"
+        nsfw:
           type: boolean
     CompatMessage:
       type: object

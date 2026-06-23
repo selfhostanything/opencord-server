@@ -12,10 +12,57 @@ use crate::domain::permission::{Permission, PermissionError};
 use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::{SpaceError, SpaceMembership};
 use crate::models::compat::{
-    CompatErrorResponse, CompatMessageResponse, CompatUserResponse, CreateCompatMessageRequest,
-    PatchCompatMessageRequest,
+    CompatChannelResponse, CompatErrorResponse, CompatGuildResponse, CompatMessageResponse,
+    CompatUserResponse, CreateCompatMessageRequest, PatchCompatMessageRequest,
 };
 use crate::state::AppState;
+
+pub async fn get_current_user(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<CompatUserResponse>, CompatApiError> {
+    let bot = authenticate_bot(&state, &headers).await?;
+
+    Ok(Json(compat_user_response(&bot)))
+}
+
+pub async fn get_guild(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(space_id): Path<Uuid>,
+) -> Result<Json<CompatGuildResponse>, CompatApiError> {
+    let bot = authenticate_bot(&state, &headers).await?;
+    let space = visible_space_for_bot(&state, &bot, space_id).await?;
+
+    Ok(Json(compat_guild_response(space)))
+}
+
+pub async fn list_guild_channels(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(space_id): Path<Uuid>,
+) -> Result<Json<Vec<CompatChannelResponse>>, CompatApiError> {
+    let bot = authenticate_bot(&state, &headers).await?;
+    let space = visible_space_for_bot(&state, &bot, space_id).await?;
+    let channels = state.channels.list_for_space(space.id).await?;
+    let mut visible_channels = Vec::new();
+
+    for channel in channels {
+        if channel.organization_id != bot.organization_id {
+            continue;
+        }
+
+        if state
+            .permissions
+            .can_in_channel(bot.bot_user_id, &space, &channel, Permission::ViewChannel)
+            .await?
+        {
+            visible_channels.push(compat_channel_response(channel));
+        }
+    }
+
+    Ok(Json(visible_channels))
+}
 
 pub async fn create_message(
     State(state): State<AppState>,
@@ -231,6 +278,19 @@ async fn visible_channel_for_bot(
     Ok((channel, space))
 }
 
+async fn visible_space_for_bot(
+    state: &AppState,
+    bot: &AuthenticatedBot,
+    space_id: Uuid,
+) -> Result<SpaceMembership, CompatApiError> {
+    let space = state.spaces.get_for_user(bot.bot_user_id, space_id).await?;
+    if space.organization_id != bot.organization_id {
+        return Err(SpaceError::NotFound.into());
+    }
+
+    Ok(space)
+}
+
 async fn message_in_channel(
     state: &AppState,
     message_id: Uuid,
@@ -252,14 +312,14 @@ fn compat_message_response(
     CompatMessageResponse {
         id: message.id.to_string(),
         channel_id: message.channel_id.to_string(),
-        author: CompatUserResponse {
-            id: message.author_user_id.to_string(),
-            username: if author_is_current_bot {
-                current_bot.name.clone()
-            } else {
-                "OpenCord User".to_owned()
-            },
-            bot: author_is_current_bot,
+        author: if author_is_current_bot {
+            compat_user_response(current_bot)
+        } else {
+            CompatUserResponse {
+                id: message.author_user_id.to_string(),
+                username: "OpenCord User".to_owned(),
+                bot: false,
+            }
         },
         content: message.content,
         timestamp: message.created_at,
@@ -272,5 +332,40 @@ fn compat_message_response(
         embeds: Vec::new(),
         pinned: false,
         kind: 0,
+    }
+}
+
+fn compat_user_response(bot: &AuthenticatedBot) -> CompatUserResponse {
+    CompatUserResponse {
+        id: bot.bot_user_id.to_string(),
+        username: bot.name.clone(),
+        bot: true,
+    }
+}
+
+fn compat_guild_response(space: SpaceMembership) -> CompatGuildResponse {
+    CompatGuildResponse {
+        id: space.id.to_string(),
+        name: space.name,
+        unavailable: false,
+    }
+}
+
+fn compat_channel_response(channel: Channel) -> CompatChannelResponse {
+    CompatChannelResponse {
+        id: channel.id.to_string(),
+        guild_id: channel.space_id.to_string(),
+        name: channel.name,
+        kind: compat_channel_kind(&channel.kind),
+        position: channel.position,
+        topic: channel.topic,
+        nsfw: false,
+    }
+}
+
+fn compat_channel_kind(kind: &str) -> i32 {
+    match kind {
+        "voice" => 2,
+        _ => 0,
     }
 }

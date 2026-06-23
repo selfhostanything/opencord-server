@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};

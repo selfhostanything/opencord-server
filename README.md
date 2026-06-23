@@ -86,6 +86,9 @@ GET /.well-known/opencord
 GET /api/version
 GET /api/capabilities
 POST /api/webhooks/{webhook_id}/{webhook_token}
+GET /api/compat/discord/v10/users/@me
+GET /api/compat/discord/v10/guilds/{space_id}
+GET /api/compat/discord/v10/guilds/{space_id}/channels
 POST /api/compat/discord/v10/channels/{channel_id}/messages
 GET /api/compat/discord/v10/channels/{channel_id}/messages
 PATCH /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
@@ -387,6 +390,13 @@ bucket. Successful execution responses include `X-RateLimit-Limit`,
 `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `X-RateLimit-Bucket`.
 Exhausted buckets return `429` with the same headers plus `Retry-After`.
 
+`GET /api/compat/discord/v10/users/@me`,
+`GET /api/compat/discord/v10/guilds/{space_id}`, and
+`GET /api/compat/discord/v10/guilds/{space_id}/channels` support basic bot SDK
+discovery flows. They return Discord-shaped current bot user, guild, and
+channel objects while enforcing normal OpenCord bot-user space membership and
+channel visibility permissions.
+
 `/api/compat/discord/v10/channels/{channel_id}/messages` supports the first
 Discord-compatible bot message routes: send, list, edit, and delete. Requests
 use `Authorization: Bot ocb_...`. The bot user must be added to the target
@@ -409,3 +419,10 @@ with callback type `4` to post a bot-authored channel message.
 ## License
 
 Elastic License 2.0 (`Elastic-2.0`).
+
+## Contributing
+
+Pull requests must follow [CONTRIBUTING.md](CONTRIBUTING.md). Human
+contributors must sign the [Contributor License Agreement](CLA.md); the CLA
+Assistant workflow checks PR comments and stores signatures in
+`signatures/v1/cla.json`.
