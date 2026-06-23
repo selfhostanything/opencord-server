@@ -137,7 +137,11 @@ pub fn api_router_with_state(state: AppState) -> Router {
         )
         .route(
             "/organizations/{organization_id}/bot-applications",
-            post(bot_controller::create_application),
+            post(bot_controller::create_application).get(bot_controller::list_applications),
+        )
+        .route(
+            "/organizations/{organization_id}/bot-applications/{application_id}",
+            get(bot_controller::get_application),
         )
         .route(
             "/organizations/{organization_id}/bot-applications/{application_id}/tokens/rotate",

@@ -37,6 +37,40 @@ impl BotStore for MemoryBotStore {
         Ok(state.applications.get(&application_id).cloned())
     }
 
+    async fn list_applications(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<Vec<BotApplication>, BotError> {
+        let state = self.state.lock().map_err(|_| BotError::StoreUnavailable)?;
+        let mut applications = state
+            .applications
+            .values()
+            .filter(|application| {
+                application.organization_id == organization_id && application.status == "active"
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        applications.sort_by(|left, right| {
+            left.name
+                .cmp(&right.name)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(applications)
+    }
+
+    async fn active_token_last_four(
+        &self,
+        application_id: Uuid,
+    ) -> Result<Option<String>, BotError> {
+        let state = self.state.lock().map_err(|_| BotError::StoreUnavailable)?;
+        Ok(state
+            .tokens
+            .values()
+            .find(|token| token.application_id == application_id && token.active)
+            .map(|token| token.token_last_four.clone()))
+    }
+
     async fn rotate_token(&self, token: StoredBotToken) -> Result<(), BotError> {
         let mut state = self.state.lock().map_err(|_| BotError::StoreUnavailable)?;
         if !state.applications.contains_key(&token.application_id) {

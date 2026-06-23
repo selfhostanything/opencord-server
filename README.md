@@ -121,6 +121,8 @@ GET /organizations/{organization_id}/oidc
 PUT /organizations/{organization_id}/oidc
 POST /organizations/{organization_id}/scim/token
 POST /organizations/{organization_id}/bot-applications
+GET /organizations/{organization_id}/bot-applications
+GET /organizations/{organization_id}/bot-applications/{application_id}
 POST /organizations/{organization_id}/bot-applications/{application_id}/tokens/rotate
 POST /organizations/{organization_id}/bot-applications/{application_id}/spaces/{space_id}/invite
 POST /organizations/{organization_id}/custom-domains
@@ -346,6 +348,12 @@ Ports:
 admin create a bot application, internal bot user, and shown-once bot token.
 Bot tokens are stored hashed and are issued with the `ocb_` prefix for later
 compatibility routes under `/api/compat/discord/v10`.
+
+`GET /organizations/{organization_id}/bot-applications` and
+`GET /organizations/{organization_id}/bot-applications/{application_id}` return
+organization-admin bot application details with active token last-four metadata
+and bot-user space memberships. Raw bot tokens are only returned during create
+or rotate operations.
 
 `POST /organizations/{organization_id}/bot-applications/{application_id}/tokens/rotate`
 lets an organization admin rotate a bot token. Existing tokens for that bot

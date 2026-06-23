@@ -7,15 +7,17 @@ use uuid::Uuid;
 
 use crate::domain::audit::{AuditError, NewAuditEvent};
 use crate::domain::auth::AuthError;
-use crate::domain::bot::{BotError, CreateBotApplicationInput, RotateBotTokenInput};
+use crate::domain::bot::{
+    BotApplication, BotError, CreateBotApplicationInput, RotateBotTokenInput,
+};
 use crate::domain::organization::OrganizationError;
 use crate::domain::space::SpaceError;
 use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
 use crate::models::bot::{
-    BotApplicationCreatedResponse, BotApplicationInviteResponse, BotApplicationResponse,
-    BotTokenResourceResponse, BotTokenResponse, CreateBotApplicationRequest,
-    InviteBotToSpaceRequest,
+    BotApplicationCreatedResponse, BotApplicationDetailResponse, BotApplicationInviteResponse,
+    BotApplicationListResponse, BotApplicationResponse, BotTokenResourceResponse, BotTokenResponse,
+    CreateBotApplicationRequest, InviteBotToSpaceRequest,
 };
 use crate::models::permission::SpaceMemberDetailResponse;
 use crate::state::AppState;
@@ -46,6 +48,50 @@ pub async fn create_application(
         StatusCode::CREATED,
         Json(BotApplicationCreatedResponse::from(created)),
     ))
+}
+
+pub async fn list_applications(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(organization_id): Path<Uuid>,
+) -> Result<Json<BotApplicationListResponse>, BotApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    state
+        .organizations
+        .require_admin(user.id, organization_id)
+        .await?;
+    let applications = state
+        .bots
+        .list_applications_for_organization(organization_id)
+        .await?;
+    let mut responses = Vec::with_capacity(applications.len());
+    for application in applications {
+        responses.push(bot_application_detail(&state, application).await?);
+    }
+
+    Ok(Json(BotApplicationListResponse {
+        bot_applications: responses,
+    }))
+}
+
+pub async fn get_application(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((organization_id, application_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<BotApplicationDetailResponse>, BotApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    state
+        .organizations
+        .require_admin(user.id, organization_id)
+        .await?;
+    let application = state
+        .bots
+        .application_for_organization(application_id, organization_id)
+        .await?;
+
+    Ok(Json(bot_application_detail(&state, application).await?))
 }
 
 pub async fn rotate_token(
@@ -157,6 +203,32 @@ pub async fn invite_to_space(
             },
         }),
     ))
+}
+
+async fn bot_application_detail(
+    state: &AppState,
+    application: BotApplication,
+) -> Result<BotApplicationDetailResponse, BotApiError> {
+    let active_token_last_four = state.bots.active_token_last_four(application.id).await?;
+    let memberships = state
+        .spaces
+        .list_for_user(application.bot_user_id, application.organization_id)
+        .await?;
+    let space_memberships = memberships
+        .into_iter()
+        .map(|membership| SpaceMemberDetailResponse {
+            space_id: membership.id.to_string(),
+            user_id: application.bot_user_id.to_string(),
+            role: membership.role,
+            status: "active".to_owned(),
+        })
+        .collect();
+
+    Ok(BotApplicationDetailResponse {
+        bot_application: BotApplicationResponse::from(application),
+        active_token_last_four,
+        space_memberships,
+    })
 }
 
 #[derive(Debug)]

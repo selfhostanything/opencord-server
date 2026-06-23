@@ -994,6 +994,33 @@ paths:
         "404":
           description: Organization not found for this user
   /organizations/{organization_id}/bot-applications:
+    get:
+      summary: List bot applications for an organization
+      description: >
+        Returns active bot applications with active token last-four metadata and
+        bot-user space memberships. Raw bot tokens are not returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Bot applications visible to the organization admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotApplicationListResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization not found for this user
     post:
       summary: Create a bot application, bot user, and shown-once bot token
       security:
@@ -1026,6 +1053,41 @@ paths:
           description: Organization admin permission is required
         "404":
           description: Organization not found for this user
+  /organizations/{organization_id}/bot-applications/{application_id}:
+    get:
+      summary: Get one bot application for an organization
+      description: >
+        Returns active bot application metadata with active token last-four
+        metadata and bot-user space memberships. Raw bot tokens are not
+        returned.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Bot application detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotApplicationDetailResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization or bot application not found
   /organizations/{organization_id}/bot-applications/{application_id}/tokens/rotate:
     post:
       summary: Rotate a bot application's shown-once bot token
@@ -2819,6 +2881,33 @@ components:
       properties:
         bot_token:
           $ref: "#/components/schemas/BotToken"
+    BotApplicationDetailResponse:
+      type: object
+      required:
+        - bot_application
+        - active_token_last_four
+        - space_memberships
+      properties:
+        bot_application:
+          $ref: "#/components/schemas/BotApplication"
+        active_token_last_four:
+          type:
+            - string
+            - "null"
+          description: Last four characters of the active token; raw token is not returned.
+        space_memberships:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpaceMember"
+    BotApplicationListResponse:
+      type: object
+      required:
+        - bot_applications
+      properties:
+        bot_applications:
+          type: array
+          items:
+            $ref: "#/components/schemas/BotApplicationDetailResponse"
     BotApplicationCreatedResponse:
       type: object
       required:

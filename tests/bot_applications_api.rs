@@ -351,11 +351,79 @@ async fn organization_admin_can_invite_bot_application_to_space() {
 }
 
 #[tokio::test]
+async fn organization_admin_can_list_and_get_bot_applications() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "bot-list-owner@example.com").await;
+    let organization_id = create_organization(&app, &owner_token).await;
+    let (space_id, _) = create_space_with_channel(&app, &owner_token, &organization_id).await;
+    let (application_id, initial_token, bot_user_id) =
+        create_bot_application(&app, &owner_token, &organization_id).await;
+    let initial_token_last_four = &initial_token[initial_token.len() - 4..];
+
+    let list_before_invite = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/bot-applications"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(list_before_invite.status(), StatusCode::OK);
+    let body = response_json(list_before_invite).await;
+    assert_eq!(body["bot_applications"].as_array().unwrap().len(), 1);
+    let listed = &body["bot_applications"][0];
+    assert_eq!(listed["bot_application"]["id"], application_id);
+    assert_eq!(listed["bot_application"]["bot_user_id"], bot_user_id);
+    assert_eq!(listed["active_token_last_four"], initial_token_last_four);
+    assert!(listed["space_memberships"].as_array().unwrap().is_empty());
+    assert!(listed.get("bot_token").is_none());
+
+    let invite = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!(
+                "/organizations/{organization_id}/bot-applications/{application_id}/spaces/{space_id}/invite"
+            ),
+            &owner_token,
+            json!({ "role": "member" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(invite.status(), StatusCode::CREATED);
+
+    let get_after_invite = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/bot-applications/{application_id}"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(get_after_invite.status(), StatusCode::OK);
+    let detail = response_json(get_after_invite).await;
+    assert_eq!(detail["bot_application"]["id"], application_id);
+    assert_eq!(detail["active_token_last_four"], initial_token_last_four);
+    assert_eq!(detail["space_memberships"].as_array().unwrap().len(), 1);
+    assert_eq!(detail["space_memberships"][0]["space_id"], space_id);
+    assert_eq!(detail["space_memberships"][0]["user_id"], bot_user_id);
+    assert_eq!(detail["space_memberships"][0]["role"], "member");
+    assert!(detail.get("bot_token").is_none());
+}
+
+#[tokio::test]
 async fn bot_application_create_requires_organization_admin() {
     let app = test_app();
     let (owner_token, _) = register(&app, "bot-private-owner@example.com").await;
     let (outsider_token, _) = register(&app, "bot-private-outsider@example.com").await;
     let organization_id = create_organization(&app, &owner_token).await;
+    let (application_id, _, _) = create_bot_application(&app, &owner_token, &organization_id).await;
 
     let response = app
         .clone()
@@ -372,4 +440,28 @@ async fn bot_application_create_requires_organization_admin() {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let list_response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/bot-applications"),
+            &outsider_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(list_response.status(), StatusCode::NOT_FOUND);
+
+    let get_response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/bot-applications/{application_id}"),
+            &outsider_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(get_response.status(), StatusCode::NOT_FOUND);
 }

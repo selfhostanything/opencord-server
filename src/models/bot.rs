@@ -40,6 +40,18 @@ pub struct BotApplicationCreatedResponse {
 }
 
 #[derive(Debug, Serialize)]
+pub struct BotApplicationDetailResponse {
+    pub bot_application: BotApplicationResponse,
+    pub active_token_last_four: Option<String>,
+    pub space_memberships: Vec<SpaceMemberDetailResponse>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BotApplicationListResponse {
+    pub bot_applications: Vec<BotApplicationDetailResponse>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct BotTokenResourceResponse {
     pub bot_token: BotTokenResponse,
 }

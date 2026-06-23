@@ -121,6 +121,14 @@ pub trait BotStore: Send + Sync {
         &self,
         application_id: Uuid,
     ) -> Result<Option<BotApplication>, BotError>;
+    async fn list_applications(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<Vec<BotApplication>, BotError>;
+    async fn active_token_last_four(
+        &self,
+        application_id: Uuid,
+    ) -> Result<Option<String>, BotError>;
     async fn rotate_token(&self, token: StoredBotToken) -> Result<(), BotError>;
     async fn find_bot_by_token_hash(
         &self,
@@ -196,6 +204,20 @@ impl BotService {
         } else {
             Err(BotError::NotFound)
         }
+    }
+
+    pub async fn list_applications_for_organization(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<Vec<BotApplication>, BotError> {
+        self.store.list_applications(organization_id).await
+    }
+
+    pub async fn active_token_last_four(
+        &self,
+        application_id: Uuid,
+    ) -> Result<Option<String>, BotError> {
+        self.store.active_token_last_four(application_id).await
     }
 
     pub async fn rotate_token(&self, input: RotateBotTokenInput) -> Result<BotToken, BotError> {

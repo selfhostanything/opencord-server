@@ -92,6 +92,60 @@ impl BotStore for PostgresBotStore {
         row.map(application_from_row).transpose()
     }
 
+    async fn list_applications(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<Vec<BotApplication>, BotError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT id::text, organization_id::text, bot_user_id::text,
+                       created_by_user_id::text, name, description, status
+                FROM bot_applications
+                WHERE organization_id = $1::uuid
+                  AND status = 'active'
+                ORDER BY name ASC, id ASC
+                "#,
+                vec![Value::from(organization_id.to_string())],
+            ))
+            .await
+            .map_err(|_| BotError::StoreUnavailable)?;
+
+        rows.into_iter()
+            .map(application_from_row)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    async fn active_token_last_four(
+        &self,
+        application_id: Uuid,
+    ) -> Result<Option<String>, BotError> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT token_last_four
+                FROM bot_tokens
+                WHERE application_id = $1::uuid
+                  AND active = true
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                "#,
+                vec![Value::from(application_id.to_string())],
+            ))
+            .await
+            .map_err(|_| BotError::StoreUnavailable)?;
+
+        row.map(|row| {
+            row.try_get::<String>("", "token_last_four")
+                .map_err(|_| BotError::StoreUnavailable)
+        })
+        .transpose()
+    }
+
     async fn rotate_token(&self, token: StoredBotToken) -> Result<(), BotError> {
         let txn = self
             .db
