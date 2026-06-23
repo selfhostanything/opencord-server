@@ -202,6 +202,112 @@ async fn login_logout_and_session_check_enforce_bearer_token() {
 }
 
 #[tokio::test]
+async fn register_and_login_attempts_are_rate_limited_by_email() {
+    let app = test_app();
+
+    for attempt in 0..5 {
+        let response = app
+            .clone()
+            .oneshot(json_request(
+                Method::POST,
+                "/auth/register",
+                json!({
+                    "email": "limited-register@example.com",
+                    "display_name": format!("Limited Register {attempt}"),
+                    "password": "correct horse battery staple"
+                }),
+            ))
+            .await
+            .unwrap();
+
+        if attempt == 0 {
+            assert_eq!(response.status(), StatusCode::CREATED);
+        } else {
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+        }
+    }
+
+    let limited_register = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/auth/register",
+            json!({
+                "email": "limited-register@example.com",
+                "display_name": "Limited Register Blocked",
+                "password": "correct horse battery staple"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(limited_register.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        limited_register
+            .headers()
+            .get("x-ratelimit-remaining")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "0"
+    );
+    assert!(
+        limited_register
+            .headers()
+            .get(header::RETRY_AFTER)
+            .is_some()
+    );
+    let body = response_json(limited_register).await;
+    assert_eq!(body["error"]["code"], "rate_limited");
+
+    let registered = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/auth/register",
+            json!({
+                "email": "limited-login@example.com",
+                "display_name": "Limited Login",
+                "password": "correct horse battery staple"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(registered.status(), StatusCode::CREATED);
+
+    for _ in 0..5 {
+        let bad_login = app
+            .clone()
+            .oneshot(json_request(
+                Method::POST,
+                "/auth/login",
+                json!({
+                    "email": "limited-login@example.com",
+                    "password": "wrong password"
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(bad_login.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    let limited_login = app
+        .oneshot(json_request(
+            Method::POST,
+            "/auth/login",
+            json!({
+                "email": "LIMITED-LOGIN@example.com",
+                "password": "correct horse battery staple"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(limited_login.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(limited_login.headers().get(header::RETRY_AFTER).is_some());
+    let body = response_json(limited_login).await;
+    assert_eq!(body["error"]["code"], "rate_limited");
+}
+
+#[tokio::test]
 async fn oidc_login_can_be_required_for_an_organization_domain() {
     let app = test_app();
     let owner = app

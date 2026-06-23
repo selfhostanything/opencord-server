@@ -10,7 +10,11 @@ use crate::domain::attachment::{AttachmentError, NewAttachment};
 use crate::domain::auth::AuthError;
 use crate::domain::channel::ChannelError;
 use crate::domain::permission::{Permission, PermissionError};
+use crate::domain::rate_limit::{
+    RateLimitDecision, attachment_presign_bucket, attachment_upload_bucket,
+};
 use crate::domain::space::SpaceError;
+use crate::http::rate_limit::rate_limit_headers;
 use crate::http::session::bearer_token;
 use crate::models::attachment::{
     AttachmentPresignResponse, AttachmentResourceResponse, AttachmentUploadResponse,
@@ -32,6 +36,12 @@ pub async fn presign(
         .permissions
         .require_channel(user.id, &space, &channel, Permission::SendMessages)
         .await?;
+    let rate_limit = state
+        .attachment_presign_rate_limits
+        .check(attachment_presign_bucket(user.id, channel.id));
+    if !rate_limit.allowed {
+        return Err(AttachmentApiError::RateLimited(rate_limit));
+    }
 
     let attachment = state
         .attachments
@@ -49,6 +59,7 @@ pub async fn presign(
 
     Ok((
         StatusCode::CREATED,
+        rate_limit_headers(&rate_limit),
         Json(AttachmentPresignResponse {
             attachment: attachment_response(attachment, &state.config.public_url),
             upload: AttachmentUploadResponse {
@@ -64,7 +75,7 @@ pub async fn upload_content(
     headers: HeaderMap,
     Path(attachment_id): Path<Uuid>,
     body: Bytes,
-) -> Result<Json<AttachmentResourceResponse>, AttachmentApiError> {
+) -> Result<impl IntoResponse, AttachmentApiError> {
     let token = bearer_token(&headers)?;
     let user = state.auth.user_for_token(token).await?;
     let attachment = state.attachments.get(attachment_id).await?;
@@ -74,6 +85,12 @@ pub async fn upload_content(
         .permissions
         .require_channel(user.id, &space, &channel, Permission::SendMessages)
         .await?;
+    let rate_limit = state
+        .attachment_upload_rate_limits
+        .check(attachment_upload_bucket(user.id));
+    if !rate_limit.allowed {
+        return Err(AttachmentApiError::RateLimited(rate_limit));
+    }
 
     let content_type = headers
         .get(header::CONTENT_TYPE)
@@ -85,9 +102,12 @@ pub async fn upload_content(
         .upload(attachment, user.id, content_type, body.to_vec())
         .await?;
 
-    Ok(Json(AttachmentResourceResponse {
-        attachment: attachment_response(attachment, &state.config.public_url),
-    }))
+    Ok((
+        rate_limit_headers(&rate_limit),
+        Json(AttachmentResourceResponse {
+            attachment: attachment_response(attachment, &state.config.public_url),
+        }),
+    ))
 }
 
 pub async fn download_content(
@@ -122,6 +142,7 @@ pub enum AttachmentApiError {
     Space(SpaceError),
     Permission(PermissionError),
     Attachment(AttachmentError),
+    RateLimited(RateLimitDecision),
 }
 
 impl From<AuthError> for AttachmentApiError {
@@ -156,12 +177,27 @@ impl From<AttachmentError> for AttachmentApiError {
 
 impl IntoResponse for AttachmentApiError {
     fn into_response(self) -> Response {
+        if let Self::RateLimited(decision) = self {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                rate_limit_headers(&decision),
+                Json(ErrorResponse {
+                    error: ErrorDetail {
+                        code: "rate_limited",
+                        message: "rate limit exceeded",
+                    },
+                }),
+            )
+                .into_response();
+        }
+
         let (status, code, message) = match self {
             Self::Auth(error) => (error.status_code(), error.code(), error.message()),
             Self::Channel(error) => (error.status_code(), error.code(), error.message()),
             Self::Space(error) => (error.status_code(), error.code(), error.message()),
             Self::Permission(error) => (error.status_code(), error.code(), error.message()),
             Self::Attachment(error) => (error.status_code(), error.code(), error.message()),
+            Self::RateLimited(_) => unreachable!("rate limited responses are returned above"),
         };
 
         (

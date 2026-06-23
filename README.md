@@ -296,6 +296,12 @@ configured `OPENCORD_PUBLIC_URL` origin. Add comma-separated origins through
 `OPENCORD_ALLOWED_ORIGINS` when a hosted web client or local Vite dev server
 must connect cross-origin.
 
+First-party signup, login, message creation, attachment presign, and attachment
+content upload routes use process-local fixed-window rate limits. Successful
+limited routes include `X-RateLimit-Limit`, `X-RateLimit-Remaining`,
+`X-RateLimit-Reset`, and `X-RateLimit-Bucket`. Exhausted buckets return `429`
+with those headers, `Retry-After`, and `rate_limited` error bodies.
+
 Local Compose sets:
 
 ```text

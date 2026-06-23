@@ -641,6 +641,8 @@ paths:
           description: Email already registered
         "403":
           description: SSO required for this email domain
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /auth/login:
     post:
       summary: Login with email and password
@@ -661,6 +663,8 @@ paths:
           description: Invalid credentials
         "403":
           description: SSO required for this email domain
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /auth/oidc/providers:
     get:
       summary: List OIDC providers matching an email domain
@@ -2648,6 +2652,8 @@ paths:
           description: Missing SEND_MESSAGES permission
         "404":
           description: Channel or parent space not found for this user
+        "429":
+          $ref: "#/components/responses/RateLimited"
     get:
       summary: List messages in a channel
       security:
@@ -2698,6 +2704,8 @@ paths:
           description: Missing SEND_MESSAGES permission
         "404":
           description: Channel or parent space not found for this user
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /attachments/{attachment_id}/content:
     put:
       summary: Upload attachment bytes for a pending attachment
@@ -2732,6 +2740,8 @@ paths:
           description: Missing SEND_MESSAGES permission
         "404":
           description: Attachment or parent channel not found for this user
+        "429":
+          $ref: "#/components/responses/RateLimited"
     get:
       summary: Download attachment bytes
       security:
@@ -2810,6 +2820,45 @@ paths:
           description: Message or parent channel not found for this user
 components:
   responses:
+    RateLimited:
+      description: First-party API bucket is exhausted.
+      headers:
+        X-RateLimit-Limit:
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          schema:
+            type: integer
+        X-RateLimit-Bucket:
+          schema:
+            type: string
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until retry is allowed.
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - error
+            properties:
+              error:
+                type: object
+                required:
+                  - code
+                  - message
+                properties:
+                  code:
+                    type: string
+                    enum:
+                      - rate_limited
+                  message:
+                    type: string
+                    example: rate limit exceeded
     CompatRateLimited:
       description: Compatibility REST bot bucket is exhausted.
       headers:

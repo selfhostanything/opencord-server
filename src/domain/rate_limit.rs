@@ -4,10 +4,20 @@ use std::time::{Duration, Instant};
 
 use uuid::Uuid;
 
+pub const AUTH_LOGIN_LIMIT: u32 = 5;
+pub const AUTH_LOGIN_WINDOW: Duration = Duration::from_secs(60);
+pub const AUTH_REGISTER_LIMIT: u32 = 5;
+pub const AUTH_REGISTER_WINDOW: Duration = Duration::from_secs(60);
+pub const ATTACHMENT_PRESIGN_LIMIT: u32 = 5;
+pub const ATTACHMENT_PRESIGN_WINDOW: Duration = Duration::from_secs(60);
+pub const ATTACHMENT_UPLOAD_LIMIT: u32 = 10;
+pub const ATTACHMENT_UPLOAD_WINDOW: Duration = Duration::from_secs(60);
 pub const COMPAT_REST_BOT_LIMIT: u32 = 10;
 pub const COMPAT_REST_BOT_WINDOW: Duration = Duration::from_secs(60);
 pub const COMPAT_GATEWAY_IDENTIFY_LIMIT: u32 = 1;
 pub const COMPAT_GATEWAY_IDENTIFY_WINDOW: Duration = Duration::from_secs(5);
+pub const MESSAGE_CREATE_LIMIT: u32 = 5;
+pub const MESSAGE_CREATE_WINDOW: Duration = Duration::from_secs(60);
 pub const PUBLIC_WEBHOOK_EXECUTION_LIMIT: u32 = 5;
 pub const PUBLIC_WEBHOOK_EXECUTION_WINDOW: Duration = Duration::from_secs(60);
 
@@ -46,6 +56,26 @@ impl FixedWindowRateLimiter {
             PUBLIC_WEBHOOK_EXECUTION_LIMIT,
             PUBLIC_WEBHOOK_EXECUTION_WINDOW,
         )
+    }
+
+    pub fn auth_register() -> Self {
+        Self::new(AUTH_REGISTER_LIMIT, AUTH_REGISTER_WINDOW)
+    }
+
+    pub fn auth_login() -> Self {
+        Self::new(AUTH_LOGIN_LIMIT, AUTH_LOGIN_WINDOW)
+    }
+
+    pub fn message_create() -> Self {
+        Self::new(MESSAGE_CREATE_LIMIT, MESSAGE_CREATE_WINDOW)
+    }
+
+    pub fn attachment_presign() -> Self {
+        Self::new(ATTACHMENT_PRESIGN_LIMIT, ATTACHMENT_PRESIGN_WINDOW)
+    }
+
+    pub fn attachment_upload() -> Self {
+        Self::new(ATTACHMENT_UPLOAD_LIMIT, ATTACHMENT_UPLOAD_WINDOW)
     }
 
     pub fn compat_rest_bot() -> Self {
@@ -109,4 +139,28 @@ pub fn compat_rest_bot_bucket(application_id: Uuid) -> String {
 
 pub fn compat_gateway_identify_bucket(application_id: Uuid) -> String {
     format!("compat-gateway:identify:{application_id}")
+}
+
+pub fn auth_register_bucket(email: &str) -> String {
+    format!("auth:register:{}", normalized_email_key(email))
+}
+
+pub fn auth_login_bucket(email: &str) -> String {
+    format!("auth:login:{}", normalized_email_key(email))
+}
+
+pub fn message_create_bucket(user_id: Uuid, channel_id: Uuid) -> String {
+    format!("message:create:{user_id}:{channel_id}")
+}
+
+pub fn attachment_presign_bucket(user_id: Uuid, channel_id: Uuid) -> String {
+    format!("attachment:presign:{user_id}:{channel_id}")
+}
+
+pub fn attachment_upload_bucket(user_id: Uuid) -> String {
+    format!("attachment:upload:{user_id}")
+}
+
+fn normalized_email_key(email: &str) -> String {
+    email.trim().to_ascii_lowercase()
 }

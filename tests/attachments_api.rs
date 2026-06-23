@@ -180,6 +180,46 @@ async fn presign_attachment(app: &axum::Router, token: &str, channel_id: &str) -
 }
 
 #[tokio::test]
+async fn attachment_presign_is_rate_limited_per_user_channel() {
+    let app = test_app();
+    let (token, _) = register(&app, "attachment-rate-limited-owner@example.com").await;
+    let (_, _, channel_id) = create_space_with_channel(&app, &token, "rate-limited").await;
+
+    for _ in 0..5 {
+        presign_attachment(&app, &token, &channel_id).await;
+    }
+
+    let limited = app
+        .oneshot(bearer_json_request(
+            Method::POST,
+            "/attachments/presign",
+            &token,
+            json!({
+                "channel_id": channel_id,
+                "file_name": "blocked.png",
+                "content_type": "image/png",
+                "size_bytes": 11
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        limited
+            .headers()
+            .get("x-ratelimit-remaining")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "0"
+    );
+    assert!(limited.headers().get(header::RETRY_AFTER).is_some());
+    let body = response_json(limited).await;
+    assert_eq!(body["error"]["code"], "rate_limited");
+}
+
+#[tokio::test]
 async fn attachment_upload_is_limited_to_original_uploader() {
     let app = test_app();
     let (owner_token, _) = register(&app, "attachment-upload-owner@example.com").await;

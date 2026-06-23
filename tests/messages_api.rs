@@ -217,6 +217,50 @@ async fn message_endpoints_require_bearer_auth() {
 }
 
 #[tokio::test]
+async fn message_create_is_rate_limited_per_user_channel() {
+    let app = test_app();
+    let token = register_token(&app, "message-rate-limited-owner@example.com").await;
+    let channel_id = create_channel(&app, &token, "rate-limited").await;
+
+    for index in 0..5 {
+        let created = app
+            .clone()
+            .oneshot(bearer_request(
+                Method::POST,
+                &format!("/channels/{channel_id}/messages"),
+                &token,
+                json!({ "content": format!("limited message {index}") }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(created.status(), StatusCode::CREATED);
+    }
+
+    let limited = app
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/messages"),
+            &token,
+            json!({ "content": "limited message blocked" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        limited
+            .headers()
+            .get("x-ratelimit-remaining")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "0"
+    );
+    assert!(limited.headers().get(header::RETRY_AFTER).is_some());
+    let body = response_json(limited).await;
+    assert_eq!(body["error"]["code"], "rate_limited");
+}
+
+#[tokio::test]
 async fn messages_are_isolated_by_channel_space_membership() {
     let app = test_app();
     let owner_token = register_token(&app, "message-isolated-owner@example.com").await;

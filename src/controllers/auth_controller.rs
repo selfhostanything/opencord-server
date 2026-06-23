@@ -4,6 +4,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 
 use crate::domain::auth::{AuthError, AuthUser, OidcProvider};
+use crate::domain::rate_limit::{RateLimitDecision, auth_login_bucket, auth_register_bucket};
+use crate::http::rate_limit::rate_limit_headers;
 use crate::http::session::bearer_token;
 use crate::models::auth::{
     AuthResponse, ErrorDetail, ErrorResponse, LoginRequest, MeResponse, OidcCallbackRequest,
@@ -16,21 +18,40 @@ pub async fn register(
     State(state): State<AppState>,
     Json(request): Json<RegisterRequest>,
 ) -> Result<impl IntoResponse, AuthApiError> {
+    let rate_limit = state
+        .auth_register_rate_limits
+        .check(auth_register_bucket(&request.email));
+    if !rate_limit.allowed {
+        return Err(AuthApiError::RateLimited(rate_limit));
+    }
     let result = state
         .auth
         .register(request.email, request.display_name, request.password)
         .await?;
 
-    Ok((StatusCode::CREATED, Json(AuthResponse::from(result))))
+    Ok((
+        StatusCode::CREATED,
+        rate_limit_headers(&rate_limit),
+        Json(AuthResponse::from(result)),
+    ))
 }
 
 pub async fn login(
     State(state): State<AppState>,
     Json(request): Json<LoginRequest>,
-) -> Result<Json<AuthResponse>, AuthApiError> {
+) -> Result<impl IntoResponse, AuthApiError> {
+    let rate_limit = state
+        .auth_login_rate_limits
+        .check(auth_login_bucket(&request.email));
+    if !rate_limit.allowed {
+        return Err(AuthApiError::RateLimited(rate_limit));
+    }
     let result = state.auth.login(request.email, request.password).await?;
 
-    Ok(Json(AuthResponse::from(result)))
+    Ok((
+        rate_limit_headers(&rate_limit),
+        Json(AuthResponse::from(result)),
+    ))
 }
 
 pub async fn oidc_providers(
@@ -98,21 +119,41 @@ pub async fn me(
 }
 
 #[derive(Debug)]
-pub struct AuthApiError(AuthError);
+pub enum AuthApiError {
+    Auth(AuthError),
+    RateLimited(RateLimitDecision),
+}
 
 impl From<AuthError> for AuthApiError {
     fn from(error: AuthError) -> Self {
-        Self(error)
+        Self::Auth(error)
     }
 }
 
 impl IntoResponse for AuthApiError {
     fn into_response(self) -> Response {
-        let status = self.0.status_code();
+        if let Self::RateLimited(decision) = self {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                rate_limit_headers(&decision),
+                Json(ErrorResponse {
+                    error: ErrorDetail {
+                        code: "rate_limited",
+                        message: "rate limit exceeded",
+                    },
+                }),
+            )
+                .into_response();
+        }
+
+        let Self::Auth(error) = self else {
+            unreachable!("rate limited responses are returned above")
+        };
+        let status = error.status_code();
         let body = ErrorResponse {
             error: ErrorDetail {
-                code: self.0.code(),
-                message: self.0.message(),
+                code: error.code(),
+                message: error.message(),
             },
         };
 

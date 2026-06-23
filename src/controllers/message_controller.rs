@@ -12,8 +12,10 @@ use crate::domain::auth::AuthError;
 use crate::domain::channel::ChannelError;
 use crate::domain::message::{Message, MessageError};
 use crate::domain::permission::{Permission, PermissionError};
+use crate::domain::rate_limit::{RateLimitDecision, message_create_bucket};
 use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::SpaceError;
+use crate::http::rate_limit::rate_limit_headers;
 use crate::http::session::bearer_token;
 use crate::models::attachment::AttachmentResponse;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
@@ -37,6 +39,12 @@ pub async fn create(
         .permissions
         .require_channel(user.id, &space, &channel, Permission::SendMessages)
         .await?;
+    let rate_limit = state
+        .message_create_rate_limits
+        .check(message_create_bucket(user.id, channel.id));
+    if !rate_limit.allowed {
+        return Err(MessageApiError::RateLimited(rate_limit));
+    }
 
     state
         .attachments
@@ -77,6 +85,7 @@ pub async fn create(
 
     Ok((
         StatusCode::CREATED,
+        rate_limit_headers(&rate_limit),
         Json(MessageResourceResponse { message }),
     ))
 }
@@ -205,6 +214,7 @@ pub enum MessageApiError {
     Message(MessageError),
     Attachment(AttachmentError),
     Permission(PermissionError),
+    RateLimited(RateLimitDecision),
 }
 
 impl From<AuthError> for MessageApiError {
@@ -245,6 +255,20 @@ impl From<PermissionError> for MessageApiError {
 
 impl IntoResponse for MessageApiError {
     fn into_response(self) -> Response {
+        if let Self::RateLimited(decision) = self {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                rate_limit_headers(&decision),
+                Json(ErrorResponse {
+                    error: ErrorDetail {
+                        code: "rate_limited",
+                        message: "rate limit exceeded",
+                    },
+                }),
+            )
+                .into_response();
+        }
+
         let (status, code, message) = match self {
             Self::Auth(error) => (error.status_code(), error.code(), error.message()),
             Self::Channel(error) => (error.status_code(), error.code(), error.message()),
@@ -252,6 +276,7 @@ impl IntoResponse for MessageApiError {
             Self::Message(error) => (error.status_code(), error.code(), error.message()),
             Self::Attachment(error) => (error.status_code(), error.code(), error.message()),
             Self::Permission(error) => (error.status_code(), error.code(), error.message()),
+            Self::RateLimited(_) => unreachable!("rate limited responses are returned above"),
         };
 
         (
