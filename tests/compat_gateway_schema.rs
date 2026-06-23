@@ -34,3 +34,28 @@ fn compat_gateway_session_migration_defines_durable_sessions() {
     assert!(migrator.contains("mod m20260623072000_compat_gateway_sessions;"));
     assert!(migrator.contains("Box::new(m20260623072000_compat_gateway_sessions::Migration)"));
 }
+
+#[test]
+fn compat_gateway_replay_event_migration_defines_durable_replay_journal() {
+    let migration = repo_file("src/db/migrations/m20260623073000_compat_gateway_replay_events.rs");
+
+    for expected in [
+        "CREATE TABLE IF NOT EXISTS compat_gateway_replay_events",
+        "session_id text NOT NULL REFERENCES compat_gateway_sessions(session_id) ON DELETE CASCADE",
+        "sequence bigint NOT NULL",
+        "event_type text NOT NULL",
+        "payload jsonb NOT NULL",
+        "CONSTRAINT compat_gateway_replay_events_sequence_check",
+        "PRIMARY KEY (session_id, sequence)",
+        "CREATE INDEX IF NOT EXISTS idx_compat_gateway_replay_events_created_at",
+    ] {
+        assert!(
+            migration.contains(expected),
+            "compat gateway replay migration should contain {expected}"
+        );
+    }
+
+    let migrator = repo_file("src/db/migrations/mod.rs");
+    assert!(migrator.contains("mod m20260623073000_compat_gateway_replay_events;"));
+    assert!(migrator.contains("Box::new(m20260623073000_compat_gateway_replay_events::Migration)"));
+}

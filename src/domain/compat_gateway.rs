@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::domain::bot::AuthenticatedBot;
@@ -26,6 +27,14 @@ pub enum CompatGatewayError {
     StoreUnavailable,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompatGatewayReplayEvent {
+    pub session_id: String,
+    pub sequence: i64,
+    pub event_type: String,
+    pub payload: Value,
+}
+
 #[async_trait::async_trait]
 pub trait CompatGatewaySessionStore: Send + Sync {
     async fn create_session(
@@ -45,6 +54,18 @@ pub trait CompatGatewaySessionStore: Send + Sync {
         bot: &AuthenticatedBot,
         client_sequence: i64,
     ) -> Result<CompatGatewayResumeResult, CompatGatewayError>;
+
+    async fn append_replay_event(
+        &self,
+        event: CompatGatewayReplayEvent,
+    ) -> Result<(), CompatGatewayError>;
+
+    async fn list_replay_events_after(
+        &self,
+        session_id: &str,
+        sequence: i64,
+        limit: u32,
+    ) -> Result<Vec<CompatGatewayReplayEvent>, CompatGatewayError>;
 }
 
 pub struct CompatGatewaySessions {
@@ -91,6 +112,24 @@ impl CompatGatewaySessions {
     ) -> Result<CompatGatewayResumeResult, CompatGatewayError> {
         self.store
             .resume_session(session_id, bot, client_sequence)
+            .await
+    }
+
+    pub async fn append_replay_event(
+        &self,
+        event: CompatGatewayReplayEvent,
+    ) -> Result<(), CompatGatewayError> {
+        self.store.append_replay_event(event).await
+    }
+
+    pub async fn list_replay_events_after(
+        &self,
+        session_id: &str,
+        sequence: i64,
+        limit: u32,
+    ) -> Result<Vec<CompatGatewayReplayEvent>, CompatGatewayError> {
+        self.store
+            .list_replay_events_after(session_id, sequence, limit)
             .await
     }
 }

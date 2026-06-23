@@ -439,23 +439,25 @@ minute per bot application bucket. Successful responses include
 `GET /api/compat/discord/gateway` upgrades to a Discord-shaped WebSocket. The
 initial implementation sends HELLO, accepts IDENTIFY with an OpenCord bot
 token, emits READY with bot-visible spaces as guilds, persists RESUME session
-records for DB-backed deployments with a 24-hour session TTL, acknowledges
-heartbeats, and dispatches CHANNEL_CREATE,
+records and replay events for DB-backed deployments with a 24-hour session TTL,
+acknowledges heartbeats, and dispatches CHANNEL_CREATE,
 CHANNEL_UPDATE, CHANNEL_DELETE, GUILD_CREATE, GUILD_UPDATE, GUILD_MEMBER_ADD,
 GUILD_DELETE, GUILD_MEMBER_REMOVE, MESSAGE_CREATE, MESSAGE_UPDATE, and
 MESSAGE_DELETE for resources visible to the bot user. Message create, update,
 and delete dispatches require the Discord `GUILD_MESSAGES` intent. Channel
 create/update/delete and guild create/update/delete dispatches require `GUILDS`;
-guild-member add/remove dispatches require `GUILD_MEMBERS`. Unknown opcodes
-close with `4001`; malformed payloads close with `4002`; invalid IDENTIFY
-tokens close with `4004`; duplicate IDENTIFY or RESUME-after-authenticated
-frames close with `4005`; RESUME frames with a sequence ahead of the server
-close with `4007`; connections that exceed 5 client frames per second close
-with `4008`; parallel IDENTIFY attempts for the same bot application are
-locally limited to 1 per 5 seconds and close with `4008`; unknown RESUME
-sessions close with `4009`; invalid IDENTIFY shard tuples close with `4010`;
-unsupported IDENTIFY intent bits close with `4013`; known but disallowed
-IDENTIFY intent bits close with `4014` after OP 9.
+guild-member add/remove dispatches require `GUILD_MEMBERS`. RESUME with a
+sequence behind the server replays stored dispatches with larger sequence
+numbers before emitting `RESUMED`. Unknown opcodes close with `4001`; malformed
+payloads close with `4002`; invalid IDENTIFY tokens close with `4004`;
+duplicate IDENTIFY or RESUME-after-authenticated frames close with `4005`;
+RESUME frames with a sequence ahead of the server close with `4007`;
+connections that exceed 5 client frames per second close with `4008`; parallel
+IDENTIFY attempts for the same bot application are locally limited to 1 per 5
+seconds and close with `4008`; unknown RESUME sessions close with `4009`;
+invalid IDENTIFY shard tuples close with `4010`; unsupported IDENTIFY intent
+bits close with `4013`; known but disallowed IDENTIFY intent bits close with
+`4014` after OP 9.
 
 `POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands`
 registers a space-scoped chat input command for the current bot application.

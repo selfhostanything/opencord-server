@@ -3,12 +3,14 @@ use std::sync::Mutex;
 
 use crate::domain::bot::AuthenticatedBot;
 use crate::domain::compat_gateway::{
-    CompatGatewayError, CompatGatewayResumeResult, CompatGatewaySession, CompatGatewaySessionStore,
+    CompatGatewayError, CompatGatewayReplayEvent, CompatGatewayResumeResult, CompatGatewaySession,
+    CompatGatewaySessionStore,
 };
 
 #[derive(Default)]
 pub struct MemoryCompatGatewaySessionStore {
     sessions: Mutex<HashMap<String, CompatGatewaySession>>,
+    replay_events: Mutex<HashMap<String, Vec<CompatGatewayReplayEvent>>>,
 }
 
 #[async_trait::async_trait]
@@ -66,5 +68,53 @@ impl CompatGatewaySessionStore for MemoryCompatGatewaySessionStore {
 
         session.sequence = session.sequence.max(client_sequence);
         Ok(CompatGatewayResumeResult::Resumed(session.clone()))
+    }
+
+    async fn append_replay_event(
+        &self,
+        event: CompatGatewayReplayEvent,
+    ) -> Result<(), CompatGatewayError> {
+        let mut replay_events = self
+            .replay_events
+            .lock()
+            .map_err(|_| CompatGatewayError::StoreUnavailable)?;
+        let events = replay_events
+            .entry(event.session_id.clone())
+            .or_insert_with(Vec::new);
+        if let Some(existing) = events
+            .iter_mut()
+            .find(|existing| existing.sequence == event.sequence)
+        {
+            *existing = event;
+        } else {
+            events.push(event);
+            events.sort_by_key(|event| event.sequence);
+        }
+
+        Ok(())
+    }
+
+    async fn list_replay_events_after(
+        &self,
+        session_id: &str,
+        sequence: i64,
+        limit: u32,
+    ) -> Result<Vec<CompatGatewayReplayEvent>, CompatGatewayError> {
+        let replay_events = self
+            .replay_events
+            .lock()
+            .map_err(|_| CompatGatewayError::StoreUnavailable)?;
+
+        Ok(replay_events
+            .get(session_id)
+            .map(|events| {
+                events
+                    .iter()
+                    .filter(|event| event.sequence > sequence)
+                    .take(limit as usize)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 }

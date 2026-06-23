@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use opencord_server::domain::bot::AuthenticatedBot;
-use opencord_server::domain::compat_gateway::{CompatGatewayResumeResult, CompatGatewaySessions};
+use opencord_server::domain::compat_gateway::{
+    CompatGatewayReplayEvent, CompatGatewayResumeResult, CompatGatewaySessions,
+};
 use opencord_server::repositories::compat_gateway_memory::MemoryCompatGatewaySessionStore;
+use serde_json::json;
 use uuid::Uuid;
 
 fn test_bot() -> AuthenticatedBot {
@@ -74,4 +77,53 @@ async fn compat_gateway_session_store_rejects_wrong_bot_and_future_sequence() {
         future_sequence_result,
         CompatGatewayResumeResult::InvalidSequence
     );
+}
+
+#[tokio::test]
+async fn compat_gateway_session_store_lists_replay_events_after_client_sequence() {
+    let sessions = CompatGatewaySessions::new(Arc::new(MemoryCompatGatewaySessionStore::default()));
+    let bot = test_bot();
+
+    sessions
+        .create("gw_session".to_owned(), &bot, 1, 512)
+        .await
+        .expect("create session");
+    for (sequence, event_type, payload) in [
+        (4, "MESSAGE_UPDATE", json!({ "id": "message-4" })),
+        (2, "MESSAGE_CREATE", json!({ "id": "message-2" })),
+        (3, "MESSAGE_DELETE", json!({ "id": "message-3" })),
+    ] {
+        sessions
+            .append_replay_event(CompatGatewayReplayEvent {
+                session_id: "gw_session".to_owned(),
+                sequence,
+                event_type: event_type.to_owned(),
+                payload,
+            })
+            .await
+            .expect("append replay event");
+    }
+
+    let replayed = sessions
+        .list_replay_events_after("gw_session", 2, 10)
+        .await
+        .expect("list replay events");
+
+    assert_eq!(
+        replayed
+            .iter()
+            .map(|event| (event.sequence, event.event_type.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(3, "MESSAGE_DELETE"), (4, "MESSAGE_UPDATE")]
+    );
+    assert_eq!(replayed[0].payload["id"], "message-3");
+    assert_eq!(replayed[1].payload["id"], "message-4");
+
+    let limited = sessions
+        .list_replay_events_after("gw_session", 1, 2)
+        .await
+        .expect("list limited replay events");
+    assert_eq!(limited.len(), 2);
+    assert_eq!(limited[0].sequence, 2);
+    assert_eq!(limited[1].sequence, 3);
 }

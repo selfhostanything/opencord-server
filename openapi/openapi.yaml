@@ -593,8 +593,8 @@ paths:
       description: >
         Upgrades to a WebSocket, sends HELLO, accepts IDENTIFY with an
         OpenCord `ocb_` bot token, emits READY with bot-visible spaces as
-        guilds, persists RESUME session records for DB-backed deployments with
-        a 24-hour session TTL, acknowledges heartbeats, and dispatches
+        guilds, persists RESUME session records and replay events for DB-backed
+        deployments with a 24-hour session TTL, acknowledges heartbeats, and dispatches
         CHANNEL_CREATE, CHANNEL_UPDATE,
         CHANNEL_DELETE, GUILD_CREATE, GUILD_UPDATE, GUILD_DELETE,
         GUILD_MEMBER_ADD, GUILD_MEMBER_REMOVE, MESSAGE_CREATE, MESSAGE_UPDATE,
@@ -604,6 +604,8 @@ paths:
         Channel create/update/delete and guild create/update/delete dispatches
         require `GUILDS`; guild-member add/remove dispatches require
         `GUILD_MEMBERS`.
+        RESUME with a sequence behind the server replays stored dispatches with
+        larger sequence numbers before emitting `RESUMED`.
         Unknown opcodes close with `4001`; malformed payloads close with
         `4002`; invalid IDENTIFY tokens close with `4004`; duplicate IDENTIFY
         or RESUME-after-authenticated frames close with `4005`; RESUME frames

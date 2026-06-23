@@ -4,7 +4,8 @@ use uuid::Uuid;
 
 use crate::domain::bot::AuthenticatedBot;
 use crate::domain::compat_gateway::{
-    CompatGatewayError, CompatGatewayResumeResult, CompatGatewaySession, CompatGatewaySessionStore,
+    CompatGatewayError, CompatGatewayReplayEvent, CompatGatewayResumeResult, CompatGatewaySession,
+    CompatGatewaySessionStore,
 };
 
 #[derive(Clone)]
@@ -102,6 +103,65 @@ impl CompatGatewaySessionStore for PostgresCompatGatewaySessionStore {
 
         Ok(CompatGatewayResumeResult::Resumed(session))
     }
+
+    async fn append_replay_event(
+        &self,
+        event: CompatGatewayReplayEvent,
+    ) -> Result<(), CompatGatewayError> {
+        self.db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO compat_gateway_replay_events (
+                    session_id, sequence, event_type, payload
+                )
+                VALUES ($1, $2, $3, $4::jsonb)
+                ON CONFLICT (session_id, sequence) DO UPDATE
+                SET event_type = EXCLUDED.event_type,
+                    payload = EXCLUDED.payload
+                "#,
+                vec![
+                    Value::from(event.session_id),
+                    Value::from(event.sequence),
+                    Value::from(event.event_type),
+                    Value::from(event.payload.to_string()),
+                ],
+            ))
+            .await
+            .map_err(|_| CompatGatewayError::StoreUnavailable)?;
+
+        Ok(())
+    }
+
+    async fn list_replay_events_after(
+        &self,
+        session_id: &str,
+        sequence: i64,
+        limit: u32,
+    ) -> Result<Vec<CompatGatewayReplayEvent>, CompatGatewayError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT session_id, sequence, event_type, payload::text
+                FROM compat_gateway_replay_events
+                WHERE session_id = $1
+                  AND sequence > $2
+                ORDER BY sequence ASC
+                LIMIT $3
+                "#,
+                vec![
+                    Value::from(session_id.to_owned()),
+                    Value::from(sequence),
+                    Value::from(limit as i64),
+                ],
+            ))
+            .await
+            .map_err(|_| CompatGatewayError::StoreUnavailable)?;
+
+        rows.into_iter().map(replay_event_from_row).collect()
+    }
 }
 
 impl PostgresCompatGatewaySessionStore {
@@ -167,4 +227,21 @@ fn row_string(row: &sea_orm::QueryResult, column: &str) -> Result<String, Compat
 
 fn parse_uuid(value: &str) -> Result<Uuid, CompatGatewayError> {
     Uuid::parse_str(value).map_err(|_| CompatGatewayError::StoreUnavailable)
+}
+
+fn replay_event_from_row(
+    row: sea_orm::QueryResult,
+) -> Result<CompatGatewayReplayEvent, CompatGatewayError> {
+    let payload = row_string(&row, "payload")?;
+    let payload =
+        serde_json::from_str(&payload).map_err(|_| CompatGatewayError::StoreUnavailable)?;
+
+    Ok(CompatGatewayReplayEvent {
+        session_id: row_string(&row, "session_id")?,
+        sequence: row
+            .try_get::<i64>("", "sequence")
+            .map_err(|_| CompatGatewayError::StoreUnavailable)?,
+        event_type: row_string(&row, "event_type")?,
+        payload,
+    })
 }
