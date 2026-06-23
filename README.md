@@ -182,11 +182,12 @@ Auth endpoints use bearer session tokens:
 Authorization: Bearer <session token>
 ```
 
-Discord compatibility message creation accepts `content`, basic `embeds`, and
-`allowed_mentions`. Content may be empty when at least one embed or component is
-supplied. Embed and component JSON is persisted and returned through
-compatibility message responses and gateway `MESSAGE_CREATE` dispatches. Linked
-native attachments are returned as Discord-shaped attachment metadata in
+Discord compatibility message creation accepts `content`, validated rich
+`embeds`, and `allowed_mentions`. Content may be empty when at least one embed
+or component is supplied. Embed JSON is normalized with `type: "rich"` before it
+is persisted and returned through compatibility message responses and gateway
+`MESSAGE_CREATE` dispatches. Linked native attachments are returned as
+Discord-shaped attachment metadata in
 compatibility list responses and gateway dispatches. Compatibility message
 create accepts same-channel `message_reference` replies and returns reply
 metadata through REST and gateway; reply payloads also include a hydrated
@@ -399,11 +400,12 @@ checks as human users.
 webhook for a text channel. The server creates an internal webhook bot user and
 returns a shown-once `ocw_` token plus an execute URL. `POST
 /api/webhooks/{webhook_id}/{webhook_token}` accepts a Discord-style webhook
-payload with `content`, up to 10 basic `embeds`, and optional `username` and
-`avatar_url` overrides, then posts the message as the webhook bot user. Webhook
-embeds and overrides are persisted on the created message and returned by
-message list/detail responses; compatibility payloads use the override username
-for webhook-authored messages.
+payload with `content`, up to 10 validated rich `embeds`, and optional
+`username` and `avatar_url` overrides, then posts the message as the webhook bot
+user. Webhook embeds are normalized with `type: "rich"` and Discord-style field
+limits before they are persisted on the created message and returned by message
+list/detail responses; compatibility payloads use the override username for
+webhook-authored messages.
 `GET /organizations/{organization_id}/webhook-policy` and `PUT
 /organizations/{organization_id}/webhook-policy` let organization admins read
 and update whether webhook `username`/`avatar_url` identity overrides are

@@ -3604,7 +3604,7 @@ components:
           maxLength: 80
     ExecuteIncomingWebhookRequest:
       type: object
-      description: Content is required unless at least one embed is supplied.
+      description: Content is required unless at least one rich embed is supplied.
       properties:
         content:
           type: string
@@ -3614,8 +3614,8 @@ components:
           type: array
           maxItems: 10
           items:
-            type: object
-          description: Basic Discord-shaped embeds are persisted and returned without field-level rendering guarantees.
+            $ref: "#/components/schemas/RichEmbed"
+          description: "Validated Discord-shaped rich embeds are normalized with `type: rich`, persisted, and returned."
         username:
           type:
             - string
@@ -3703,9 +3703,100 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/IncomingWebhook"
+    RichEmbed:
+      type: object
+      description: >
+        Discord-shaped rich embed subset. The server validates supported fields,
+        normalizes omitted `type` to `rich`, rejects unsupported keys, and
+        enforces the Discord-style aggregate 6000 character text limit.
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          maxLength: 256
+        type:
+          type: string
+          enum:
+            - rich
+        description:
+          type: string
+          maxLength: 4096
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+        timestamp:
+          type: string
+          format: date-time
+        color:
+          type: integer
+          minimum: 0
+          maximum: 16777215
+        footer:
+          type: object
+          additionalProperties: false
+          required:
+            - text
+          properties:
+            text:
+              type: string
+              maxLength: 2048
+            icon_url:
+              type: string
+              format: uri
+              maxLength: 2048
+        image:
+          $ref: "#/components/schemas/RichEmbedMedia"
+        thumbnail:
+          $ref: "#/components/schemas/RichEmbedMedia"
+        author:
+          type: object
+          additionalProperties: false
+          required:
+            - name
+          properties:
+            name:
+              type: string
+              maxLength: 256
+            url:
+              type: string
+              format: uri
+              maxLength: 2048
+            icon_url:
+              type: string
+              format: uri
+              maxLength: 2048
+        fields:
+          type: array
+          maxItems: 25
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - name
+              - value
+            properties:
+              name:
+                type: string
+                maxLength: 256
+              value:
+                type: string
+                maxLength: 1024
+              inline:
+                type: boolean
+    RichEmbedMedia:
+      type: object
+      additionalProperties: false
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
     CreateCompatMessageRequest:
       type: object
-      description: Content is required unless one or more embeds or components are supplied.
+      description: Content is required unless one or more rich embeds or components are supplied.
       properties:
         content:
           type: string
@@ -3715,8 +3806,8 @@ components:
           type: array
           maxItems: 10
           items:
-            type: object
-          description: Basic Discord-shaped embeds are persisted and returned without field-level rendering guarantees.
+            $ref: "#/components/schemas/RichEmbed"
+          description: "Validated Discord-shaped rich embeds are normalized with `type: rich`, persisted, and returned."
         components:
           type: array
           maxItems: 5

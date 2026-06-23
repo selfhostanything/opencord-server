@@ -72,6 +72,12 @@ async fn harness_validates_rest_gateway_and_interaction_contracts() {
         "description": "Release 1.2.3 passed checks",
         "color": 5793266
     });
+    let expected_embed = json!({
+        "title": "Deploy ready",
+        "type": "rich",
+        "description": "Release 1.2.3 passed checks",
+        "color": 5793266
+    });
     let (embed_status, embed_body) = harness
         .bot_json(
             Method::POST,
@@ -97,7 +103,7 @@ async fn harness_validates_rest_gateway_and_interaction_contracts() {
         &bot.bot_user_id,
         "",
         true,
-        json!([embed.clone()]),
+        json!([expected_embed.clone()]),
     );
 
     let gateway_embed_message = harness.next_gateway_json(&mut gateway).await;
@@ -108,7 +114,7 @@ async fn harness_validates_rest_gateway_and_interaction_contracts() {
         &bot.bot_user_id,
         "",
         true,
-        json!([embed.clone()]),
+        json!([expected_embed]),
     );
 
     let (command_status, command_body) = harness

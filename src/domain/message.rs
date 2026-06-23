@@ -1,6 +1,6 @@
 use axum::http::StatusCode;
-use chrono::{SecondsFormat, Utc};
-use serde_json::Value;
+use chrono::{DateTime, SecondsFormat, Utc};
+use serde_json::{Map, Number, Value};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -259,11 +259,415 @@ fn normalize_embeds(embeds: Vec<Value>) -> Result<Vec<Value>, MessageError> {
         ));
     }
 
-    if embeds.iter().any(|embed| !embed.is_object()) {
-        return Err(MessageError::InvalidInput("message embeds must be objects"));
+    embeds.into_iter().map(normalize_embed).collect()
+}
+
+fn normalize_embed(embed: Value) -> Result<Value, MessageError> {
+    let object = embed
+        .as_object()
+        .ok_or(MessageError::InvalidInput("message embeds must be objects"))?;
+    if object.keys().any(|key| !is_supported_embed_key(key)) {
+        return Err(MessageError::InvalidInput(
+            "message embeds contain unsupported fields",
+        ));
     }
 
-    Ok(embeds)
+    let mut normalized = Map::new();
+    let mut total_text = 0usize;
+
+    if let Some(title) = optional_embed_text(
+        object,
+        "title",
+        256,
+        "embed title must be 256 characters or fewer",
+    )? {
+        total_text += title.chars().count();
+        normalized.insert("title".to_owned(), Value::String(title));
+    }
+
+    if let Some(value) = object.get("type") {
+        let Some(embed_type) = value.as_str() else {
+            return Err(MessageError::InvalidInput("embed type must be rich"));
+        };
+        if embed_type.trim() != "rich" {
+            return Err(MessageError::InvalidInput("embed type must be rich"));
+        }
+    }
+    normalized.insert("type".to_owned(), Value::String("rich".to_owned()));
+
+    if let Some(description) = optional_embed_text(
+        object,
+        "description",
+        4096,
+        "embed description must be 4096 characters or fewer",
+    )? {
+        total_text += description.chars().count();
+        normalized.insert("description".to_owned(), Value::String(description));
+    }
+
+    if let Some(url) = optional_embed_url(
+        object,
+        "url",
+        "embed url must be an HTTP or HTTPS URL up to 2048 characters",
+    )? {
+        normalized.insert("url".to_owned(), Value::String(url));
+    }
+
+    if let Some(timestamp) = optional_embed_timestamp(object)? {
+        normalized.insert("timestamp".to_owned(), Value::String(timestamp));
+    }
+
+    if let Some(color) = optional_embed_color(object)? {
+        normalized.insert("color".to_owned(), Value::Number(Number::from(color)));
+    }
+
+    if let Some(footer) = optional_embed_footer(object, &mut total_text)? {
+        normalized.insert("footer".to_owned(), Value::Object(footer));
+    }
+
+    if let Some(image) = optional_embed_media(object, "image", "embed image")? {
+        normalized.insert("image".to_owned(), Value::Object(image));
+    }
+
+    if let Some(thumbnail) = optional_embed_media(object, "thumbnail", "embed thumbnail")? {
+        normalized.insert("thumbnail".to_owned(), Value::Object(thumbnail));
+    }
+
+    if let Some(author) = optional_embed_author(object, &mut total_text)? {
+        normalized.insert("author".to_owned(), Value::Object(author));
+    }
+
+    if let Some(fields) = optional_embed_fields(object, &mut total_text)? {
+        normalized.insert("fields".to_owned(), Value::Array(fields));
+    }
+
+    if normalized.len() == 1 {
+        return Err(MessageError::InvalidInput(
+            "message embeds must include at least one supported field",
+        ));
+    }
+    if total_text > 6000 {
+        return Err(MessageError::InvalidInput(
+            "embed total text must be 6000 characters or fewer",
+        ));
+    }
+
+    Ok(Value::Object(normalized))
+}
+
+fn is_supported_embed_key(key: &str) -> bool {
+    matches!(
+        key,
+        "title"
+            | "type"
+            | "description"
+            | "url"
+            | "timestamp"
+            | "color"
+            | "footer"
+            | "image"
+            | "thumbnail"
+            | "author"
+            | "fields"
+    )
+}
+
+fn optional_embed_text(
+    object: &Map<String, Value>,
+    key: &str,
+    max_chars: usize,
+    message: &'static str,
+) -> Result<Option<String>, MessageError> {
+    let Some(value) = object.get(key) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let Some(value) = value.as_str() else {
+        return Err(MessageError::InvalidInput(message));
+    };
+    let value = value.trim().to_owned();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.chars().count() > max_chars {
+        return Err(MessageError::InvalidInput(message));
+    }
+
+    Ok(Some(value))
+}
+
+fn optional_embed_url(
+    object: &Map<String, Value>,
+    key: &str,
+    message: &'static str,
+) -> Result<Option<String>, MessageError> {
+    let Some(value) = object.get(key) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let Some(value) = value.as_str() else {
+        return Err(MessageError::InvalidInput(message));
+    };
+    let value = value.trim().to_owned();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if !is_http_url(&value) {
+        return Err(MessageError::InvalidInput(message));
+    }
+
+    Ok(Some(value))
+}
+
+fn optional_embed_timestamp(object: &Map<String, Value>) -> Result<Option<String>, MessageError> {
+    let Some(value) = object.get("timestamp") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let Some(value) = value.as_str() else {
+        return Err(MessageError::InvalidInput(
+            "embed timestamp must be RFC3339",
+        ));
+    };
+    let value = value.trim();
+    let timestamp = DateTime::parse_from_rfc3339(value)
+        .map_err(|_| MessageError::InvalidInput("embed timestamp must be RFC3339"))?;
+
+    Ok(Some(
+        timestamp
+            .with_timezone(&Utc)
+            .to_rfc3339_opts(SecondsFormat::Millis, true),
+    ))
+}
+
+fn optional_embed_color(object: &Map<String, Value>) -> Result<Option<u64>, MessageError> {
+    let Some(value) = object.get("color") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let Some(value) = value.as_u64() else {
+        return Err(MessageError::InvalidInput(
+            "embed color must be an integer between 0 and 16777215",
+        ));
+    };
+    if value > 0xFF_FF_FF {
+        return Err(MessageError::InvalidInput(
+            "embed color must be an integer between 0 and 16777215",
+        ));
+    }
+
+    Ok(Some(value))
+}
+
+fn optional_embed_footer(
+    object: &Map<String, Value>,
+    total_text: &mut usize,
+) -> Result<Option<Map<String, Value>>, MessageError> {
+    let Some(value) = object.get("footer") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let footer = value
+        .as_object()
+        .ok_or(MessageError::InvalidInput("embed footer must be an object"))?;
+    if footer
+        .keys()
+        .any(|key| !matches!(key.as_str(), "text" | "icon_url"))
+    {
+        return Err(MessageError::InvalidInput(
+            "embed footer contains unsupported fields",
+        ));
+    }
+
+    let text = optional_embed_text(
+        footer,
+        "text",
+        2048,
+        "embed footer text must be 2048 characters or fewer",
+    )?
+    .ok_or(MessageError::InvalidInput("embed footer text is required"))?;
+    let mut normalized = Map::new();
+    *total_text += text.chars().count();
+    normalized.insert("text".to_owned(), Value::String(text));
+    if let Some(icon_url) = optional_embed_url(
+        footer,
+        "icon_url",
+        "embed footer icon_url must be an HTTP or HTTPS URL up to 2048 characters",
+    )? {
+        normalized.insert("icon_url".to_owned(), Value::String(icon_url));
+    }
+
+    Ok(Some(normalized))
+}
+
+fn optional_embed_media(
+    object: &Map<String, Value>,
+    key: &str,
+    label: &'static str,
+) -> Result<Option<Map<String, Value>>, MessageError> {
+    let Some(value) = object.get(key) else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let media = value
+        .as_object()
+        .ok_or(MessageError::InvalidInput("embed media must be an object"))?;
+    if media.keys().any(|key| key != "url") {
+        return Err(MessageError::InvalidInput(
+            "embed media contains unsupported fields",
+        ));
+    }
+
+    let url = optional_embed_url(media, "url", embed_media_url_message(label))?
+        .ok_or(MessageError::InvalidInput(embed_media_url_message(label)))?;
+    let mut normalized = Map::new();
+    normalized.insert("url".to_owned(), Value::String(url));
+
+    Ok(Some(normalized))
+}
+
+fn embed_media_url_message(label: &'static str) -> &'static str {
+    match label {
+        "embed image" => "embed image url must be an HTTP or HTTPS URL up to 2048 characters",
+        "embed thumbnail" => {
+            "embed thumbnail url must be an HTTP or HTTPS URL up to 2048 characters"
+        }
+        _ => "embed media url must be an HTTP or HTTPS URL up to 2048 characters",
+    }
+}
+
+fn optional_embed_author(
+    object: &Map<String, Value>,
+    total_text: &mut usize,
+) -> Result<Option<Map<String, Value>>, MessageError> {
+    let Some(value) = object.get("author") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let author = value
+        .as_object()
+        .ok_or(MessageError::InvalidInput("embed author must be an object"))?;
+    if author
+        .keys()
+        .any(|key| !matches!(key.as_str(), "name" | "url" | "icon_url"))
+    {
+        return Err(MessageError::InvalidInput(
+            "embed author contains unsupported fields",
+        ));
+    }
+
+    let name = optional_embed_text(
+        author,
+        "name",
+        256,
+        "embed author name must be 256 characters or fewer",
+    )?
+    .ok_or(MessageError::InvalidInput("embed author name is required"))?;
+    let mut normalized = Map::new();
+    *total_text += name.chars().count();
+    normalized.insert("name".to_owned(), Value::String(name));
+    if let Some(url) = optional_embed_url(
+        author,
+        "url",
+        "embed author url must be an HTTP or HTTPS URL up to 2048 characters",
+    )? {
+        normalized.insert("url".to_owned(), Value::String(url));
+    }
+    if let Some(icon_url) = optional_embed_url(
+        author,
+        "icon_url",
+        "embed author icon_url must be an HTTP or HTTPS URL up to 2048 characters",
+    )? {
+        normalized.insert("icon_url".to_owned(), Value::String(icon_url));
+    }
+
+    Ok(Some(normalized))
+}
+
+fn optional_embed_fields(
+    object: &Map<String, Value>,
+    total_text: &mut usize,
+) -> Result<Option<Vec<Value>>, MessageError> {
+    let Some(value) = object.get("fields") else {
+        return Ok(None);
+    };
+    if value.is_null() {
+        return Ok(None);
+    }
+    let fields = value
+        .as_array()
+        .ok_or(MessageError::InvalidInput("embed fields must be an array"))?;
+    if fields.len() > 25 {
+        return Err(MessageError::InvalidInput(
+            "embed fields must contain 25 or fewer fields",
+        ));
+    }
+
+    let mut normalized_fields = Vec::with_capacity(fields.len());
+    for field in fields {
+        let field = field.as_object().ok_or(MessageError::InvalidInput(
+            "embed fields must contain objects",
+        ))?;
+        if field
+            .keys()
+            .any(|key| !matches!(key.as_str(), "name" | "value" | "inline"))
+        {
+            return Err(MessageError::InvalidInput(
+                "embed fields contain unsupported fields",
+            ));
+        }
+
+        let name = optional_embed_text(
+            field,
+            "name",
+            256,
+            "embed field name must be 256 characters or fewer",
+        )?
+        .ok_or(MessageError::InvalidInput("embed field name is required"))?;
+        let value = optional_embed_text(
+            field,
+            "value",
+            1024,
+            "embed field value must be 1024 characters or fewer",
+        )?
+        .ok_or(MessageError::InvalidInput("embed field value is required"))?;
+        let inline = match field.get("inline") {
+            Some(Value::Bool(inline)) => *inline,
+            Some(Value::Null) | None => false,
+            Some(_) => {
+                return Err(MessageError::InvalidInput(
+                    "embed field inline must be a boolean",
+                ));
+            }
+        };
+        *total_text += name.chars().count() + value.chars().count();
+
+        let mut normalized_field = Map::new();
+        normalized_field.insert("name".to_owned(), Value::String(name));
+        normalized_field.insert("value".to_owned(), Value::String(value));
+        normalized_field.insert("inline".to_owned(), Value::Bool(inline));
+        normalized_fields.push(Value::Object(normalized_field));
+    }
+
+    Ok(Some(normalized_fields))
+}
+
+fn is_http_url(value: &str) -> bool {
+    value.len() <= 2048 && (value.starts_with("https://") || value.starts_with("http://"))
 }
 
 fn normalize_components(components: Vec<Value>) -> Result<Vec<Value>, MessageError> {

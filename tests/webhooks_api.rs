@@ -194,6 +194,12 @@ async fn channel_manager_can_create_and_execute_incoming_webhook() {
         "description": "Build 2026.06.23 shipped",
         "color": 5763719
     });
+    let expected_embed = json!({
+        "title": "Production deploy",
+        "type": "rich",
+        "description": "Build 2026.06.23 shipped",
+        "color": 5763719
+    });
     let executed = app
         .clone()
         .oneshot(json_request(
@@ -216,7 +222,7 @@ async fn channel_manager_can_create_and_execute_incoming_webhook() {
     assert_eq!(body["message"]["channel_id"], channel_id);
     assert_eq!(body["message"]["author_user_id"], bot_user_id);
     assert_eq!(body["message"]["content"], "deployment shipped");
-    assert_eq!(body["message"]["embeds"], json!([embed]));
+    assert_eq!(body["message"]["embeds"], json!([expected_embed.clone()]));
     assert_eq!(body["message"]["webhook_username"], "Deploy Bot");
     assert_eq!(
         body["message"]["webhook_avatar_url"],
@@ -243,7 +249,7 @@ async fn channel_manager_can_create_and_execute_incoming_webhook() {
     let body = response_json(listed).await;
     assert_eq!(body["messages"].as_array().unwrap().len(), 1);
     assert_eq!(body["messages"][0]["author_user_id"], bot_user_id);
-    assert_eq!(body["messages"][0]["embeds"], json!([embed]));
+    assert_eq!(body["messages"][0]["embeds"], json!([expected_embed]));
     assert_eq!(body["messages"][0]["webhook_username"], "Deploy Bot");
     assert_eq!(
         body["messages"][0]["webhook_avatar_url"],
@@ -327,6 +333,11 @@ async fn organization_admin_can_disable_webhook_identity_overrides() {
         "title": "Policy kept rich content",
         "description": "Identity override was stripped"
     });
+    let expected_embed = json!({
+        "title": "Policy kept rich content",
+        "type": "rich",
+        "description": "Identity override was stripped"
+    });
 
     let executed = app
         .clone()
@@ -344,7 +355,7 @@ async fn organization_admin_can_disable_webhook_identity_overrides() {
         .unwrap();
     assert_eq!(executed.status(), StatusCode::CREATED);
     let body = response_json(executed).await;
-    assert_eq!(body["message"]["embeds"], json!([embed]));
+    assert_eq!(body["message"]["embeds"], json!([expected_embed.clone()]));
     assert_eq!(body["message"]["webhook_username"], Value::Null);
     assert_eq!(body["message"]["webhook_avatar_url"], Value::Null);
 
@@ -360,9 +371,53 @@ async fn organization_admin_can_disable_webhook_identity_overrides() {
         .unwrap();
     assert_eq!(listed.status(), StatusCode::OK);
     let body = response_json(listed).await;
-    assert_eq!(body["messages"][0]["embeds"], json!([embed]));
+    assert_eq!(body["messages"][0]["embeds"], json!([expected_embed]));
     assert_eq!(body["messages"][0]["webhook_username"], Value::Null);
     assert_eq!(body["messages"][0]["webhook_avatar_url"], Value::Null);
+}
+
+#[tokio::test]
+async fn webhook_execution_rejects_invalid_rich_embed_payload() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "webhook-embed-validation-owner@example.com").await;
+    let (_, _, channel_id) =
+        create_space_with_channel(&app, &owner_token, "embed-validation", "text").await;
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/webhooks"),
+            &owner_token,
+            json!({ "name": "Embed Validation Hook" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let body = response_json(created).await;
+    let webhook_id = body["webhook"]["id"].as_str().unwrap();
+    let raw_token = body["webhook"]["token"].as_str().unwrap();
+
+    let response = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!("/api/webhooks/{webhook_id}/{raw_token}"),
+            json!({
+                "embeds": [{
+                    "title": "x".repeat(257)
+                }]
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "invalid_request");
+    assert_eq!(
+        body["error"]["message"],
+        "embed title must be 256 characters or fewer"
+    );
 }
 
 #[tokio::test]

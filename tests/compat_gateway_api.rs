@@ -1101,6 +1101,12 @@ async fn compat_gateway_message_create_includes_basic_embeds() {
         "description": "Release 1.2.3 passed checks",
         "color": 5793266
     });
+    let expected_embed = json!({
+        "title": "Deploy ready",
+        "type": "rich",
+        "description": "Release 1.2.3 passed checks",
+        "color": 5793266
+    });
     let message_id = send_compat_embed_message(&app, &bot_token, &channel_id, embed.clone()).await;
     let event = timeout(Duration::from_secs(2), next_json(&mut socket))
         .await
@@ -1112,7 +1118,7 @@ async fn compat_gateway_message_create_includes_basic_embeds() {
     assert_eq!(event["d"]["author"]["id"], bot_user_id);
     assert_eq!(event["d"]["author"]["bot"], true);
     assert_eq!(event["d"]["content"], "");
-    assert_eq!(event["d"]["embeds"], json!([embed]));
+    assert_eq!(event["d"]["embeds"], json!([expected_embed]));
 }
 
 #[tokio::test]

@@ -818,6 +818,36 @@ async fn bot_can_send_and_list_basic_embeds_through_compat_routes() {
         "description": "Release 1.2.3 passed checks",
         "url": "https://chat.example.com/releases/1.2.3",
         "color": 5793266,
+        "footer": {
+            "text": "OpenCord Deploys",
+            "icon_url": "https://chat.example.com/assets/deploy.png"
+        },
+        "author": {
+            "name": "Release Bot",
+            "url": "https://chat.example.com/bots/release"
+        },
+        "fields": [
+            {
+                "name": "Environment",
+                "value": "production",
+                "inline": true
+            }
+        ]
+    });
+    let expected_embed = json!({
+        "title": "Deploy ready",
+        "type": "rich",
+        "description": "Release 1.2.3 passed checks",
+        "url": "https://chat.example.com/releases/1.2.3",
+        "color": 5793266,
+        "footer": {
+            "text": "OpenCord Deploys",
+            "icon_url": "https://chat.example.com/assets/deploy.png"
+        },
+        "author": {
+            "name": "Release Bot",
+            "url": "https://chat.example.com/bots/release"
+        },
         "fields": [
             {
                 "name": "Environment",
@@ -848,7 +878,7 @@ async fn bot_can_send_and_list_basic_embeds_through_compat_routes() {
     let message_id = body["id"].as_str().unwrap();
     assert_eq!(body["author"]["id"], bot_user_id);
     assert_eq!(body["content"], "");
-    assert_eq!(body["embeds"], json!([embed]));
+    assert_eq!(body["embeds"], json!([expected_embed.clone()]));
     assert!(body["mentions"].as_array().unwrap().is_empty());
     assert!(body["mention_roles"].as_array().unwrap().is_empty());
 
@@ -866,7 +896,44 @@ async fn bot_can_send_and_list_basic_embeds_through_compat_routes() {
     let body = response_json(listed).await;
     assert_eq!(body.as_array().unwrap().len(), 1);
     assert_eq!(body[0]["id"], message_id);
-    assert_eq!(body[0]["embeds"], json!([embed]));
+    assert_eq!(body[0]["embeds"], json!([expected_embed]));
+}
+
+#[tokio::test]
+async fn compat_message_rejects_invalid_rich_embed_payload() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "compat-embed-invalid-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "embed-invalid").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id, "member").await;
+
+    let fields = (0..26)
+        .map(|index| json!({ "name": format!("Field {index}"), "value": "too many" }))
+        .collect::<Vec<_>>();
+    let response = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({
+                "embeds": [{
+                    "title": "Too many fields",
+                    "fields": fields
+                }]
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response_json(response).await;
+    assert_eq!(
+        body["message"],
+        "embed fields must contain 25 or fewer fields"
+    );
+    assert_eq!(body["code"], 0);
 }
 
 #[tokio::test]
