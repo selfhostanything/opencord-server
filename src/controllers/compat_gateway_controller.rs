@@ -1,5 +1,5 @@
 use axum::extract::State;
-use axum::extract::ws::{Message as WebSocketMessage, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{CloseFrame, Message as WebSocketMessage, WebSocket, WebSocketUpgrade};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -24,6 +24,8 @@ const OP_INVALID_SESSION: i32 = 9;
 const OP_HELLO: i32 = 10;
 const OP_HEARTBEAT_ACK: i32 = 11;
 const HEARTBEAT_INTERVAL_MS: u64 = 45_000;
+const CLOSE_AUTHENTICATION_FAILED: u16 = 4004;
+const CLOSE_SESSION_TIMED_OUT: u16 = 4009;
 const INTENT_GUILDS: u64 = 1 << 0;
 const INTENT_GUILD_MEMBERS: u64 = 1 << 1;
 const INTENT_GUILD_MESSAGES: u64 = 1 << 9;
@@ -287,7 +289,12 @@ async fn identify_bot(
     };
 
     let Ok(bot) = state.bots.authenticate_token(&payload.token).await else {
-        let _ = send_invalid_session(socket).await;
+        let _ = send_invalid_session_and_close(
+            socket,
+            CLOSE_AUTHENTICATION_FAILED,
+            "authentication failed",
+        )
+        .await;
         return false;
     };
     let Ok(guilds) = state
@@ -370,8 +377,10 @@ async fn resume_bot(
         &bot,
         payload.seq.unwrap_or_default(),
     ) else {
-        let _ = send_invalid_session(socket).await;
-        return true;
+        let _ =
+            send_invalid_session_and_close(socket, CLOSE_SESSION_TIMED_OUT, "session timed out")
+                .await;
+        return false;
     };
 
     *sequence = session.sequence + 1;
@@ -736,6 +745,25 @@ async fn send_invalid_session(socket: &mut WebSocket) -> Result<(), ()> {
         }),
     )
     .await
+}
+
+async fn send_invalid_session_and_close(
+    socket: &mut WebSocket,
+    code: u16,
+    reason: &str,
+) -> Result<(), ()> {
+    send_invalid_session(socket).await?;
+    send_close(socket, code, reason).await
+}
+
+async fn send_close(socket: &mut WebSocket, code: u16, reason: &str) -> Result<(), ()> {
+    socket
+        .send(WebSocketMessage::Close(Some(CloseFrame {
+            code,
+            reason: reason.to_owned().into(),
+        })))
+        .await
+        .map_err(|_| ())
 }
 
 async fn send_json<T: serde::Serialize>(socket: &mut WebSocket, value: &T) -> Result<(), ()> {

@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::{Duration, timeout};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use tower::ServiceExt;
 
@@ -712,6 +713,17 @@ async fn next_json(socket: &mut TestWebSocket) -> Value {
     }
 
     panic!("websocket closed before event")
+}
+
+async fn next_close(socket: &mut TestWebSocket) -> (CloseCode, String) {
+    while let Some(message) = socket.next().await {
+        let message = message.expect("websocket message");
+        if let WsMessage::Close(Some(frame)) = message {
+            return (frame.code, frame.reason.to_string());
+        }
+    }
+
+    panic!("websocket closed without close frame")
 }
 
 #[tokio::test]
@@ -2132,6 +2144,11 @@ async fn compat_gateway_rejects_unknown_resume_session() {
         .expect("invalid session event");
     assert_eq!(invalid_session["op"], 9);
     assert_eq!(invalid_session["d"], false);
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut socket))
+        .await
+        .expect("invalid resume close frame");
+    assert_eq!(code, CloseCode::Library(4009));
+    assert_eq!(reason, "session timed out");
 }
 
 #[tokio::test]
@@ -2168,4 +2185,9 @@ async fn compat_gateway_rejects_invalid_identify_token() {
         .expect("invalid session event");
     assert_eq!(invalid_session["op"], 9);
     assert_eq!(invalid_session["d"], false);
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut socket))
+        .await
+        .expect("invalid identify close frame");
+    assert_eq!(code, CloseCode::Library(4004));
+    assert_eq!(reason, "authentication failed");
 }

@@ -440,7 +440,8 @@ CHANNEL_UPDATE, GUILD_CREATE, GUILD_MEMBER_ADD, MESSAGE_CREATE, MESSAGE_UPDATE,
 and MESSAGE_DELETE for resources visible to the bot user. Message create,
 update, and delete dispatches require the Discord `GUILD_MESSAGES` intent.
 Channel and guild-create dispatches require `GUILDS`; guild-member-add
-dispatches require `GUILD_MEMBERS`.
+dispatches require `GUILD_MEMBERS`. Invalid IDENTIFY tokens receive OP 9 then
+close with `4004`; unknown RESUME sessions receive OP 9 then close with `4009`.
 
 `POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands`
 registers a space-scoped chat input command for the current bot application.

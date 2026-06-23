@@ -601,6 +601,8 @@ paths:
         `GUILD_MESSAGES` intent.
         Channel and guild-create dispatches require `GUILDS`; guild-member-add
         dispatches require `GUILD_MEMBERS`.
+        Invalid IDENTIFY tokens receive OP 9 then close with `4004`; unknown
+        RESUME sessions receive OP 9 then close with `4009`.
       responses:
         "101":
           description: WebSocket protocol switch
