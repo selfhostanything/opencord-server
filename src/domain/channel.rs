@@ -67,6 +67,7 @@ pub trait ChannelStore: Send + Sync {
     async fn list_for_space(&self, space_id: Uuid) -> Result<Vec<Channel>, ChannelError>;
     async fn get_channel(&self, channel_id: Uuid) -> Result<Option<Channel>, ChannelError>;
     async fn update_channel(&self, channel: Channel) -> Result<Channel, ChannelError>;
+    async fn archive_channel(&self, channel_id: Uuid) -> Result<(), ChannelError>;
 }
 
 #[derive(Clone)]
@@ -146,6 +147,11 @@ impl ChannelService {
         }
 
         self.store.update_channel(existing).await
+    }
+
+    pub async fn delete(&self, existing: Channel) -> Result<Channel, ChannelError> {
+        self.store.archive_channel(existing.id).await?;
+        Ok(existing)
     }
 }
 

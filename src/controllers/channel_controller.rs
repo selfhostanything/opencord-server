@@ -117,6 +117,36 @@ pub async fn update(
     Ok(Json(ChannelResourceResponse { channel: response }))
 }
 
+pub async fn delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(channel_id): Path<Uuid>,
+) -> Result<StatusCode, ChannelApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let existing = state.channels.get(channel_id).await?;
+    let space = state
+        .spaces
+        .get_for_user(user.id, existing.space_id)
+        .await?;
+    state
+        .permissions
+        .require_channel(user.id, &space, &existing, Permission::ManageChannels)
+        .await?;
+
+    let channel = state.channels.delete(existing).await?;
+    let response = ChannelResponse::from(channel.clone());
+    state.realtime.publish(RealtimeEvent::channel(
+        "channel.deleted",
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        json!({ "channel": response }),
+    ));
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Debug)]
 pub enum ChannelApiError {
     Auth(AuthError),

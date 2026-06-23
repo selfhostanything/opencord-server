@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::domain::bot::AuthenticatedBot;
+use crate::domain::channel::Channel;
 use crate::domain::command::{
     INTERACTION_TYPE_APPLICATION_COMMAND, INTERACTION_TYPE_MESSAGE_COMPONENT,
 };
@@ -167,6 +168,18 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     };
                     sequence += 1;
                     if send_dispatch(&mut socket, "CHANNEL_UPDATE", sequence, channel).await.is_err() {
+                        break;
+                    }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                } else if event.event_type == "channel.deleted"
+                    && has_intent(active_intents, INTENT_GUILDS)
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(channel) = compat_channel_from_event(&event) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "CHANNEL_DELETE", sequence, channel).await.is_err() {
                         break;
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
@@ -467,8 +480,18 @@ async fn can_bot_receive_event(
     let Ok(channel_id) = Uuid::parse_str(channel_id) else {
         return false;
     };
-    let Ok(channel) = state.channels.get(channel_id).await else {
-        return false;
+    let channel = match state.channels.get(channel_id).await {
+        Ok(channel) => channel,
+        Err(_) if event.event_type == "channel.deleted" => {
+            let Some(channel) = channel_model_from_event(event) else {
+                return false;
+            };
+            if channel.id != channel_id {
+                return false;
+            }
+            channel
+        }
+        Err(_) => return false,
     };
     if channel.organization_id != bot.organization_id {
         return false;
@@ -521,6 +544,31 @@ fn compat_channel_from_event(event: &RealtimeEvent) -> Option<Value> {
         "topic": channel.get("topic").cloned().unwrap_or(Value::Null),
         "nsfw": false
     }))
+}
+
+fn channel_model_from_event(event: &RealtimeEvent) -> Option<Channel> {
+    let channel = event.data.get("channel")?;
+    Some(Channel {
+        id: Uuid::parse_str(channel.get("id")?.as_str()?).ok()?,
+        organization_id: Uuid::parse_str(channel.get("organization_id")?.as_str()?).ok()?,
+        space_id: Uuid::parse_str(channel.get("space_id")?.as_str()?).ok()?,
+        kind: channel.get("kind")?.as_str()?.to_owned(),
+        name: channel.get("name")?.as_str()?.to_owned(),
+        slug: channel.get("slug")?.as_str()?.to_owned(),
+        position: channel
+            .get("position")
+            .and_then(Value::as_i64)
+            .and_then(|position| i32::try_from(position).ok())
+            .unwrap_or_default(),
+        topic: channel
+            .get("topic")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        is_private: channel
+            .get("is_private")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    })
 }
 
 fn compat_channel_kind(kind: &str) -> i32 {

@@ -89,4 +89,16 @@ impl ChannelStore for MemoryChannelStore {
 
         Ok(channel)
     }
+
+    async fn archive_channel(&self, channel_id: Uuid) -> Result<(), ChannelError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| ChannelError::StoreUnavailable)?;
+        if state.channels_by_id.remove(&channel_id).is_some() {
+            Ok(())
+        } else {
+            Err(ChannelError::NotFound)
+        }
+    }
 }

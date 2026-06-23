@@ -111,6 +111,29 @@ impl ChannelStore for PostgresChannelStore {
             Err(_) => Err(ChannelError::StoreUnavailable),
         }
     }
+
+    async fn archive_channel(&self, channel_id: Uuid) -> Result<(), ChannelError> {
+        let result = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                UPDATE channels
+                SET archived_at = now()
+                WHERE id = $1::uuid
+                  AND archived_at IS NULL
+                "#,
+                vec![Value::from(channel_id.to_string())],
+            ))
+            .await
+            .map_err(|_| ChannelError::StoreUnavailable)?;
+
+        if result.rows_affected() == 0 {
+            Err(ChannelError::NotFound)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 fn channel_from_row(row: sea_orm::QueryResult) -> Result<Channel, ChannelError> {

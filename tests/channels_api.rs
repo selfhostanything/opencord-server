@@ -181,6 +181,86 @@ async fn space_member_can_create_list_and_update_text_channel() {
 }
 
 #[tokio::test]
+async fn space_owner_can_delete_channel_and_hide_archived_channel() {
+    let app = test_app();
+    let token = register_token(&app, "channel-delete-owner@example.com").await;
+    let organization_id = create_organization(&app, &token, "Channel Delete Parent").await;
+    let space_id = create_space(&app, &token, &organization_id, "Channel Delete Space").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/spaces/{space_id}/channels"),
+            &token,
+            json!({
+                "name": "Archive Me",
+                "topic": "temporary discussion"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let channel_id = response_json(created).await["channel"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let deleted = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/channels/{channel_id}"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let listed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/spaces/{space_id}/channels"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    assert!(
+        response_json(listed).await["channels"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    let update_deleted = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::PATCH,
+            &format!("/channels/{channel_id}"),
+            &token,
+            json!({ "name": "Should Not Return" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(update_deleted.status(), StatusCode::NOT_FOUND);
+
+    let delete_again = app
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/channels/{channel_id}"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(delete_again.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn space_owner_can_create_list_and_update_voice_channel() {
     let app = test_app();
     let token = register_token(&app, "voice-channel-owner@example.com").await;

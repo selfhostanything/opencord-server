@@ -157,6 +157,7 @@ POST /spaces/{space_id}/roles
 POST /spaces/{space_id}/roles/{role_id}/assignments
 GET /spaces/{space_id}/audit-events
 PATCH /channels/{channel_id}
+DELETE /channels/{channel_id}
 POST /channels/{channel_id}/permission-overrides
 POST /channels/{channel_id}/webhooks
 GET /channels/{channel_id}/webhooks
@@ -437,10 +438,11 @@ minute per bot application bucket. Successful responses include
 initial implementation sends HELLO, accepts IDENTIFY with an OpenCord bot
 token, emits READY with bot-visible spaces as guilds, supports process-local
 RESUME by `session_id`, acknowledges heartbeats, and dispatches CHANNEL_CREATE,
-CHANNEL_UPDATE, GUILD_CREATE, GUILD_MEMBER_ADD, GUILD_MEMBER_REMOVE,
+CHANNEL_UPDATE, CHANNEL_DELETE, GUILD_CREATE, GUILD_MEMBER_ADD, GUILD_MEMBER_REMOVE,
 MESSAGE_CREATE, MESSAGE_UPDATE, and MESSAGE_DELETE for resources visible to the
 bot user. Message create, update, and delete dispatches require the Discord
-`GUILD_MESSAGES` intent. Channel and guild-create dispatches require `GUILDS`;
+`GUILD_MESSAGES` intent. Channel create/update/delete and guild-create
+dispatches require `GUILDS`;
 guild-member add/remove dispatches require `GUILD_MEMBERS`. Unknown opcodes
 close with `4001`; malformed payloads close with `4002`; invalid IDENTIFY
 tokens close with `4004`; duplicate IDENTIFY frames close with `4005`; unknown

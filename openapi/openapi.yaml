@@ -595,13 +595,13 @@ paths:
         OpenCord `ocb_` bot token, emits READY with bot-visible spaces as
         guilds, supports process-local RESUME by `session_id`, acknowledges
         heartbeats, and dispatches CHANNEL_CREATE, CHANNEL_UPDATE,
-        GUILD_CREATE, GUILD_MEMBER_ADD, GUILD_MEMBER_REMOVE, MESSAGE_CREATE,
-        MESSAGE_UPDATE, MESSAGE_DELETE, and INTERACTION_CREATE events visible
-        to the bot user.
+        CHANNEL_DELETE, GUILD_CREATE, GUILD_MEMBER_ADD, GUILD_MEMBER_REMOVE,
+        MESSAGE_CREATE, MESSAGE_UPDATE, MESSAGE_DELETE, and INTERACTION_CREATE
+        events visible to the bot user.
         Message create, update, and delete dispatches require the Discord
         `GUILD_MESSAGES` intent.
-        Channel and guild-create dispatches require `GUILDS`; guild-member
-        add/remove dispatches require `GUILD_MEMBERS`.
+        Channel create/update/delete and guild-create dispatches require
+        `GUILDS`; guild-member add/remove dispatches require `GUILD_MEMBERS`.
         Unknown opcodes close with `4001`; malformed payloads close with
         `4002`; invalid IDENTIFY tokens close with `4004`; duplicate IDENTIFY
         frames close with `4005`; unknown RESUME sessions close with `4009`
@@ -2188,6 +2188,30 @@ paths:
           description: Channel or parent space not found for this user
         "409":
           description: Channel slug already exists in this space
+    delete:
+      summary: Archive a channel
+      description: >
+        Soft-deletes the channel by archiving it. Archived channels are hidden
+        from channel list/get/update paths and emit a realtime channel deletion
+        event for connected clients.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Channel archived
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_CHANNELS permission
+        "404":
+          description: Channel or parent space not found for this user
   /channels/{channel_id}/permission-overrides:
     post:
       summary: Set a member or role permission override for a channel

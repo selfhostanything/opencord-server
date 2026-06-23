@@ -1327,6 +1327,67 @@ async fn compat_gateway_suppresses_channel_create_without_guilds_intent() {
 }
 
 #[tokio::test]
+async fn compat_gateway_suppresses_channel_delete_without_guilds_intent() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(
+        &app,
+        "compat-gateway-channel-delete-intents-owner@example.com",
+    )
+    .await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "channel-delete-intents").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+
+    let deleted = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/channels/{channel_id}"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let filtered = timeout(Duration::from_millis(250), next_json(&mut socket)).await;
+    assert!(
+        filtered.is_err(),
+        "channel delete events should require GUILDS intent"
+    );
+}
+
+#[tokio::test]
 async fn compat_gateway_suppresses_guild_create_without_guilds_intent() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;
@@ -1821,6 +1882,74 @@ async fn compat_gateway_dispatches_channel_create_and_update() {
     assert_eq!(update_event["d"]["type"], 0);
     assert_eq!(update_event["d"]["position"], 7);
     assert_eq!(update_event["d"]["topic"], "renamed channel event stream");
+}
+
+#[tokio::test]
+async fn compat_gateway_dispatches_channel_delete() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-channel-delete-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "channel-delete-events").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 1,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+    assert_eq!(ready["s"], 1);
+
+    let deleted = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/channels/{channel_id}"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let delete_event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("channel delete dispatch");
+    assert_eq!(delete_event["op"], 0);
+    assert_eq!(delete_event["t"], "CHANNEL_DELETE");
+    assert_eq!(delete_event["s"], 2);
+    assert_eq!(delete_event["d"]["id"], channel_id);
+    assert_eq!(delete_event["d"]["guild_id"], space_id);
+    assert_eq!(
+        delete_event["d"]["name"],
+        "compat-gateway-channel-channel-delete-events"
+    );
+    assert_eq!(delete_event["d"]["type"], 0);
+    assert_eq!(delete_event["d"]["position"], 0);
+    assert_eq!(delete_event["d"]["nsfw"], false);
 }
 
 #[tokio::test]

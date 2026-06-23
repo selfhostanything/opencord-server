@@ -248,7 +248,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             "/spaces/{space_id}/roles/{role_id}/assignments",
             post(permission_controller::assign_role),
         )
-        .route("/channels/{channel_id}", patch(channel_controller::update))
+        .route(
+            "/channels/{channel_id}",
+            patch(channel_controller::update).delete(channel_controller::delete),
+        )
         .route(
             "/channels/{channel_id}/permission-overrides",
             post(permission_controller::set_channel_override),
