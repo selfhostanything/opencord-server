@@ -65,6 +65,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             post(command_controller::create_compat_space_command),
         )
         .route(
+            "/api/compat/discord/v10/applications/{application_id}/commands",
+            post(command_controller::create_compat_global_command),
+        )
+        .route(
             "/api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback",
             post(command_controller::create_interaction_callback),
         )

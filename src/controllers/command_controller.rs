@@ -52,7 +52,38 @@ pub async fn create_compat_space_command(
         .commands
         .create_space_command(CreateApplicationCommandInput {
             bot,
-            space_id,
+            space_id: Some(space_id),
+            name: request.name,
+            description: request.description,
+            kind: request.kind,
+            options: request.options,
+        })
+        .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        rate_limit_headers(&rate_limit),
+        Json(CompatApplicationCommandResponse::from(command)),
+    ))
+}
+
+pub async fn create_compat_global_command(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(application_id): Path<Uuid>,
+    Json(request): Json<CreateCompatApplicationCommandRequest>,
+) -> Result<impl IntoResponse, CommandApiError> {
+    let bot = authenticate_bot(&state, &headers).await?;
+    let rate_limit = compat_rest_rate_limit(&state, &bot)?;
+    if bot.application_id != application_id {
+        return Err(CommandError::NotFound.into());
+    }
+
+    let command = state
+        .commands
+        .create_global_command(CreateApplicationCommandInput {
+            bot,
+            space_id: None,
             name: request.name,
             description: request.description,
             kind: request.kind,
@@ -81,6 +112,33 @@ pub async fn create_channel_interaction(
         .permissions
         .require_channel(user.id, &space, &channel, Permission::ViewChannel)
         .await?;
+    let command = state.commands.get_command(request.command_id).await?;
+    if command.organization_id != channel.organization_id {
+        return Err(CommandError::NotFound.into());
+    }
+    if command
+        .space_id
+        .is_some_and(|space_id| space_id != channel.space_id)
+    {
+        return Err(CommandError::NotFound.into());
+    }
+    let bot_space = state
+        .spaces
+        .get_for_user(command.created_by_bot_user_id, channel.space_id)
+        .await?;
+    if bot_space.organization_id != channel.organization_id
+        || !state
+            .permissions
+            .can_in_channel(
+                command.created_by_bot_user_id,
+                &bot_space,
+                &channel,
+                Permission::ViewChannel,
+            )
+            .await?
+    {
+        return Err(CommandError::NotFound.into());
+    }
 
     let created = state
         .commands
@@ -92,15 +150,6 @@ pub async fn create_channel_interaction(
             invoking_user_id: user.id,
             options: request.options,
         })
-        .await?;
-    let command = state
-        .commands
-        .get_command(
-            created
-                .interaction
-                .command_id
-                .ok_or(CommandError::StoreUnavailable)?,
-        )
         .await?;
     let response = CommandInteractionCreatedResponse::from(created);
     let interaction_event =

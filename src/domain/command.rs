@@ -18,7 +18,7 @@ pub struct ApplicationCommand {
     pub id: Uuid,
     pub application_id: Uuid,
     pub organization_id: Uuid,
-    pub space_id: Uuid,
+    pub space_id: Option<Uuid>,
     pub created_by_bot_user_id: Uuid,
     pub name: String,
     pub description: String,
@@ -60,7 +60,7 @@ pub struct CommandInteractionCreated {
 #[derive(Debug)]
 pub struct CreateApplicationCommandInput {
     pub bot: AuthenticatedBot,
-    pub space_id: Uuid,
+    pub space_id: Option<Uuid>,
     pub name: String,
     pub description: String,
     pub kind: Option<i32>,
@@ -178,6 +178,20 @@ impl CommandService {
         &self,
         input: CreateApplicationCommandInput,
     ) -> Result<ApplicationCommand, CommandError> {
+        self.create_command(input).await
+    }
+
+    pub async fn create_global_command(
+        &self,
+        input: CreateApplicationCommandInput,
+    ) -> Result<ApplicationCommand, CommandError> {
+        self.create_command(input).await
+    }
+
+    async fn create_command(
+        &self,
+        input: CreateApplicationCommandInput,
+    ) -> Result<ApplicationCommand, CommandError> {
         let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         let command = ApplicationCommand {
             id: ids::new_uuid_v7(),
@@ -209,7 +223,14 @@ impl CommandService {
         input: CreateCommandInteractionInput,
     ) -> Result<CommandInteractionCreated, CommandError> {
         let command = self.get_command(input.command_id).await?;
-        if command.organization_id != input.organization_id || command.space_id != input.space_id {
+        if command.organization_id != input.organization_id {
+            return Err(CommandError::NotFound);
+        }
+
+        if command
+            .space_id
+            .is_some_and(|space_id| space_id != input.space_id)
+        {
             return Err(CommandError::NotFound);
         }
 

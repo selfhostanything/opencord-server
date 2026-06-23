@@ -17,7 +17,8 @@ pub struct CreateCompatApplicationCommandRequest {
 pub struct CompatApplicationCommandResponse {
     pub id: String,
     pub application_id: String,
-    pub guild_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guild_id: Option<String>,
     pub name: String,
     pub description: String,
     #[serde(rename = "type")]
@@ -31,7 +32,7 @@ impl From<ApplicationCommand> for CompatApplicationCommandResponse {
         Self {
             id: command.id.to_string(),
             application_id: command.application_id.to_string(),
-            guild_id: command.space_id.to_string(),
+            guild_id: command.space_id.map(|space_id| space_id.to_string()),
             name: command.name,
             description: command.description,
             kind: command.kind,

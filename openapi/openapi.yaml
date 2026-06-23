@@ -447,6 +447,44 @@ paths:
           description: Application or target space not found for this bot
         "429":
           $ref: "#/components/responses/CompatRateLimited"
+  /api/compat/discord/v10/applications/{application_id}/commands:
+    post:
+      summary: Register a Discord-compatible global command
+      description: >
+        Creates an application-scoped chat input command for the authenticated
+        bot application. Requires `Authorization: Bot ocb_...`; the command can
+        be invoked only from spaces where the bot user is a member and can view
+        the channel.
+      security:
+        - botAuth: []
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompatApplicationCommandRequest"
+      responses:
+        "201":
+          description: Created Discord-compatible global application command
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompatApplicationCommand"
+        "400":
+          description: Invalid command name, description, type, or options
+        "401":
+          description: Missing or invalid bot token
+        "404":
+          description: Application not found for this bot
+        "429":
+          $ref: "#/components/responses/CompatRateLimited"
   /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback:
     post:
       summary: Respond to a Discord-compatible interaction
@@ -2549,8 +2587,8 @@ paths:
     post:
       summary: Create a local command interaction in a channel
       description: >
-        Creates a pending interaction for a registered space command, returns
-        the shown-once `oci_` interaction token to the caller, and dispatches an
+        Creates a pending interaction for a registered space or global command,
+        returns the shown-once `oci_` interaction token to the caller, and dispatches an
         `interaction.created` realtime event for compatibility gateway sessions.
       security:
         - bearerAuth: []
@@ -4183,7 +4221,6 @@ components:
       required:
         - id
         - application_id
-        - guild_id
         - name
         - description
         - type
@@ -4199,6 +4236,7 @@ components:
         guild_id:
           type: string
           format: uuid
+          description: Present for space-scoped commands; omitted for global commands.
         name:
           type: string
         description:

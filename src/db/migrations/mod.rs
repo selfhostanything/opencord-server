@@ -32,6 +32,7 @@ mod m20260623072000_compat_gateway_sessions;
 mod m20260623073000_compat_gateway_replay_events;
 mod m20260623074000_message_webhook_overrides;
 mod m20260623075000_organization_webhook_policies;
+mod m20260623080500_global_application_commands;
 
 pub struct Migrator;
 
@@ -71,6 +72,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623073000_compat_gateway_replay_events::Migration),
             Box::new(m20260623074000_message_webhook_overrides::Migration),
             Box::new(m20260623075000_organization_webhook_policies::Migration),
+            Box::new(m20260623080500_global_application_commands::Migration),
         ]
     }
 }

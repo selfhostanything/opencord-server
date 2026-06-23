@@ -35,6 +35,31 @@ fn command_schema_migration_defines_application_commands_and_interactions() {
 }
 
 #[test]
+fn global_application_commands_migration_adds_global_scope() {
+    let migration = repo_file("src/db/migrations/m20260623080500_global_application_commands.rs");
+
+    for expected in [
+        "DROP INDEX IF EXISTS idx_application_commands_unique_name",
+        "ALTER COLUMN space_id DROP NOT NULL",
+        "idx_application_commands_unique_space_name",
+        "WHERE status = 'active' AND space_id IS NOT NULL",
+        "idx_application_commands_unique_global_name",
+        "WHERE status = 'active' AND space_id IS NULL",
+        "DELETE FROM application_commands",
+        "ALTER COLUMN space_id SET NOT NULL",
+    ] {
+        assert!(
+            migration.contains(expected),
+            "global command migration should contain {expected}"
+        );
+    }
+
+    let migrator = repo_file("src/db/migrations/mod.rs");
+    assert!(migrator.contains("mod m20260623080500_global_application_commands;"));
+    assert!(migrator.contains("Box::new(m20260623080500_global_application_commands::Migration)"));
+}
+
+#[test]
 fn component_interactions_migration_extends_interaction_schema() {
     let migration = repo_file("src/db/migrations/m20260623065000_component_interactions.rs");
 

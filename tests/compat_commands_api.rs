@@ -126,6 +126,47 @@ async fn create_space_with_channel(
     (organization_id, space_id, channel_id)
 }
 
+async fn create_space_in_organization_with_channel(
+    app: &axum::Router,
+    owner_token: &str,
+    organization_id: &str,
+    suffix: &str,
+) -> (String, String) {
+    let space = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/spaces"),
+            owner_token,
+            json!({ "name": format!("Command Space {suffix}") }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(space.status(), StatusCode::CREATED);
+    let space_id = response_json(space).await["space"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let channel = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/spaces/{space_id}/channels"),
+            owner_token,
+            json!({ "name": format!("commands-{suffix}") }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(channel.status(), StatusCode::CREATED);
+    let channel_id = response_json(channel).await["channel"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    (space_id, channel_id)
+}
+
 async fn create_bot(
     app: &axum::Router,
     owner_token: &str,
@@ -322,6 +363,150 @@ async fn bot_registers_space_command_and_responds_to_interaction() {
     assert_eq!(messages[0]["content"], "Deploying 1.2.3");
     assert_eq!(messages[0]["author"]["id"], bot_user_id);
     assert_eq!(messages[0]["author"]["bot"], true);
+}
+
+#[tokio::test]
+async fn bot_registers_global_command_and_user_invokes_it_from_visible_space() {
+    let app = test_app();
+    let (owner_token, owner_id) = register(&app, "command-global-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token).await;
+    let (application_id, bot_token, bot_user_id) =
+        create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let created_command = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/applications/{application_id}/commands"),
+            &bot_token,
+            json!({
+                "name": "status",
+                "description": "Check global deployment status",
+                "type": 1
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(created_command.status(), StatusCode::CREATED);
+    let command = response_json(created_command).await;
+    let command_id = command["id"].as_str().unwrap();
+    assert_eq!(
+        uuid::Uuid::parse_str(command_id).unwrap().get_version_num(),
+        7
+    );
+    assert_eq!(command["application_id"], application_id);
+    assert!(command.get("guild_id").is_none());
+    assert_eq!(command["name"], "status");
+    assert_eq!(command["description"], "Check global deployment status");
+    assert_eq!(command["type"], 1);
+
+    let interaction = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/command-interactions"),
+            &owner_token,
+            json!({
+                "command_id": command_id,
+                "options": []
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(interaction.status(), StatusCode::CREATED);
+    let interaction = response_json(interaction).await["interaction"].clone();
+    assert_eq!(interaction["application_id"], application_id);
+    assert_eq!(interaction["command_id"], command_id);
+    assert_eq!(interaction["space_id"], space_id);
+    assert_eq!(interaction["channel_id"], channel_id);
+    assert_eq!(interaction["invoking_user_id"], owner_id);
+    assert_eq!(interaction["status"], "pending");
+}
+
+#[tokio::test]
+async fn global_command_invocation_requires_bot_membership_in_channel_space() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "command-global-private-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token).await;
+    let (other_space_id, other_channel_id) =
+        create_space_in_organization_with_channel(&app, &owner_token, &organization_id, "hidden")
+            .await;
+    let (application_id, bot_token, bot_user_id) =
+        create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let created_command = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/applications/{application_id}/commands"),
+            &bot_token,
+            json!({
+                "name": "private",
+                "description": "Check hidden-space behavior",
+                "type": 1
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created_command.status(), StatusCode::CREATED);
+    let command_id = response_json(created_command).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let visible = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/command-interactions"),
+            &owner_token,
+            json!({
+                "command_id": command_id,
+                "options": []
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(visible.status(), StatusCode::CREATED);
+
+    let hidden = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{other_channel_id}/command-interactions"),
+            &owner_token,
+            json!({
+                "command_id": command_id,
+                "options": []
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
+
+    let cross_space_registration = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!(
+                "/api/compat/discord/v10/applications/{application_id}/guilds/{other_space_id}/commands"
+            ),
+            &bot_token,
+            json!({
+                "name": "private",
+                "description": "Should not register in hidden space",
+                "type": 1
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(cross_space_registration.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

@@ -95,6 +95,7 @@ GET /api/compat/discord/v10/channels/{channel_id}/messages
 PATCH /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
 DELETE /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
 POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands
+POST /api/compat/discord/v10/applications/{application_id}/commands
 POST /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback
 POST /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}
 PATCH /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original
@@ -483,6 +484,10 @@ bits close with `4013`; known but disallowed IDENTIFY intent bits close with
 
 `POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands`
 registers a space-scoped chat input command for the current bot application.
+`POST /api/compat/discord/v10/applications/{application_id}/commands`
+registers a global chat input command for the current bot application; global
+commands can be invoked only from spaces where the bot user is a member and can
+view the channel.
 `POST /channels/{channel_id}/command-interactions` creates a local interaction
 for a visible command and dispatches `INTERACTION_CREATE` to compatible gateway
 sessions. `POST /channels/{channel_id}/component-interactions` creates a local
