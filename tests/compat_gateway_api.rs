@@ -245,6 +245,36 @@ async fn send_message(app: &Router, token: &str, channel_id: &str, content: &str
         .to_owned()
 }
 
+async fn send_compat_embed_message(
+    app: &Router,
+    bot_token: &str,
+    channel_id: &str,
+    embed: Value,
+) -> String {
+    let response = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            bot_token,
+            json!({
+                "content": "",
+                "embeds": [embed],
+                "allowed_mentions": {
+                    "parse": []
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    response_json(response).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
 async fn create_command(
     app: &Router,
     bot_token: &str,
@@ -324,6 +354,63 @@ async fn next_json(socket: &mut TestWebSocket) -> Value {
     }
 
     panic!("websocket closed before event")
+}
+
+#[tokio::test]
+async fn compat_gateway_message_create_includes_basic_embeds() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-embed-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "embed").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+
+    let embed = json!({
+        "title": "Deploy ready",
+        "description": "Release 1.2.3 passed checks",
+        "color": 5793266
+    });
+    let message_id = send_compat_embed_message(&app, &bot_token, &channel_id, embed.clone()).await;
+    let event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("message create dispatch");
+
+    assert_eq!(event["op"], 0);
+    assert_eq!(event["t"], "MESSAGE_CREATE");
+    assert_eq!(event["d"]["id"], message_id);
+    assert_eq!(event["d"]["author"]["id"], bot_user_id);
+    assert_eq!(event["d"]["author"]["bot"], true);
+    assert_eq!(event["d"]["content"], "");
+    assert_eq!(event["d"]["embeds"], json!([embed]));
 }
 
 #[tokio::test]

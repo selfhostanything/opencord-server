@@ -135,7 +135,7 @@ pub async fn create_message(
         channel.space_id,
         channel.id,
         serde_json::json!({
-            "message": message_response(message.clone(), Vec::new(), &state.config.public_url)
+            "message": realtime_message_with_embeds(message.clone(), &state.config.public_url)
         }),
     ));
 
@@ -414,6 +414,16 @@ fn compat_message_response(
         pinned: false,
         kind: 0,
     }
+}
+
+fn realtime_message_with_embeds(message: Message, public_url: &str) -> serde_json::Value {
+    let embeds = message.embeds.clone();
+    let mut value = serde_json::to_value(message_response(message, Vec::new(), public_url))
+        .unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(object) = value.as_object_mut() {
+        object.insert("embeds".to_owned(), serde_json::Value::Array(embeds));
+    }
+    value
 }
 
 fn compat_user_response(bot: &AuthenticatedBot) -> CompatUserResponse {

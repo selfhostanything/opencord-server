@@ -229,6 +229,11 @@ fn compat_message_from_event(
     let message = event.data.get("message")?;
     let author_user_id = message.get("author_user_id")?.as_str()?.to_owned();
     let author_is_current_bot = author_user_id == current_bot.bot_user_id.to_string();
+    let embeds = message
+        .get("embeds")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
 
     Some(CompatMessageResponse {
         id: message.get("id")?.as_str()?.to_owned(),
@@ -253,7 +258,7 @@ fn compat_message_from_event(
         mentions: Vec::new(),
         mention_roles: Vec::new(),
         attachments: Vec::new(),
-        embeds: Vec::new(),
+        embeds,
         pinned: false,
         kind: 0,
     })
