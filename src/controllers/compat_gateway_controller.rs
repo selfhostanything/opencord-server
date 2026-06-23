@@ -15,6 +15,7 @@ use crate::domain::command::{
 use crate::domain::compat_gateway::CompatGatewayResumeResult;
 use crate::domain::ids;
 use crate::domain::permission::Permission;
+use crate::domain::rate_limit::compat_gateway_identify_bucket;
 use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::SpaceMembership;
 use crate::models::compat::{CompatGuildResponse, CompatMessageResponse, CompatUserResponse};
@@ -37,12 +38,17 @@ const CLOSE_RATE_LIMITED: u16 = 4008;
 const CLOSE_SESSION_TIMED_OUT: u16 = 4009;
 const CLOSE_INVALID_SHARD: u16 = 4010;
 const CLOSE_INVALID_INTENTS: u16 = 4013;
+const CLOSE_DISALLOWED_INTENTS: u16 = 4014;
 const GATEWAY_CLIENT_FRAME_LIMIT: u32 = 5;
 const GATEWAY_CLIENT_FRAME_WINDOW: Duration = Duration::from_secs(1);
 const INTENT_GUILDS: u64 = 1 << 0;
 const INTENT_GUILD_MEMBERS: u64 = 1 << 1;
+const INTENT_GUILD_PRESENCES: u64 = 1 << 8;
 const INTENT_GUILD_MESSAGES: u64 = 1 << 9;
+const INTENT_MESSAGE_CONTENT: u64 = 1 << 15;
 const SUPPORTED_GATEWAY_INTENTS: u64 = INTENT_GUILDS | INTENT_GUILD_MEMBERS | INTENT_GUILD_MESSAGES;
+const DISALLOWED_GATEWAY_INTENTS: u64 = INTENT_GUILD_PRESENCES | INTENT_MESSAGE_CONTENT;
+const KNOWN_GATEWAY_INTENTS: u64 = SUPPORTED_GATEWAY_INTENTS | DISALLOWED_GATEWAY_INTENTS;
 
 #[derive(Debug, Deserialize)]
 struct GatewayMessage {
@@ -404,9 +410,15 @@ async fn identify_bot(
     };
 
     let intents = payload.intents.unwrap_or_default();
-    if intents & !SUPPORTED_GATEWAY_INTENTS != 0 {
+    if intents & !KNOWN_GATEWAY_INTENTS != 0 {
         let _ =
             send_invalid_session_and_close(socket, CLOSE_INVALID_INTENTS, "invalid intents").await;
+        return false;
+    }
+    if intents & DISALLOWED_GATEWAY_INTENTS != 0 {
+        let _ =
+            send_invalid_session_and_close(socket, CLOSE_DISALLOWED_INTENTS, "disallowed intents")
+                .await;
         return false;
     }
     if is_invalid_shard(payload.shard.as_ref()) {
@@ -423,6 +435,14 @@ async fn identify_bot(
         .await;
         return false;
     };
+    let identify_limit = state
+        .compat_gateway_identify_rate_limits
+        .check(compat_gateway_identify_bucket(bot.application_id));
+    if !identify_limit.allowed {
+        let _ = send_invalid_session_and_close(socket, CLOSE_RATE_LIMITED, "identify rate limited")
+            .await;
+        return false;
+    }
     let Ok(guilds) = state
         .spaces
         .list_for_user(bot.bot_user_id, bot.organization_id)
@@ -497,6 +517,16 @@ async fn resume_bot(
     active_intents: &mut u64,
     sequence: &mut i64,
 ) -> bool {
+    if identified_bot.is_some() {
+        let _ = send_invalid_session_and_close(
+            socket,
+            CLOSE_ALREADY_AUTHENTICATED,
+            "already authenticated",
+        )
+        .await;
+        return false;
+    }
+
     let Some(payload) = payload else {
         let _ = send_invalid_session(socket).await;
         return true;

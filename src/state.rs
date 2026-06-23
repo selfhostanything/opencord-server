@@ -91,6 +91,7 @@ pub struct AppState {
     pub webhooks: Arc<IncomingWebhookService>,
     pub webhook_execution_rate_limits: Arc<FixedWindowRateLimiter>,
     pub compat_rest_rate_limits: Arc<FixedWindowRateLimiter>,
+    pub compat_gateway_identify_rate_limits: Arc<FixedWindowRateLimiter>,
     pub compat_gateway_sessions: Arc<CompatGatewaySessions>,
     pub commands: Arc<CommandService>,
 }
@@ -204,6 +205,9 @@ impl AppState {
                 FixedWindowRateLimiter::public_webhook_execution(),
             ),
             compat_rest_rate_limits: Arc::new(FixedWindowRateLimiter::compat_rest_bot()),
+            compat_gateway_identify_rate_limits: Arc::new(
+                FixedWindowRateLimiter::compat_gateway_identify(),
+            ),
             compat_gateway_sessions: Arc::new(CompatGatewaySessions::default()),
             commands,
         }

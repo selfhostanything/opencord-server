@@ -6,6 +6,8 @@ use uuid::Uuid;
 
 pub const COMPAT_REST_BOT_LIMIT: u32 = 10;
 pub const COMPAT_REST_BOT_WINDOW: Duration = Duration::from_secs(60);
+pub const COMPAT_GATEWAY_IDENTIFY_LIMIT: u32 = 1;
+pub const COMPAT_GATEWAY_IDENTIFY_WINDOW: Duration = Duration::from_secs(5);
 pub const PUBLIC_WEBHOOK_EXECUTION_LIMIT: u32 = 5;
 pub const PUBLIC_WEBHOOK_EXECUTION_WINDOW: Duration = Duration::from_secs(60);
 
@@ -48,6 +50,13 @@ impl FixedWindowRateLimiter {
 
     pub fn compat_rest_bot() -> Self {
         Self::new(COMPAT_REST_BOT_LIMIT, COMPAT_REST_BOT_WINDOW)
+    }
+
+    pub fn compat_gateway_identify() -> Self {
+        Self::new(
+            COMPAT_GATEWAY_IDENTIFY_LIMIT,
+            COMPAT_GATEWAY_IDENTIFY_WINDOW,
+        )
     }
 
     pub fn check(&self, bucket: impl Into<String>) -> RateLimitDecision {
@@ -96,4 +105,8 @@ impl FixedWindowRateLimiter {
 
 pub fn compat_rest_bot_bucket(application_id: Uuid) -> String {
     format!("compat-rest:bot:{application_id}")
+}
+
+pub fn compat_gateway_identify_bucket(application_id: Uuid) -> String {
+    format!("compat-gateway:identify:{application_id}")
 }

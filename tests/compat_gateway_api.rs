@@ -2989,6 +2989,51 @@ async fn compat_gateway_rejects_identify_with_invalid_intents() {
 }
 
 #[tokio::test]
+async fn compat_gateway_rejects_identify_with_disallowed_intents() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) =
+        register(&app, "compat-gateway-disallowed-intents-owner@example.com").await;
+    let (organization_id, _, _) =
+        create_space_with_channel(&app, &owner_token, "disallowed-intents").await;
+    let (bot_token, _) = create_bot(&app, &owner_token, &organization_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 256,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify with disallowed intents");
+    let invalid_session = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("invalid session event");
+    assert_eq!(invalid_session["op"], 9);
+    assert_eq!(invalid_session["d"], false);
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut socket))
+        .await
+        .expect("disallowed intents close frame");
+    assert_eq!(code, CloseCode::Library(4014));
+    assert_eq!(reason, "disallowed intents");
+}
+
+#[tokio::test]
 async fn compat_gateway_accepts_identify_with_valid_shard() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;
@@ -3074,6 +3119,135 @@ async fn compat_gateway_rejects_identify_with_invalid_shard() {
         .expect("invalid shard close frame");
     assert_eq!(code, CloseCode::Library(4010));
     assert_eq!(reason, "invalid shard");
+}
+
+#[tokio::test]
+async fn compat_gateway_closes_resume_after_identify_with_already_authenticated() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(
+        &app,
+        "compat-gateway-resume-after-identify-owner@example.com",
+    )
+    .await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "resume-after-identify").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+    let session_id = ready["d"]["session_id"].as_str().unwrap().to_owned();
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 6,
+                "d": {
+                    "token": bot_token,
+                    "session_id": session_id,
+                    "seq": 1
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send resume after identify");
+    let invalid_session = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("invalid session event");
+    assert_eq!(invalid_session["op"], 9);
+    assert_eq!(invalid_session["d"], false);
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut socket))
+        .await
+        .expect("already authenticated resume close frame");
+    assert_eq!(code, CloseCode::Library(4005));
+    assert_eq!(reason, "already authenticated");
+}
+
+#[tokio::test]
+async fn compat_gateway_rate_limits_parallel_identify_for_same_application() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-identify-limit-owner@example.com").await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "identify-limit").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut first_socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect first compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut first_socket))
+        .await
+        .expect("first gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    let identify = json!({
+        "op": 2,
+        "d": {
+            "token": bot_token,
+            "intents": 512,
+            "properties": {}
+        }
+    });
+    first_socket
+        .send(WsMessage::Text(identify.to_string().into()))
+        .await
+        .expect("send first identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut first_socket))
+        .await
+        .expect("first ready dispatch");
+    assert_eq!(ready["t"], "READY");
+
+    let (mut second_socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect second compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut second_socket))
+        .await
+        .expect("second gateway hello");
+    assert_eq!(hello["op"], 10);
+    second_socket
+        .send(WsMessage::Text(identify.to_string().into()))
+        .await
+        .expect("send second identify");
+
+    let invalid_session = timeout(Duration::from_secs(2), next_json(&mut second_socket))
+        .await
+        .expect("invalid session event");
+    assert_eq!(invalid_session["op"], 9);
+    assert_eq!(invalid_session["d"], false);
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut second_socket))
+        .await
+        .expect("identify rate limit close frame");
+    assert_eq!(code, CloseCode::Library(4008));
+    assert_eq!(reason, "identify rate limited");
 }
 
 #[tokio::test]
