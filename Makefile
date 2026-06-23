@@ -1,5 +1,6 @@
 COMPOSE_FILE ?= deploy/docker-compose/compose.yaml
 DATABASE_URL ?= postgres://opencord:opencord@localhost:5432/opencord?sslmode=disable
+OPENCORD_DEV_ALLOWED_ORIGINS ?= http://localhost:5173,http://127.0.0.1:5173
 
 .PHONY: test fmt lint dev-deps dev-media compose-app compose-media compose-config dev-api dev-realtime dev-worker migrate
 
@@ -28,13 +29,13 @@ compose-config:
 	docker compose -f $(COMPOSE_FILE) config
 
 dev-api:
-	DATABASE_URL="$(DATABASE_URL)" OPENCORD_PUBLIC_URL=http://localhost:8080 cargo run --bin api
+	DATABASE_URL="$(DATABASE_URL)" OPENCORD_PUBLIC_URL=http://localhost:8080 OPENCORD_ALLOWED_ORIGINS="$(OPENCORD_DEV_ALLOWED_ORIGINS)" cargo run --bin api
 
 dev-realtime:
-	cargo run --bin realtime
+	DATABASE_URL="$(DATABASE_URL)" OPENCORD_PUBLIC_URL=http://localhost:8080 cargo run --bin realtime
 
 dev-worker:
-	cargo run --bin worker
+	DATABASE_URL="$(DATABASE_URL)" OPENCORD_PUBLIC_URL=http://localhost:8080 cargo run --bin worker
 
 migrate:
 	DATABASE_URL="$(DATABASE_URL)" cargo run --bin migrate

@@ -51,7 +51,14 @@ SCYLLA_CONTACT_POINTS=localhost:9042
 VALKEY_URL=redis://localhost:6379/0
 OPENCORD_LOG_FORMAT=text
 OPENCORD_OTEL_ENABLED=false
+OPENCORD_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 ```
+
+`make dev-api`, `make dev-realtime`, and `make dev-worker` pass the local
+`DATABASE_URL` into host-run Rust services. The API target also allows Vite
+browser origins by default so the official web client can call auth,
+organization, space, channel, message, and meeting endpoints during local
+alpha testing.
 
 Kafka and ScyllaDB architecture smokes are opt-in so the normal test loop stays
 fast:
@@ -113,10 +120,29 @@ networking.
 ## Verification
 
 ```bash
-make test
 make fmt
+make lint
+make test
 make compose-config
+make migrate
 cargo test --test architecture_foundation --test openapi_contract
+```
+
+Local alpha smoke commands:
+
+```bash
+curl -fsS http://localhost:8080/healthz
+curl -fsS http://localhost:8081/healthz
+curl -fsS http://localhost:8082/healthz
+curl -fsS http://localhost:8080/.well-known/opencord
+
+OPENCORD_KAFKA_SMOKE=1 \
+KAFKA_BOOTSTRAP_SERVERS=localhost:29092 \
+cargo test --test kafka_queue_smoke -- --nocapture
+
+OPENCORD_SCYLLA_SMOKE=1 \
+SCYLLA_CONTACT_POINTS=localhost:9042 \
+cargo test --test scylla_store_smoke -- --nocapture
 ```
 
 For the supported HTTP contract, use `openapi/openapi.yaml` as the source of
