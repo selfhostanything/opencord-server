@@ -106,6 +106,7 @@ GET /organizations
 GET /organizations/{organization_id}
 GET /organizations/{organization_id}/usage
 GET /organizations/{organization_id}/audit-events/export
+GET /organizations/{organization_id}/data-export
 GET /organizations/{organization_id}/oidc
 PUT /organizations/{organization_id}/oidc
 POST /organizations/{organization_id}/scim/token
@@ -189,6 +190,14 @@ membership status.
 exports organization audit events in JSON for organization owners/admins. The
 initial export path is synchronous and date-range scoped; asynchronous export
 jobs with signed downloads remain future work.
+
+## Data Export
+
+`GET /organizations/{organization_id}/data-export?from=<rfc3339>&to=<rfc3339>`
+exports organization messages and a linked file manifest in JSON for
+organization owners/admins. The first implementation exports metadata and
+attachment download URLs synchronously; asynchronous export packaging, signed
+download archives, and retention policy integration remain future work.
 
 ## Cloud Tenants
 

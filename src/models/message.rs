@@ -26,6 +26,7 @@ pub struct MessageResponse {
     pub content_format: String,
     pub edited_at: Option<String>,
     pub deleted_at: Option<String>,
+    pub created_at: String,
     pub attachments: Vec<AttachmentResponse>,
 }
 

@@ -12,6 +12,7 @@ use crate::domain::calendar_sync::{
     LocalMicrosoftCalendarAdapter,
 };
 use crate::domain::channel::{ChannelService, ChannelStore};
+use crate::domain::data_export::DataExportService;
 use crate::domain::media::MediaControlService;
 use crate::domain::meeting::{MeetingService, MeetingStore};
 use crate::domain::message::{MessageService, MessageStore};
@@ -61,6 +62,7 @@ pub struct AppState {
     pub meetings: Arc<MeetingService>,
     pub calendar_sync: Arc<CalendarSyncService>,
     pub attachments: Arc<AttachmentService>,
+    pub data_exports: Arc<DataExportService>,
     pub audit: Arc<AuditService>,
     pub permissions: Arc<PermissionService>,
     pub push: Arc<PushService>,
@@ -130,6 +132,10 @@ impl AppState {
             stores.auth.clone(),
             stores.organizations.clone(),
         ));
+        let data_exports = Arc::new(DataExportService::new(
+            stores.messages.clone(),
+            stores.attachments.clone(),
+        ));
 
         Self {
             config,
@@ -146,6 +152,7 @@ impl AppState {
                 Arc::new(LocalCaldavCalendarAdapter),
             )),
             attachments: Arc::new(AttachmentService::new(stores.attachments)),
+            data_exports,
             audit: Arc::new(AuditService::new(stores.audit)),
             permissions: Arc::new(PermissionService::new(stores.permissions)),
             push: Arc::new(PushService::new(stores.push)),

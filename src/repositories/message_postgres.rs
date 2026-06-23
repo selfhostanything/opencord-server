@@ -23,11 +23,11 @@ impl MessageStore for PostgresMessageStore {
                 r#"
                 INSERT INTO messages (
                     id, organization_id, space_id, channel_id, author_user_id,
-                    content, content_format
+                    content, content_format, created_at
                 )
                 VALUES (
                     $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
-                    $6, $7
+                    $6, $7, $8::timestamptz
                 )
                 "#,
                 message_values(&message),
@@ -51,6 +51,38 @@ impl MessageStore for PostgresMessageStore {
                     "#,
                 ),
                 vec![Value::from(channel_id.to_string())],
+            ))
+            .await
+            .map_err(|_| MessageError::StoreUnavailable)?;
+
+        rows.into_iter()
+            .map(message_from_row)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    async fn list_for_organization_between(
+        &self,
+        organization_id: Uuid,
+        from: String,
+        to: String,
+    ) -> Result<Vec<Message>, MessageError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                message_select_sql(
+                    r#"
+                    WHERE organization_id = $1::uuid
+                      AND created_at >= $2::timestamptz
+                      AND created_at <= $3::timestamptz
+                    ORDER BY created_at ASC, id ASC
+                    "#,
+                ),
+                vec![
+                    Value::from(organization_id.to_string()),
+                    Value::from(from),
+                    Value::from(to),
+                ],
             ))
             .await
             .map_err(|_| MessageError::StoreUnavailable)?;
@@ -86,15 +118,18 @@ impl MessageStore for PostgresMessageStore {
                 DatabaseBackend::Postgres,
                 r#"
                 UPDATE messages
-                SET content = $6,
+                SET content = $2,
                     edited_at = now()
                 WHERE id = $1::uuid
                   AND deleted_at IS NULL
                 RETURNING id::text, organization_id::text, space_id::text, channel_id::text,
                           author_user_id::text, content, content_format,
-                          edited_at::text, deleted_at::text
+                          edited_at::text, deleted_at::text, created_at::text
                 "#,
-                message_values(&message),
+                vec![
+                    Value::from(message.id.to_string()),
+                    Value::from(message.content.clone()),
+                ],
             ))
             .await
             .map_err(|_| MessageError::StoreUnavailable)?;
@@ -115,7 +150,7 @@ impl MessageStore for PostgresMessageStore {
                 WHERE id = $1::uuid
                   AND deleted_at IS NULL
                 "#,
-                message_values(&message),
+                vec![Value::from(message.id.to_string())],
             ))
             .await
             .map_err(|_| MessageError::StoreUnavailable)?;
@@ -133,7 +168,7 @@ fn message_select_sql(where_clause: &str) -> String {
         r#"
         SELECT id::text, organization_id::text, space_id::text, channel_id::text,
                author_user_id::text, content, content_format,
-               edited_at::text, deleted_at::text
+               edited_at::text, deleted_at::text, created_at::text
         FROM messages
         {where_clause}
         "#
@@ -177,6 +212,9 @@ fn message_from_row(row: sea_orm::QueryResult) -> Result<Message, MessageError> 
         deleted_at: row
             .try_get::<Option<String>>("", "deleted_at")
             .map_err(|_| MessageError::StoreUnavailable)?,
+        created_at: row
+            .try_get::<String>("", "created_at")
+            .map_err(|_| MessageError::StoreUnavailable)?,
     })
 }
 
@@ -193,5 +231,6 @@ fn message_values(message: &Message) -> Vec<Value> {
         Value::from(message.author_user_id.to_string()),
         Value::from(message.content.clone()),
         Value::from(message.content_format.clone()),
+        Value::from(message.created_at.clone()),
     ]
 }

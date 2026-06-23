@@ -261,6 +261,7 @@ fn message_response(
         content_format: message.content_format,
         edited_at: message.edited_at,
         deleted_at: message.deleted_at,
+        created_at: message.created_at,
         attachments: attachments
             .into_iter()
             .map(|attachment| attachment_response(attachment, public_url))

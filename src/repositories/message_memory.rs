@@ -42,6 +42,35 @@ impl MessageStore for MemoryMessageStore {
         Ok(messages)
     }
 
+    async fn list_for_organization_between(
+        &self,
+        organization_id: Uuid,
+        from: String,
+        to: String,
+    ) -> Result<Vec<Message>, MessageError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| MessageError::StoreUnavailable)?;
+        let mut messages = state
+            .messages_by_id
+            .values()
+            .filter(|message| {
+                message.organization_id == organization_id
+                    && message.created_at.as_str() >= from.as_str()
+                    && message.created_at.as_str() <= to.as_str()
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        messages.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(messages)
+    }
+
     async fn get_message(&self, message_id: Uuid) -> Result<Option<Message>, MessageError> {
         let state = self
             .state

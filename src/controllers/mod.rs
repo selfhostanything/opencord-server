@@ -4,6 +4,7 @@ pub mod auth_controller;
 pub mod billing_controller;
 pub mod calendar_controller;
 pub mod channel_controller;
+pub mod data_export_controller;
 pub mod discovery_controller;
 pub mod health_controller;
 pub mod media_controller;

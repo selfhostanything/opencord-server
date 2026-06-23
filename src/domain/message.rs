@@ -1,4 +1,5 @@
 use axum::http::StatusCode;
+use chrono::{SecondsFormat, Utc};
 use uuid::Uuid;
 
 use crate::domain::ids;
@@ -14,6 +15,7 @@ pub struct Message {
     pub content_format: String,
     pub edited_at: Option<String>,
     pub deleted_at: Option<String>,
+    pub created_at: String,
 }
 
 #[derive(Debug)]
@@ -53,6 +55,12 @@ impl MessageError {
 pub trait MessageStore: Send + Sync {
     async fn create_message(&self, message: Message) -> Result<(), MessageError>;
     async fn list_for_channel(&self, channel_id: Uuid) -> Result<Vec<Message>, MessageError>;
+    async fn list_for_organization_between(
+        &self,
+        organization_id: Uuid,
+        from: String,
+        to: String,
+    ) -> Result<Vec<Message>, MessageError>;
     async fn get_message(&self, message_id: Uuid) -> Result<Option<Message>, MessageError>;
     async fn update_message(&self, message: Message) -> Result<Message, MessageError>;
     async fn delete_message(&self, message: Message) -> Result<(), MessageError>;
@@ -87,6 +95,7 @@ impl MessageService {
             content_format: "plain".to_owned(),
             edited_at: None,
             deleted_at: None,
+            created_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         };
 
         self.store.create_message(message.clone()).await?;
@@ -96,6 +105,17 @@ impl MessageService {
 
     pub async fn list_for_channel(&self, channel_id: Uuid) -> Result<Vec<Message>, MessageError> {
         self.store.list_for_channel(channel_id).await
+    }
+
+    pub async fn list_for_organization_between(
+        &self,
+        organization_id: Uuid,
+        from: String,
+        to: String,
+    ) -> Result<Vec<Message>, MessageError> {
+        self.store
+            .list_for_organization_between(organization_id, from, to)
+            .await
     }
 
     pub async fn get(&self, message_id: Uuid) -> Result<Message, MessageError> {

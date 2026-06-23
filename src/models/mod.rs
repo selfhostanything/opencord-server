@@ -4,6 +4,7 @@ pub mod auth;
 pub mod billing;
 pub mod calendar;
 pub mod channel;
+pub mod data_export;
 pub mod media;
 pub mod meeting;
 pub mod message;
