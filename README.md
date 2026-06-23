@@ -15,7 +15,7 @@ Source-available backend services for OpenCord.
 ```text
 src/bin/api.rs        REST API, health, discovery
 src/bin/realtime.rs   realtime service placeholder with health endpoint
-src/bin/worker.rs     worker service placeholder with health endpoint
+src/bin/worker.rs     worker service with health endpoint and reminder polling loop
 src/bin/migrate.rs    SeaORM migration runner
 src/controllers       HTTP controllers
 src/models            response/request DTOs
@@ -125,6 +125,24 @@ Auth endpoints use bearer session tokens:
 ```text
 Authorization: Bearer <session token>
 ```
+
+## Worker
+
+`opencord-worker` polls `meeting_reminders` and fires pending reminders whose
+`scheduled_for` timestamp is due. It marks successful reminders as `sent` and
+dispatcher failures as `failed`.
+
+Local defaults:
+
+```text
+OPENCORD_WORKER_ADDR=0.0.0.0:8082
+OPENCORD_REMINDER_POLL_SECONDS=30
+OPENCORD_REMINDER_BATCH_SIZE=100
+```
+
+The current dispatcher logs in-app, push, and email reminder deliveries. SMTP,
+mobile push, and realtime in-app delivery adapters are future integration
+points behind the same worker boundary.
 
 ## Media Control
 

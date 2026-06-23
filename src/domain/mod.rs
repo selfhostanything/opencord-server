@@ -11,4 +11,5 @@ pub mod organization;
 pub mod permission;
 pub mod push;
 pub mod realtime;
+pub mod reminder;
 pub mod space;

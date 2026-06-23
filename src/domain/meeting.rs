@@ -51,6 +51,12 @@ pub struct MeetingBundle {
     pub reminders: Vec<MeetingReminder>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MeetingReminderJob {
+    pub meeting: Meeting,
+    pub reminder: MeetingReminder,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct MeetingPatch {
     pub title: Option<String>,
@@ -122,6 +128,22 @@ pub trait MeetingStore: Send + Sync {
         join_slug: String,
     ) -> Result<Option<MeetingBundle>, MeetingError>;
     async fn update_meeting(&self, meeting: Meeting) -> Result<MeetingBundle, MeetingError>;
+    async fn list_due_reminders(
+        &self,
+        due_at: String,
+        limit: usize,
+    ) -> Result<Vec<MeetingReminderJob>, MeetingError>;
+    async fn mark_reminder_sent(
+        &self,
+        reminder_id: Uuid,
+        sent_at: String,
+    ) -> Result<(), MeetingError>;
+    async fn mark_reminder_failed(
+        &self,
+        reminder_id: Uuid,
+        failed_at: String,
+        failure_reason: String,
+    ) -> Result<(), MeetingError>;
 }
 
 #[derive(Clone)]

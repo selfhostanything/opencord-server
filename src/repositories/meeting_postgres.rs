@@ -4,7 +4,8 @@ use sea_orm::{
 use uuid::Uuid;
 
 use crate::domain::meeting::{
-    Meeting, MeetingAttendee, MeetingBundle, MeetingError, MeetingReminder, MeetingStore,
+    Meeting, MeetingAttendee, MeetingBundle, MeetingError, MeetingReminder, MeetingReminderJob,
+    MeetingStore,
 };
 
 #[derive(Clone)]
@@ -180,6 +181,89 @@ impl MeetingStore for PostgresMeetingStore {
         self.get_meeting(meeting.id)
             .await?
             .ok_or(MeetingError::NotFound)
+    }
+
+    async fn list_due_reminders(
+        &self,
+        due_at: String,
+        limit: usize,
+    ) -> Result<Vec<MeetingReminderJob>, MeetingError> {
+        if limit == 0 {
+            return Ok(vec![]);
+        }
+
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT
+                    r.id::text AS reminder_id,
+                    r.meeting_id::text AS reminder_meeting_id,
+                    r.recipient_user_id::text AS reminder_recipient_user_id,
+                    r.recipient_email AS reminder_recipient_email,
+                    r.channel AS reminder_channel,
+                    r.offset_minutes AS reminder_offset_minutes,
+                    to_char(r.scheduled_for AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS reminder_scheduled_for,
+                    r.status AS reminder_status,
+                    m.id::text AS meeting_row_id,
+                    m.organization_id::text AS meeting_organization_id,
+                    m.space_id::text AS meeting_space_id,
+                    m.channel_id::text AS meeting_channel_id,
+                    m.created_by_user_id::text AS meeting_created_by_user_id,
+                    m.title AS meeting_title,
+                    m.description AS meeting_description,
+                    m.status AS meeting_status,
+                    to_char(m.starts_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS meeting_starts_at,
+                    to_char(m.ends_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS meeting_ends_at,
+                    m.timezone AS meeting_timezone,
+                    m.join_slug AS meeting_join_slug,
+                    CASE
+                        WHEN m.cancelled_at IS NULL THEN NULL
+                        ELSE to_char(m.cancelled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+                    END AS meeting_cancelled_at
+                FROM meeting_reminders r
+                JOIN meetings m ON m.id = r.meeting_id
+                WHERE r.status = 'pending'
+                  AND r.scheduled_for <= $1::timestamptz
+                  AND m.status = 'scheduled'
+                ORDER BY r.scheduled_for ASC, r.id ASC
+                LIMIT $2
+                "#,
+                vec![Value::from(due_at), Value::from(limit as i64)],
+            ))
+            .await
+            .map_err(|_| MeetingError::StoreUnavailable)?;
+
+        rows.into_iter()
+            .map(reminder_job_from_row)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    async fn mark_reminder_sent(
+        &self,
+        reminder_id: Uuid,
+        sent_at: String,
+    ) -> Result<(), MeetingError> {
+        update_reminder_delivery_status(&self.db, reminder_id, "sent", sent_at, None, "sent_at")
+            .await
+    }
+
+    async fn mark_reminder_failed(
+        &self,
+        reminder_id: Uuid,
+        failed_at: String,
+        failure_reason: String,
+    ) -> Result<(), MeetingError> {
+        update_reminder_delivery_status(
+            &self.db,
+            reminder_id,
+            "failed",
+            failed_at,
+            Some(failure_reason),
+            "failed_at",
+        )
+        .await
     }
 }
 
@@ -384,6 +468,79 @@ fn reminder_from_row(row: sea_orm::QueryResult) -> Result<MeetingReminder, Meeti
     })
 }
 
+fn reminder_job_from_row(row: sea_orm::QueryResult) -> Result<MeetingReminderJob, MeetingError> {
+    Ok(MeetingReminderJob {
+        reminder: MeetingReminder {
+            id: parse_uuid(
+                &row.try_get::<String>("", "reminder_id")
+                    .map_err(|_| MeetingError::StoreUnavailable)?,
+            )?,
+            meeting_id: parse_uuid(
+                &row.try_get::<String>("", "reminder_meeting_id")
+                    .map_err(|_| MeetingError::StoreUnavailable)?,
+            )?,
+            recipient_user_id: optional_uuid(
+                row.try_get::<Option<String>>("", "reminder_recipient_user_id"),
+            )?,
+            recipient_email: row
+                .try_get::<Option<String>>("", "reminder_recipient_email")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            channel: row
+                .try_get::<String>("", "reminder_channel")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            offset_minutes: row
+                .try_get::<i32>("", "reminder_offset_minutes")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            scheduled_for: row
+                .try_get::<String>("", "reminder_scheduled_for")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            status: row
+                .try_get::<String>("", "reminder_status")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+        },
+        meeting: Meeting {
+            id: parse_uuid(
+                &row.try_get::<String>("", "meeting_row_id")
+                    .map_err(|_| MeetingError::StoreUnavailable)?,
+            )?,
+            organization_id: parse_uuid(
+                &row.try_get::<String>("", "meeting_organization_id")
+                    .map_err(|_| MeetingError::StoreUnavailable)?,
+            )?,
+            space_id: optional_uuid(row.try_get::<Option<String>>("", "meeting_space_id"))?,
+            channel_id: optional_uuid(row.try_get::<Option<String>>("", "meeting_channel_id"))?,
+            created_by_user_id: parse_uuid(
+                &row.try_get::<String>("", "meeting_created_by_user_id")
+                    .map_err(|_| MeetingError::StoreUnavailable)?,
+            )?,
+            title: row
+                .try_get::<String>("", "meeting_title")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            description: row
+                .try_get::<Option<String>>("", "meeting_description")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            status: row
+                .try_get::<String>("", "meeting_status")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            starts_at: row
+                .try_get::<String>("", "meeting_starts_at")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            ends_at: row
+                .try_get::<String>("", "meeting_ends_at")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            timezone: row
+                .try_get::<String>("", "meeting_timezone")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            join_slug: row
+                .try_get::<String>("", "meeting_join_slug")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+            cancelled_at: row
+                .try_get::<Option<String>>("", "meeting_cancelled_at")
+                .map_err(|_| MeetingError::StoreUnavailable)?,
+        },
+    })
+}
+
 fn meeting_values(meeting: &Meeting) -> Vec<Value> {
     vec![
         Value::from(meeting.id.to_string()),
@@ -438,4 +595,44 @@ fn optional_uuid(
 
 fn parse_uuid(value: &str) -> Result<Uuid, MeetingError> {
     Uuid::parse_str(value).map_err(|_| MeetingError::StoreUnavailable)
+}
+
+async fn update_reminder_delivery_status(
+    db: &DatabaseConnection,
+    reminder_id: Uuid,
+    status: &str,
+    delivered_at: String,
+    failure_reason: Option<String>,
+    timestamp_column: &str,
+) -> Result<(), MeetingError> {
+    let sql = format!(
+        r#"
+        UPDATE meeting_reminders
+        SET status = $2,
+            {timestamp_column} = $3::timestamptz,
+            failure_reason = $4,
+            updated_at = now()
+        WHERE id = $1::uuid
+          AND status = 'pending'
+        "#
+    );
+    let result = db
+        .execute(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            vec![
+                Value::from(reminder_id.to_string()),
+                Value::from(status.to_owned()),
+                Value::from(delivered_at),
+                Value::from(failure_reason),
+            ],
+        ))
+        .await
+        .map_err(|_| MeetingError::StoreUnavailable)?;
+
+    if result.rows_affected() == 0 {
+        Err(MeetingError::NotFound)
+    } else {
+        Ok(())
+    }
 }
