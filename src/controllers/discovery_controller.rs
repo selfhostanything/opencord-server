@@ -35,6 +35,7 @@ pub async fn capabilities() -> Json<CapabilitiesResponse> {
             "websocket",
             "attachments",
             "audit",
+            "audit_export",
             "push_tokens",
             "media_control",
             "voice_join",

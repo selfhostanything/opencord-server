@@ -251,6 +251,52 @@ async fn admin_actions_write_space_audit_events() {
 }
 
 #[tokio::test]
+async fn organization_admin_can_export_audit_events_by_date_range() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "audit-export-owner@example.com").await;
+    let (member_token, member_id) = register(&app, "audit-export-member@example.com").await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "export").await;
+
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+
+    let exported = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!(
+                "/organizations/{organization_id}/audit-events/export?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z"
+            ),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(exported.status(), StatusCode::OK);
+    let body = response_json(exported).await;
+    assert_eq!(body["export"]["organization_id"], organization_id);
+    assert_eq!(body["export"]["format"], "json");
+    assert_eq!(body["export"]["audit_events"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        body["export"]["audit_events"][0]["action"],
+        "space.member.added"
+    );
+
+    let forbidden = app
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!(
+                "/organizations/{organization_id}/audit-events/export?from=2020-01-01T00:00:00Z&to=2030-01-01T00:00:00Z"
+            ),
+            &member_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn audit_events_require_bearer_auth() {
     let response = test_app()
         .oneshot(json_request(

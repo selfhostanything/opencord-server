@@ -105,6 +105,7 @@ POST /organizations
 GET /organizations
 GET /organizations/{organization_id}
 GET /organizations/{organization_id}/usage
+GET /organizations/{organization_id}/audit-events/export
 GET /organizations/{organization_id}/oidc
 PUT /organizations/{organization_id}/oidc
 POST /organizations/{organization_id}/scim/token
@@ -181,6 +182,13 @@ local user, links the external ID, and adds the user to the token's organization
 token's organization. `PATCH /scim/v2/Users/{external_id}` supports a SCIM
 PatchOp that replaces `active` with a boolean and updates organization
 membership status.
+
+## Audit Export
+
+`GET /organizations/{organization_id}/audit-events/export?from=<rfc3339>&to=<rfc3339>`
+exports organization audit events in JSON for organization owners/admins. The
+initial export path is synchronous and date-range scoped; asynchronous export
+jobs with signed downloads remain future work.
 
 ## Cloud Tenants
 

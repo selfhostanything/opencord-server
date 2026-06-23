@@ -84,6 +84,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             get(usage_controller::get),
         )
         .route(
+            "/organizations/{organization_id}/audit-events/export",
+            get(audit_controller::export_for_organization),
+        )
+        .route(
             "/organizations/{organization_id}/oidc",
             get(organization_controller::get_oidc_provider)
                 .put(organization_controller::configure_oidc_provider),

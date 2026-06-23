@@ -43,4 +43,33 @@ impl AuditStore for MemoryAuditStore {
         events.sort_by_key(|event| event.id);
         Ok(events)
     }
+
+    async fn list_for_organization_between(
+        &self,
+        organization_id: Uuid,
+        from: String,
+        to: String,
+    ) -> Result<Vec<AuditEvent>, AuditError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| AuditError::StoreUnavailable)?;
+        let mut events = state
+            .events_by_space_id
+            .values()
+            .flat_map(|events| events.iter())
+            .filter(|event| {
+                event.organization_id == organization_id
+                    && event.created_at.as_str() >= from.as_str()
+                    && event.created_at.as_str() <= to.as_str()
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        events.sort_by(|left, right| {
+            left.created_at
+                .cmp(&right.created_at)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(events)
+    }
 }

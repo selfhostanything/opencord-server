@@ -1,7 +1,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::domain::audit::AuditEvent;
+use crate::domain::audit::{AuditEvent, AuditExport};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct AuditEventResponse {
@@ -21,6 +21,20 @@ pub struct AuditEventListResponse {
     pub audit_events: Vec<AuditEventResponse>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AuditExportEnvelope {
+    pub export: AuditExportResponse,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuditExportResponse {
+    pub organization_id: String,
+    pub format: String,
+    pub from: String,
+    pub to: String,
+    pub audit_events: Vec<AuditEventResponse>,
+}
+
 impl From<AuditEvent> for AuditEventResponse {
     fn from(event: AuditEvent) -> Self {
         Self {
@@ -33,6 +47,22 @@ impl From<AuditEvent> for AuditEventResponse {
             target_id: event.target_id.to_string(),
             metadata: event.metadata,
             created_at: event.created_at,
+        }
+    }
+}
+
+impl From<AuditExport> for AuditExportResponse {
+    fn from(export: AuditExport) -> Self {
+        Self {
+            organization_id: export.organization_id.to_string(),
+            format: export.format,
+            from: export.from,
+            to: export.to,
+            audit_events: export
+                .audit_events
+                .into_iter()
+                .map(AuditEventResponse::from)
+                .collect(),
         }
     }
 }

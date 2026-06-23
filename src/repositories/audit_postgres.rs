@@ -59,6 +59,39 @@ impl AuditStore for PostgresAuditStore {
             .map(event_from_row)
             .collect::<Result<Vec<_>, _>>()
     }
+
+    async fn list_for_organization_between(
+        &self,
+        organization_id: Uuid,
+        from: String,
+        to: String,
+    ) -> Result<Vec<AuditEvent>, AuditError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT id::text, organization_id::text, space_id::text, actor_user_id::text,
+                       action, target_type, target_id::text, metadata::text, created_at::text
+                FROM audit_events
+                WHERE organization_id = $1::uuid
+                  AND created_at >= $2::timestamptz
+                  AND created_at <= $3::timestamptz
+                ORDER BY created_at ASC, id ASC
+                "#,
+                vec![
+                    Value::from(organization_id.to_string()),
+                    Value::from(from),
+                    Value::from(to),
+                ],
+            ))
+            .await
+            .map_err(|_| AuditError::StoreUnavailable)?;
+
+        rows.into_iter()
+            .map(event_from_row)
+            .collect::<Result<Vec<_>, _>>()
+    }
 }
 
 fn event_from_row(row: sea_orm::QueryResult) -> Result<AuditEvent, AuditError> {

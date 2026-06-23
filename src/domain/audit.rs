@@ -1,5 +1,5 @@
 use axum::http::StatusCode;
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -27,6 +27,15 @@ pub struct NewAuditEvent {
     pub target_type: &'static str,
     pub target_id: Uuid,
     pub metadata: Value,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AuditExport {
+    pub organization_id: Uuid,
+    pub format: String,
+    pub from: String,
+    pub to: String,
+    pub audit_events: Vec<AuditEvent>,
 }
 
 #[derive(Debug)]
@@ -62,6 +71,12 @@ impl AuditError {
 pub trait AuditStore: Send + Sync {
     async fn create_event(&self, event: AuditEvent) -> Result<(), AuditError>;
     async fn list_for_space(&self, space_id: Uuid) -> Result<Vec<AuditEvent>, AuditError>;
+    async fn list_for_organization_between(
+        &self,
+        organization_id: Uuid,
+        from: String,
+        to: String,
+    ) -> Result<Vec<AuditEvent>, AuditError>;
 }
 
 #[derive(Clone)]
@@ -94,6 +109,35 @@ impl AuditService {
     pub async fn list_for_space(&self, space_id: Uuid) -> Result<Vec<AuditEvent>, AuditError> {
         self.store.list_for_space(space_id).await
     }
+
+    pub async fn export_for_organization(
+        &self,
+        organization_id: Uuid,
+        from: String,
+        to: String,
+    ) -> Result<AuditExport, AuditError> {
+        let from = normalize_rfc3339(from, "audit export from must be RFC3339")?;
+        let to = normalize_rfc3339(to, "audit export to must be RFC3339")?;
+        if from > to {
+            return Err(AuditError::InvalidInput(
+                "audit export from must be before to",
+            ));
+        }
+        let from_string = from.to_rfc3339_opts(SecondsFormat::Millis, true);
+        let to_string = to.to_rfc3339_opts(SecondsFormat::Millis, true);
+        let audit_events = self
+            .store
+            .list_for_organization_between(organization_id, from_string.clone(), to_string.clone())
+            .await?;
+
+        Ok(AuditExport {
+            organization_id,
+            format: "json".to_owned(),
+            from: from_string,
+            to: to_string,
+            audit_events,
+        })
+    }
 }
 
 fn normalize_label(value: &'static str, message: &'static str) -> Result<String, AuditError> {
@@ -103,4 +147,10 @@ fn normalize_label(value: &'static str, message: &'static str) -> Result<String,
     } else {
         Ok(value.to_owned())
     }
+}
+
+fn normalize_rfc3339(value: String, message: &'static str) -> Result<DateTime<Utc>, AuditError> {
+    DateTime::parse_from_rfc3339(value.trim())
+        .map(|value| value.with_timezone(&Utc))
+        .map_err(|_| AuditError::InvalidInput(message))
 }
