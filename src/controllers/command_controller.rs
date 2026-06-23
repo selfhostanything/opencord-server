@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::controllers::message_controller::message_response;
@@ -10,6 +11,7 @@ use crate::domain::bot::{AuthenticatedBot, BotError};
 use crate::domain::channel::ChannelError;
 use crate::domain::command::{
     CommandError, CreateApplicationCommandInput, CreateCommandInteractionInput,
+    CreateComponentInteractionInput,
 };
 use crate::domain::message::MessageError;
 use crate::domain::permission::{Permission, PermissionError};
@@ -21,7 +23,7 @@ use crate::models::auth::{ErrorDetail, ErrorResponse};
 use crate::models::command::{
     CommandInteractionCreatedResponse, CompatApplicationCommandResponse,
     CreateCommandInteractionRequest, CreateCompatApplicationCommandRequest,
-    CreateInteractionCallbackRequest,
+    CreateComponentInteractionRequest, CreateInteractionCallbackRequest,
 };
 use crate::models::compat::CompatErrorResponse;
 use crate::state::AppState;
@@ -90,7 +92,12 @@ pub async fn create_channel_interaction(
         .await?;
     let command = state
         .commands
-        .get_command(created.interaction.command_id)
+        .get_command(
+            created
+                .interaction
+                .command_id
+                .ok_or(CommandError::StoreUnavailable)?,
+        )
         .await?;
     let response = CommandInteractionCreatedResponse::from(created);
     let interaction_event =
@@ -104,6 +111,66 @@ pub async fn create_channel_interaction(
         serde_json::json!({
             "interaction": interaction_event,
             "command": CompatApplicationCommandResponse::from(command)
+        }),
+    ));
+
+    Ok((StatusCode::CREATED, Json(response)))
+}
+
+pub async fn create_component_interaction(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(channel_id): Path<Uuid>,
+    Json(request): Json<CreateComponentInteractionRequest>,
+) -> Result<impl IntoResponse, CommandApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let channel = state.channels.get(channel_id).await?;
+    let space = state.spaces.get_for_user(user.id, channel.space_id).await?;
+    state
+        .permissions
+        .require_channel(user.id, &space, &channel, Permission::ViewChannel)
+        .await?;
+
+    let message = state.messages.get(request.message_id).await?;
+    if message.channel_id != channel.id
+        || message.organization_id != channel.organization_id
+        || message.space_id != Some(channel.space_id)
+    {
+        return Err(CommandError::NotFound.into());
+    }
+    let component_type = component_type_for_custom_id(&message.components, &request.custom_id)?;
+    let application = state
+        .bots
+        .application_for_bot_user(message.author_user_id, channel.organization_id)
+        .await?;
+
+    let created = state
+        .commands
+        .create_component_interaction(CreateComponentInteractionInput {
+            application_id: application.id,
+            organization_id: channel.organization_id,
+            space_id: channel.space_id,
+            channel_id: channel.id,
+            message_id: message.id,
+            invoking_user_id: user.id,
+            custom_id: request.custom_id,
+            component_type,
+        })
+        .await?;
+    let response = CommandInteractionCreatedResponse::from(created);
+    let interaction_event =
+        serde_json::to_value(&response.interaction).unwrap_or_else(|_| serde_json::json!({}));
+    let message_event = realtime_message_value(message, &state.config.public_url);
+
+    state.realtime.publish(RealtimeEvent::channel(
+        "interaction.created",
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        serde_json::json!({
+            "interaction": interaction_event,
+            "message": message_event
         }),
     ));
 
@@ -128,7 +195,10 @@ pub async fn create_interaction_callback(
         .commands
         .interaction_for_callback(interaction_id, &interaction_token)
         .await?;
-    let command = state.commands.get_command(interaction.command_id).await?;
+    let application = state
+        .bots
+        .application_for_organization(interaction.application_id, interaction.organization_id)
+        .await?;
     let channel = state.channels.get(interaction.channel_id).await?;
     if channel.organization_id != interaction.organization_id
         || channel.space_id != interaction.space_id
@@ -142,7 +212,7 @@ pub async fn create_interaction_callback(
             interaction.organization_id,
             Some(interaction.space_id),
             interaction.channel_id,
-            command.created_by_bot_user_id,
+            application.bot_user_id,
             data.content,
             false,
         )
@@ -162,6 +232,59 @@ pub async fn create_interaction_callback(
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn component_type_for_custom_id(
+    components: &[Value],
+    expected_custom_id: &str,
+) -> Result<i32, CommandError> {
+    for component in components {
+        if let Some(component_type) = matching_component_type(component, expected_custom_id) {
+            return Ok(component_type);
+        }
+
+        if let Some(children) = component.get("components").and_then(Value::as_array) {
+            for child in children {
+                if let Some(component_type) = matching_component_type(child, expected_custom_id) {
+                    return Ok(component_type);
+                }
+            }
+        }
+    }
+
+    Err(CommandError::InvalidInput(
+        "component custom_id was not found on the message",
+    ))
+}
+
+fn matching_component_type(component: &Value, expected_custom_id: &str) -> Option<i32> {
+    let custom_id = component.get("custom_id")?.as_str()?;
+    if custom_id != expected_custom_id {
+        return None;
+    }
+
+    component
+        .get("type")?
+        .as_i64()
+        .and_then(|value| i32::try_from(value).ok())
+}
+
+fn realtime_message_value(
+    message: crate::domain::message::Message,
+    public_url: &str,
+) -> serde_json::Value {
+    let embeds = message.embeds.clone();
+    let components = message.components.clone();
+    let mut value = serde_json::to_value(message_response(message, Vec::new(), public_url))
+        .unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(object) = value.as_object_mut() {
+        object.insert("components".to_owned(), Value::Array(components));
+        object.insert("embeds".to_owned(), Value::Array(embeds));
+        object.insert("mention_everyone".to_owned(), Value::Bool(false));
+        object.insert("mentions".to_owned(), Value::Array(Vec::new()));
+        object.insert("mention_roles".to_owned(), Value::Array(Vec::new()));
+    }
+    value
 }
 
 #[derive(Debug)]

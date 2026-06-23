@@ -37,6 +37,18 @@ impl BotStore for MemoryBotStore {
         Ok(state.applications.get(&application_id).cloned())
     }
 
+    async fn get_application_by_bot_user_id(
+        &self,
+        bot_user_id: Uuid,
+    ) -> Result<Option<BotApplication>, BotError> {
+        let state = self.state.lock().map_err(|_| BotError::StoreUnavailable)?;
+        Ok(state
+            .applications
+            .values()
+            .find(|application| application.bot_user_id == bot_user_id)
+            .cloned())
+    }
+
     async fn list_applications(
         &self,
         organization_id: Uuid,

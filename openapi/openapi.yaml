@@ -2242,6 +2242,45 @@ paths:
           description: Missing VIEW_CHANNEL permission
         "404":
           description: Channel, space, or command not found for this user
+  /channels/{channel_id}/component-interactions:
+    post:
+      summary: Create a local component interaction in a channel
+      description: >
+        Creates a pending interaction for a clicked Discord-shaped message
+        component, returns the shown-once `oci_` interaction token to the
+        caller, and dispatches an `interaction.created` realtime event for
+        compatibility gateway sessions as an `INTERACTION_CREATE` payload with
+        type `3`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateComponentInteractionRequest"
+      responses:
+        "201":
+          description: Created pending component interaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandInteractionCreatedResponse"
+        "400":
+          description: Invalid component interaction payload
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing VIEW_CHANNEL permission
+        "404":
+          description: Channel, space, message, or bot application not found for this user
   /channels/{channel_id}/messages:
     post:
       summary: Send a message to a channel
@@ -3363,7 +3402,7 @@ components:
           maxItems: 5
           items:
             type: object
-          description: Discord-shaped message components are persisted and returned. Component interactions are future work.
+          description: Discord-shaped message components are persisted, returned, and can create component interactions by `custom_id`.
         allowed_mentions:
           type: object
           description: Controls compatibility mention expansion for user, role, and everyone mentions.
@@ -3428,7 +3467,7 @@ components:
           maxItems: 5
           items:
             type: object
-          description: Replaces persisted Discord-shaped message components when supplied. Component interactions are future work.
+          description: Replaces persisted Discord-shaped message components when supplied.
     CompatUser:
       type: object
       required:
@@ -3603,7 +3642,7 @@ components:
             type: object
         components:
           type: array
-          description: Persisted Discord-shaped message components. Component interactions are future work.
+          description: Persisted Discord-shaped message components.
           items:
             type: object
         message_reference:
@@ -3696,6 +3735,19 @@ components:
           type: array
           items:
             type: object
+    CreateComponentInteractionRequest:
+      type: object
+      required:
+        - message_id
+        - custom_id
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        custom_id:
+          type: string
+          minLength: 1
+          maxLength: 100
     CommandInteraction:
       type: object
       required:
@@ -3703,7 +3755,7 @@ components:
         - application_id
         - space_id
         - channel_id
-        - command_id
+        - type
         - invoking_user_id
         - token
         - token_last_four
@@ -3723,9 +3775,22 @@ components:
         channel_id:
           type: string
           format: uuid
+        type:
+          type: integer
+          enum:
+            - 2
+            - 3
+          description: Discord interaction type. `2` is application command; `3` is message component.
         command_id:
           type: string
           format: uuid
+          nullable: true
+          description: Present for application command interactions.
+        message_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Present for message component interactions.
         invoking_user_id:
           type: string
           format: uuid
@@ -3744,6 +3809,14 @@ components:
           type: array
           items:
             type: object
+        custom_id:
+          type: string
+          nullable: true
+          description: Present for message component interactions.
+        component_type:
+          type: integer
+          nullable: true
+          description: Present for message component interactions.
         created_at:
           type: string
           format: date-time

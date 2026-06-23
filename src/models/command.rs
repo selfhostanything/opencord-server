@@ -47,6 +47,12 @@ pub struct CreateCommandInteractionRequest {
     pub options: Option<Value>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateComponentInteractionRequest {
+    pub message_id: Uuid,
+    pub custom_id: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CommandInteractionCreatedResponse {
     pub interaction: CommandInteractionResponse,
@@ -58,12 +64,21 @@ pub struct CommandInteractionResponse {
     pub application_id: String,
     pub space_id: String,
     pub channel_id: String,
-    pub command_id: String,
+    #[serde(rename = "type")]
+    pub kind: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
     pub invoking_user_id: String,
     pub token: String,
     pub token_last_four: String,
     pub status: String,
     pub options: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub component_type: Option<i32>,
     pub created_at: String,
     pub responded_at: Option<String>,
 }
@@ -76,12 +91,16 @@ impl From<CommandInteractionCreated> for CommandInteractionCreatedResponse {
                 application_id: created.interaction.application_id.to_string(),
                 space_id: created.interaction.space_id.to_string(),
                 channel_id: created.interaction.channel_id.to_string(),
-                command_id: created.interaction.command_id.to_string(),
+                kind: created.interaction.interaction_type,
+                command_id: created.interaction.command_id.map(|id| id.to_string()),
+                message_id: created.interaction.message_id.map(|id| id.to_string()),
                 invoking_user_id: created.interaction.invoking_user_id.to_string(),
                 token: created.token,
                 token_last_four: created.interaction.token_last_four,
                 status: created.interaction.status,
                 options: created.interaction.options,
+                custom_id: created.interaction.custom_id,
+                component_type: created.interaction.component_type,
                 created_at: created.interaction.created_at,
                 responded_at: created.interaction.responded_at,
             },

@@ -160,6 +160,7 @@ GET /channels/{channel_id}/webhooks
 POST /channels/{channel_id}/webhooks/{webhook_id}/token/rotate
 DELETE /channels/{channel_id}/webhooks/{webhook_id}
 POST /channels/{channel_id}/command-interactions
+POST /channels/{channel_id}/component-interactions
 POST /channels/{channel_id}/messages
 GET /channels/{channel_id}/messages
 POST /attachments/presign
@@ -188,8 +189,9 @@ available. `allowed_mentions` now controls Discord-shaped user, role, and
 everyone mention expansion in compatibility REST create/list/edit and gateway
 payloads. Discord-compatible multipart message creates with `payload_json` and
 `files[n]` store uploaded files as OpenCord attachments, link them to the new
-message, and return them through REST and gateway payloads. Component
-interaction callbacks remain future work.
+message, and return them through REST and gateway payloads. Component clicks can
+be created through the native `/channels/{channel_id}/component-interactions`
+endpoint and dispatched to compatible gateway sessions as interaction type `3`.
 
 ## Enterprise OIDC
 
@@ -437,7 +439,9 @@ heartbeats, and dispatches MESSAGE_CREATE for messages visible to the bot user.
 registers a space-scoped chat input command for the current bot application.
 `POST /channels/{channel_id}/command-interactions` creates a local interaction
 for a visible command and dispatches `INTERACTION_CREATE` to compatible gateway
-sessions. Bots respond through
+sessions. `POST /channels/{channel_id}/component-interactions` creates a local
+message component interaction for a clicked persisted `custom_id` and dispatches
+Discord-shaped `INTERACTION_CREATE` type `3`. Bots respond through
 `POST /api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback`
 with callback type `4` to post a bot-authored channel message.
 

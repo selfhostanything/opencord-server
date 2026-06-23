@@ -257,6 +257,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             post(command_controller::create_channel_interaction),
         )
         .route(
+            "/channels/{channel_id}/component-interactions",
+            post(command_controller::create_component_interaction),
+        )
+        .route(
             "/channels/{channel_id}/messages",
             post(message_controller::create).get(message_controller::list),
         )

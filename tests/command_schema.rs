@@ -33,3 +33,29 @@ fn command_schema_migration_defines_application_commands_and_interactions() {
     assert!(migrator.contains("mod m20260623061000_commands;"));
     assert!(migrator.contains("Box::new(m20260623061000_commands::Migration)"));
 }
+
+#[test]
+fn component_interactions_migration_extends_interaction_schema() {
+    let migration = repo_file("src/db/migrations/m20260623065000_component_interactions.rs");
+
+    for expected in [
+        "ADD COLUMN IF NOT EXISTS interaction_type integer NOT NULL DEFAULT 2",
+        "ADD COLUMN IF NOT EXISTS message_id uuid NULL REFERENCES messages(id) ON DELETE CASCADE",
+        "ADD COLUMN IF NOT EXISTS custom_id text NULL",
+        "ADD COLUMN IF NOT EXISTS component_type integer NULL",
+        "ALTER COLUMN command_id DROP NOT NULL",
+        "CONSTRAINT command_interactions_type_check",
+        "interaction_type = 3",
+        "CREATE INDEX IF NOT EXISTS idx_command_interactions_message",
+        "CREATE INDEX IF NOT EXISTS idx_command_interactions_application_type",
+    ] {
+        assert!(
+            migration.contains(expected),
+            "component interaction migration should contain {expected}"
+        );
+    }
+
+    let migrator = repo_file("src/db/migrations/mod.rs");
+    assert!(migrator.contains("mod m20260623065000_component_interactions;"));
+    assert!(migrator.contains("Box::new(m20260623065000_component_interactions::Migration)"));
+}

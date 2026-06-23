@@ -8,6 +8,9 @@ use uuid::Uuid;
 use crate::domain::bot::AuthenticatedBot;
 use crate::domain::ids;
 
+pub const INTERACTION_TYPE_APPLICATION_COMMAND: i32 = 2;
+pub const INTERACTION_TYPE_MESSAGE_COMPONENT: i32 = 3;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApplicationCommand {
     pub id: Uuid,
@@ -31,12 +34,16 @@ pub struct CommandInteraction {
     pub organization_id: Uuid,
     pub space_id: Uuid,
     pub channel_id: Uuid,
-    pub command_id: Uuid,
+    pub interaction_type: i32,
+    pub command_id: Option<Uuid>,
+    pub message_id: Option<Uuid>,
     pub invoking_user_id: Uuid,
     pub token_hash: String,
     pub token_last_four: String,
     pub status: String,
     pub options: Value,
+    pub custom_id: Option<String>,
+    pub component_type: Option<i32>,
     pub created_at: String,
     pub responded_at: Option<String>,
 }
@@ -65,6 +72,18 @@ pub struct CreateCommandInteractionInput {
     pub channel_id: Uuid,
     pub invoking_user_id: Uuid,
     pub options: Option<Value>,
+}
+
+#[derive(Debug)]
+pub struct CreateComponentInteractionInput {
+    pub application_id: Uuid,
+    pub organization_id: Uuid,
+    pub space_id: Uuid,
+    pub channel_id: Uuid,
+    pub message_id: Uuid,
+    pub invoking_user_id: Uuid,
+    pub custom_id: String,
+    pub component_type: i32,
 }
 
 #[derive(Debug)]
@@ -189,12 +208,47 @@ impl CommandService {
             organization_id: input.organization_id,
             space_id: input.space_id,
             channel_id: input.channel_id,
-            command_id: command.id,
+            interaction_type: INTERACTION_TYPE_APPLICATION_COMMAND,
+            command_id: Some(command.id),
+            message_id: None,
             invoking_user_id: input.invoking_user_id,
             token_hash: hash_interaction_token(&token),
             token_last_four: token_last_four(&token),
             status: "pending".to_owned(),
             options: normalize_interaction_options(input.options)?,
+            custom_id: None,
+            component_type: None,
+            created_at: now,
+            responded_at: None,
+        };
+
+        self.store.create_interaction(interaction.clone()).await?;
+
+        Ok(CommandInteractionCreated { interaction, token })
+    }
+
+    pub async fn create_component_interaction(
+        &self,
+        input: CreateComponentInteractionInput,
+    ) -> Result<CommandInteractionCreated, CommandError> {
+        let token = generate_interaction_token();
+        let now = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+        let interaction = CommandInteraction {
+            id: ids::new_uuid_v7(),
+            application_id: input.application_id,
+            organization_id: input.organization_id,
+            space_id: input.space_id,
+            channel_id: input.channel_id,
+            interaction_type: INTERACTION_TYPE_MESSAGE_COMPONENT,
+            command_id: None,
+            message_id: Some(input.message_id),
+            invoking_user_id: input.invoking_user_id,
+            token_hash: hash_interaction_token(&token),
+            token_last_four: token_last_four(&token),
+            status: "pending".to_owned(),
+            options: Value::Array(Vec::new()),
+            custom_id: Some(normalize_component_custom_id(input.custom_id)?),
+            component_type: Some(normalize_component_type(input.component_type)?),
             created_at: now,
             responded_at: None,
         };
@@ -298,6 +352,26 @@ fn normalize_interaction_options(options: Option<Value>) -> Result<Value, Comman
         Err(CommandError::InvalidInput(
             "interaction options must be an array",
         ))
+    }
+}
+
+fn normalize_component_custom_id(custom_id: String) -> Result<String, CommandError> {
+    let custom_id = custom_id.trim().to_owned();
+    if (1..=100).contains(&custom_id.len()) {
+        Ok(custom_id)
+    } else {
+        Err(CommandError::InvalidInput(
+            "component custom_id must be 1 to 100 characters",
+        ))
+    }
+}
+
+fn normalize_component_type(component_type: i32) -> Result<i32, CommandError> {
+    match component_type {
+        2..=8 => Ok(component_type),
+        _ => Err(CommandError::InvalidInput(
+            "component type must be a Discord message component type",
+        )),
     }
 }
 

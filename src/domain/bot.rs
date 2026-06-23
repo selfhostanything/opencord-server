@@ -121,6 +121,10 @@ pub trait BotStore: Send + Sync {
         &self,
         application_id: Uuid,
     ) -> Result<Option<BotApplication>, BotError>;
+    async fn get_application_by_bot_user_id(
+        &self,
+        bot_user_id: Uuid,
+    ) -> Result<Option<BotApplication>, BotError>;
     async fn list_applications(
         &self,
         organization_id: Uuid,
@@ -196,6 +200,24 @@ impl BotService {
         let application = self
             .store
             .get_application(application_id)
+            .await?
+            .ok_or(BotError::NotFound)?;
+
+        if application.organization_id == organization_id && application.status == "active" {
+            Ok(application)
+        } else {
+            Err(BotError::NotFound)
+        }
+    }
+
+    pub async fn application_for_bot_user(
+        &self,
+        bot_user_id: Uuid,
+        organization_id: Uuid,
+    ) -> Result<BotApplication, BotError> {
+        let application = self
+            .store
+            .get_application_by_bot_user_id(bot_user_id)
             .await?
             .ok_or(BotError::NotFound)?;
 

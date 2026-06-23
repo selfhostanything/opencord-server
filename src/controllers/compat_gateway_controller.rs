@@ -6,6 +6,9 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::domain::bot::AuthenticatedBot;
+use crate::domain::command::{
+    INTERACTION_TYPE_APPLICATION_COMMAND, INTERACTION_TYPE_MESSAGE_COMPONENT,
+};
 use crate::domain::ids;
 use crate::domain::permission::Permission;
 use crate::domain::realtime::RealtimeEvent;
@@ -485,12 +488,16 @@ fn compat_interaction_from_event(
     if application_id != current_bot.application_id.to_string() {
         return None;
     }
-    let command = event.data.get("command")?;
+    let interaction_type = interaction
+        .get("type")
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .unwrap_or(INTERACTION_TYPE_APPLICATION_COMMAND);
 
-    Some(json!({
+    let mut payload = json!({
         "id": interaction.get("id")?.as_str()?,
         "application_id": application_id,
-        "type": 2,
+        "type": interaction_type,
         "token": interaction.get("token")?.as_str()?,
         "guild_id": interaction.get("space_id")?.as_str()?,
         "channel_id": interaction.get("channel_id")?.as_str()?,
@@ -498,17 +505,46 @@ fn compat_interaction_from_event(
             "user": {
                 "id": interaction.get("invoking_user_id")?.as_str()?
             }
-        },
-        "data": {
-            "id": command.get("id")?.as_str()?,
-            "name": command.get("name")?.as_str()?,
-            "type": command.get("type")?.as_i64().unwrap_or(1),
-            "options": interaction
-                .get("options")
-                .cloned()
-                .unwrap_or_else(|| json!([]))
         }
-    }))
+    });
+
+    let object = payload.as_object_mut()?;
+
+    match interaction_type {
+        INTERACTION_TYPE_APPLICATION_COMMAND => {
+            let command = event.data.get("command")?;
+            object.insert(
+                "data".to_owned(),
+                json!({
+                "id": command.get("id")?.as_str()?,
+                "name": command.get("name")?.as_str()?,
+                "type": command.get("type")?.as_i64().unwrap_or(1),
+                "options": interaction
+                    .get("options")
+                    .cloned()
+                    .unwrap_or_else(|| json!([]))
+                }),
+            );
+        }
+        INTERACTION_TYPE_MESSAGE_COMPONENT => {
+            let message = event.data.get("message")?;
+            object.insert(
+                "message".to_owned(),
+                compat_message_from_value(message, current_bot)
+                    .map(|message| serde_json::to_value(message).unwrap_or_else(|_| json!({})))?,
+            );
+            object.insert(
+                "data".to_owned(),
+                json!({
+                    "custom_id": interaction.get("custom_id")?.as_str()?,
+                    "component_type": interaction.get("component_type")?.as_i64()?
+                }),
+            );
+        }
+        _ => return None,
+    }
+
+    Some(payload)
 }
 
 async fn send_dispatch<T: serde::Serialize>(

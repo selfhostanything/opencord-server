@@ -92,6 +92,28 @@ impl BotStore for PostgresBotStore {
         row.map(application_from_row).transpose()
     }
 
+    async fn get_application_by_bot_user_id(
+        &self,
+        bot_user_id: Uuid,
+    ) -> Result<Option<BotApplication>, BotError> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT id::text, organization_id::text, bot_user_id::text,
+                       created_by_user_id::text, name, description, status
+                FROM bot_applications
+                WHERE bot_user_id = $1::uuid
+                "#,
+                vec![Value::from(bot_user_id.to_string())],
+            ))
+            .await
+            .map_err(|_| BotError::StoreUnavailable)?;
+
+        row.map(application_from_row).transpose()
+    }
+
     async fn list_applications(
         &self,
         organization_id: Uuid,

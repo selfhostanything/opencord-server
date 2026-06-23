@@ -623,6 +623,41 @@ async fn create_interaction(
         .to_owned()
 }
 
+async fn create_component_interaction(
+    app: &Router,
+    token: &str,
+    channel_id: &str,
+    message_id: &str,
+    custom_id: &str,
+) -> (String, String) {
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/component-interactions"),
+            token,
+            json!({
+                "message_id": message_id,
+                "custom_id": custom_id
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = response_json(response).await;
+    let interaction = &body["interaction"];
+    assert_eq!(interaction["type"], 3);
+    assert_eq!(interaction["message_id"], message_id);
+    assert_eq!(interaction["custom_id"], custom_id);
+    assert_eq!(interaction["component_type"], 2);
+
+    (
+        interaction["id"].as_str().unwrap().to_owned(),
+        interaction["token"].as_str().unwrap().to_owned(),
+    )
+}
+
 async fn next_json(socket: &mut TestWebSocket) -> Value {
     while let Some(message) = socket.next().await {
         let message = message.expect("websocket message");
@@ -1261,6 +1296,133 @@ async fn compat_gateway_dispatches_interaction_create_for_visible_command() {
     assert_eq!(event["d"]["data"]["type"], 1);
     assert_eq!(event["d"]["data"]["options"][0]["name"], "version");
     assert_eq!(event["d"]["data"]["options"][0]["value"], "1.2.3");
+}
+
+#[tokio::test]
+async fn compat_gateway_dispatches_component_interaction_and_callback_response() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, owner_id) =
+        register(&app, "compat-gateway-component-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "component-interaction").await;
+    let (application_id, bot_token, bot_user_id) =
+        create_bot_with_application(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let component = json!({
+        "type": 1,
+        "components": [
+            {
+                "type": 2,
+                "style": 1,
+                "label": "Approve",
+                "custom_id": "deploy:approve"
+            }
+        ]
+    });
+    let message_id =
+        send_compat_component_message(&app, &bot_token, &channel_id, component.clone()).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {
+                        "os": "test",
+                        "browser": "opencord-test",
+                        "device": "opencord-test"
+                    }
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+
+    let (interaction_id, interaction_token) = create_component_interaction(
+        &app,
+        &owner_token,
+        &channel_id,
+        &message_id,
+        "deploy:approve",
+    )
+    .await;
+    let event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("component interaction dispatch");
+
+    assert_eq!(event["op"], 0);
+    assert_eq!(event["t"], "INTERACTION_CREATE");
+    assert_eq!(event["s"], 2);
+    assert_eq!(event["d"]["id"], interaction_id);
+    assert_eq!(event["d"]["application_id"], application_id);
+    assert_eq!(event["d"]["type"], 3);
+    assert_eq!(event["d"]["guild_id"], space_id);
+    assert_eq!(event["d"]["channel_id"], channel_id);
+    assert_eq!(event["d"]["member"]["user"]["id"], owner_id);
+    assert_eq!(event["d"]["token"], interaction_token);
+    assert_eq!(event["d"]["data"]["custom_id"], "deploy:approve");
+    assert_eq!(event["d"]["data"]["component_type"], 2);
+    assert_eq!(event["d"]["message"]["id"], message_id);
+    assert_eq!(event["d"]["message"]["components"], json!([component]));
+
+    let callback = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &format!(
+                "/api/compat/discord/v10/interactions/{interaction_id}/{interaction_token}/callback"
+            ),
+            json!({
+                "type": 4,
+                "data": {
+                    "content": "Approved deployment"
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(callback.status(), StatusCode::NO_CONTENT);
+
+    let messages = app
+        .clone()
+        .oneshot(bot_request(
+            Method::GET,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(messages.status(), StatusCode::OK);
+    let messages = response_json(messages).await;
+    let response_message = messages
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["content"] == "Approved deployment")
+        .expect("callback response message");
+    assert_eq!(response_message["author"]["id"], bot_user_id);
+    assert_eq!(response_message["author"]["bot"], true);
 }
 
 #[tokio::test]

@@ -91,13 +91,15 @@ impl CommandStore for PostgresCommandStore {
                 DatabaseBackend::Postgres,
                 r#"
                 INSERT INTO command_interactions (
-                    id, application_id, organization_id, space_id, channel_id, command_id,
-                    invoking_user_id, token_hash, token_last_four, status, options,
+                    id, application_id, organization_id, space_id, channel_id,
+                    interaction_type, command_id, message_id, invoking_user_id,
+                    token_hash, token_last_four, status, options, custom_id, component_type,
                     created_at, responded_at
                 )
                 VALUES (
-                    $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::uuid,
-                    $7::uuid, $8, $9, $10, $11::jsonb, $12::timestamptz, $13::timestamptz
+                    $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
+                    $6, $7::uuid, $8::uuid, $9::uuid, $10, $11, $12, $13::jsonb,
+                    $14, $15, $16::timestamptz, $17::timestamptz
                 )
                 "#,
                 interaction_values(&interaction),
@@ -150,9 +152,10 @@ impl CommandStore for PostgresCommandStore {
                 WHERE id = $1::uuid
                   AND status = 'pending'
                 RETURNING id::text, application_id::text, organization_id::text,
-                          space_id::text, channel_id::text, command_id::text,
-                          invoking_user_id::text, token_hash, token_last_four, status,
-                          options::text, created_at::text, responded_at::text
+                          space_id::text, channel_id::text, interaction_type,
+                          command_id::text, message_id::text, invoking_user_id::text,
+                          token_hash, token_last_four, status, options::text,
+                          custom_id, component_type, created_at::text, responded_at::text
                 "#,
                 vec![
                     Value::from(interaction_id.to_string()),
@@ -184,9 +187,10 @@ fn command_interaction_select_sql(where_clause: &str) -> String {
     format!(
         r#"
         SELECT id::text, application_id::text, organization_id::text,
-               space_id::text, channel_id::text, command_id::text,
-               invoking_user_id::text, token_hash, token_last_four, status,
-               options::text, created_at::text, responded_at::text
+               space_id::text, channel_id::text, interaction_type,
+               command_id::text, message_id::text, invoking_user_id::text,
+               token_hash, token_last_four, status, options::text, custom_id,
+               component_type, created_at::text, responded_at::text
         FROM command_interactions
         {where_clause}
         "#
@@ -219,12 +223,20 @@ fn interaction_from_row(row: sea_orm::QueryResult) -> Result<CommandInteraction,
         organization_id: parse_uuid(&row_string(&row, "organization_id")?)?,
         space_id: parse_uuid(&row_string(&row, "space_id")?)?,
         channel_id: parse_uuid(&row_string(&row, "channel_id")?)?,
-        command_id: parse_uuid(&row_string(&row, "command_id")?)?,
+        interaction_type: row
+            .try_get::<i32>("", "interaction_type")
+            .map_err(|_| CommandError::StoreUnavailable)?,
+        command_id: parse_optional_uuid(row_optional_string(&row, "command_id")?)?,
+        message_id: parse_optional_uuid(row_optional_string(&row, "message_id")?)?,
         invoking_user_id: parse_uuid(&row_string(&row, "invoking_user_id")?)?,
         token_hash: row_string(&row, "token_hash")?,
         token_last_four: row_string(&row, "token_last_four")?,
         status: row_string(&row, "status")?,
         options: parse_json(&row_string(&row, "options")?)?,
+        custom_id: row_optional_string(&row, "custom_id")?,
+        component_type: row
+            .try_get::<Option<i32>>("", "component_type")
+            .map_err(|_| CommandError::StoreUnavailable)?,
         created_at: row_string(&row, "created_at")?,
         responded_at: row
             .try_get::<Option<String>>("", "responded_at")
@@ -239,12 +251,16 @@ fn interaction_values(interaction: &CommandInteraction) -> Vec<Value> {
         Value::from(interaction.organization_id.to_string()),
         Value::from(interaction.space_id.to_string()),
         Value::from(interaction.channel_id.to_string()),
-        Value::from(interaction.command_id.to_string()),
+        Value::from(interaction.interaction_type),
+        Value::from(interaction.command_id.map(|id| id.to_string())),
+        Value::from(interaction.message_id.map(|id| id.to_string())),
         Value::from(interaction.invoking_user_id.to_string()),
         Value::from(interaction.token_hash.clone()),
         Value::from(interaction.token_last_four.clone()),
         Value::from(interaction.status.clone()),
         Value::from(interaction.options.to_string()),
+        Value::from(interaction.custom_id.clone()),
+        Value::from(interaction.component_type),
         Value::from(interaction.created_at.clone()),
         Value::from(interaction.responded_at.clone()),
     ]
@@ -255,8 +271,20 @@ fn row_string(row: &sea_orm::QueryResult, column: &str) -> Result<String, Comman
         .map_err(|_| CommandError::StoreUnavailable)
 }
 
+fn row_optional_string(
+    row: &sea_orm::QueryResult,
+    column: &str,
+) -> Result<Option<String>, CommandError> {
+    row.try_get::<Option<String>>("", column)
+        .map_err(|_| CommandError::StoreUnavailable)
+}
+
 fn parse_uuid(value: &str) -> Result<Uuid, CommandError> {
     Uuid::parse_str(value).map_err(|_| CommandError::StoreUnavailable)
+}
+
+fn parse_optional_uuid(value: Option<String>) -> Result<Option<Uuid>, CommandError> {
+    value.as_deref().map(parse_uuid).transpose()
 }
 
 fn parse_json(value: &str) -> Result<serde_json::Value, CommandError> {
