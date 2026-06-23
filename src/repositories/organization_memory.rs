@@ -75,6 +75,9 @@ impl OrganizationStore for MemoryOrganizationStore {
                         slug: organization.slug.clone(),
                         name: organization.name.clone(),
                         role: member.role.clone(),
+                        plan: organization.plan.clone(),
+                        deployment_mode: organization.deployment_mode.clone(),
+                        primary_region: organization.primary_region.clone(),
                     })
             })
             .collect::<Vec<_>>();
@@ -109,6 +112,9 @@ impl OrganizationStore for MemoryOrganizationStore {
                 slug: organization.slug.clone(),
                 name: organization.name.clone(),
                 role: member.role.clone(),
+                plan: organization.plan.clone(),
+                deployment_mode: organization.deployment_mode.clone(),
+                primary_region: organization.primary_region.clone(),
             }))
     }
 

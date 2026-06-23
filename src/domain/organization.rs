@@ -9,6 +9,9 @@ pub struct StoredOrganization {
     pub id: Uuid,
     pub slug: String,
     pub name: String,
+    pub plan: String,
+    pub deployment_mode: String,
+    pub primary_region: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -25,6 +28,15 @@ pub struct OrganizationMembership {
     pub slug: String,
     pub name: String,
     pub role: String,
+    pub plan: String,
+    pub deployment_mode: String,
+    pub primary_region: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TenantProvision {
+    pub organization: OrganizationMembership,
+    pub owner_user_id: Uuid,
 }
 
 #[derive(Debug)]
@@ -104,12 +116,49 @@ impl OrganizationService {
         owner: AuthUser,
         name: String,
     ) -> Result<OrganizationMembership, OrganizationError> {
+        self.create_with_options(owner, name, "free", "self_hosted", "local")
+            .await
+    }
+
+    pub async fn provision_tenant(
+        &self,
+        owner: AuthUser,
+        name: String,
+        plan: String,
+        deployment_mode: String,
+        primary_region: String,
+    ) -> Result<TenantProvision, OrganizationError> {
+        let owner_user_id = owner.id;
+        let plan = normalize_plan(plan)?;
+        let deployment_mode = normalize_deployment_mode(deployment_mode)?;
+        let primary_region = normalize_region(primary_region)?;
+        let organization = self
+            .create_with_options(owner, name, &plan, &deployment_mode, &primary_region)
+            .await?;
+
+        Ok(TenantProvision {
+            organization,
+            owner_user_id,
+        })
+    }
+
+    async fn create_with_options(
+        &self,
+        owner: AuthUser,
+        name: String,
+        plan: &str,
+        deployment_mode: &str,
+        primary_region: &str,
+    ) -> Result<OrganizationMembership, OrganizationError> {
         let name = normalize_name(name)?;
         let slug = slugify(&name)?;
         let organization = StoredOrganization {
             id: ids::new_uuid_v7(),
             slug,
             name,
+            plan: plan.to_owned(),
+            deployment_mode: deployment_mode.to_owned(),
+            primary_region: primary_region.to_owned(),
         };
         let owner_member = StoredOrganizationMember {
             organization_id: organization.id,
@@ -127,6 +176,9 @@ impl OrganizationService {
             slug: organization.slug,
             name: organization.name,
             role: "owner".to_owned(),
+            plan: organization.plan,
+            deployment_mode: organization.deployment_mode,
+            primary_region: organization.primary_region,
         })
     }
 
@@ -209,5 +261,38 @@ fn normalize_member_role(role: String) -> Result<String, OrganizationError> {
         _ => Err(OrganizationError::InvalidInput(
             "organization member role must be owner, admin, member, or guest",
         )),
+    }
+}
+
+fn normalize_plan(plan: String) -> Result<String, OrganizationError> {
+    match plan.trim().to_ascii_lowercase().as_str() {
+        "free" | "team" | "business" | "enterprise" => Ok(plan.trim().to_ascii_lowercase()),
+        _ => Err(OrganizationError::InvalidInput(
+            "tenant plan must be free, team, business, or enterprise",
+        )),
+    }
+}
+
+fn normalize_deployment_mode(deployment_mode: String) -> Result<String, OrganizationError> {
+    match deployment_mode.trim().to_ascii_lowercase().as_str() {
+        "self_hosted" | "cloud" => Ok(deployment_mode.trim().to_ascii_lowercase()),
+        _ => Err(OrganizationError::InvalidInput(
+            "tenant deployment_mode must be self_hosted or cloud",
+        )),
+    }
+}
+
+fn normalize_region(region: String) -> Result<String, OrganizationError> {
+    let region = region.trim().to_ascii_lowercase();
+    if (2..=64).contains(&region.len())
+        && region
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        Ok(region)
+    } else {
+        Err(OrganizationError::InvalidInput(
+            "tenant primary_region must be 2 to 64 lowercase letters, numbers, or hyphens",
+        ))
     }
 }

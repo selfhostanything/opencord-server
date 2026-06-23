@@ -10,7 +10,7 @@ use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
 use crate::models::organization::{
     CreateOrganizationRequest, OrganizationListResponse, OrganizationMembershipResponse,
-    OrganizationResponse,
+    OrganizationResponse, ProvisionTenantRequest, TenantProvisionResponse,
 };
 use crate::state::AppState;
 
@@ -26,6 +26,30 @@ pub async fn create(
     Ok((
         StatusCode::CREATED,
         Json(OrganizationMembershipResponse::from(organization)),
+    ))
+}
+
+pub async fn provision_tenant(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<ProvisionTenantRequest>,
+) -> Result<impl IntoResponse, OrganizationApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let tenant = state
+        .organizations
+        .provision_tenant(
+            user,
+            request.name,
+            request.plan,
+            request.deployment_mode,
+            request.primary_region,
+        )
+        .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(TenantProvisionResponse::from(tenant)),
     ))
 }
 

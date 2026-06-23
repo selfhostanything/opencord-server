@@ -89,6 +89,7 @@ POST /auth/register
 POST /auth/login
 POST /auth/logout
 GET /me
+POST /cloud/tenants
 GET /calendar/accounts
 POST /calendar/accounts/caldav
 POST /calendar/accounts/google
@@ -133,6 +134,13 @@ Auth endpoints use bearer session tokens:
 ```text
 Authorization: Bearer <session token>
 ```
+
+## Cloud Tenants
+
+`POST /cloud/tenants` provisions an organization and owner membership in one
+store transaction while setting the initial `plan`, `deployment_mode`, and
+`primary_region`. Normal self-hosted organization creation remains available at
+`POST /organizations` and defaults to the `free` plan in `self_hosted` mode.
 
 ## Worker
 

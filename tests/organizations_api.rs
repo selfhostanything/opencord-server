@@ -39,6 +39,10 @@ fn bearer_request(method: Method, uri: &str, token: &str, body: Value) -> Reques
 }
 
 async fn register_token(app: &axum::Router, email: &str) -> String {
+    register_user(app, email).await.0
+}
+
+async fn register_user(app: &axum::Router, email: &str) -> (String, String) {
     let response = app
         .clone()
         .oneshot(json_request(
@@ -54,10 +58,11 @@ async fn register_token(app: &axum::Router, email: &str) -> String {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::CREATED);
-    response_json(response).await["session"]["token"]
-        .as_str()
-        .unwrap()
-        .to_owned()
+    let body = response_json(response).await;
+    (
+        body["session"]["token"].as_str().unwrap().to_owned(),
+        body["user"]["id"].as_str().unwrap().to_owned(),
+    )
 }
 
 #[tokio::test]
@@ -117,6 +122,79 @@ async fn user_can_create_list_and_get_organization() {
     assert_eq!(get.status(), StatusCode::OK);
     let body = response_json(get).await;
     assert_eq!(body["organization"]["id"], organization_id);
+}
+
+#[tokio::test]
+async fn cloud_can_provision_tenant_with_plan_region_and_owner_atomically() {
+    let app = test_app();
+    let (token, user_id) = register_user(&app, "tenant-owner@example.com").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            "/cloud/tenants",
+            &token,
+            json!({
+                "name": "Acme Cloud",
+                "plan": "team",
+                "deployment_mode": "cloud",
+                "primary_region": "vultr-sgp"
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let body = response_json(created).await;
+    let tenant = &body["tenant"];
+    let organization_id = tenant["organization_id"].as_str().unwrap();
+    assert_eq!(
+        uuid::Uuid::parse_str(organization_id)
+            .unwrap()
+            .get_version_num(),
+        7
+    );
+    assert_eq!(tenant["owner_user_id"], user_id);
+    assert_eq!(tenant["slug"], "acme-cloud");
+    assert_eq!(tenant["name"], "Acme Cloud");
+    assert_eq!(tenant["plan"], "team");
+    assert_eq!(tenant["deployment_mode"], "cloud");
+    assert_eq!(tenant["primary_region"], "vultr-sgp");
+
+    let listed = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            "/organizations",
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert_eq!(body["organizations"][0]["id"], organization_id);
+    assert_eq!(body["organizations"][0]["plan"], "team");
+    assert_eq!(body["organizations"][0]["deployment_mode"], "cloud");
+    assert_eq!(body["organizations"][0]["primary_region"], "vultr-sgp");
+
+    let duplicate = app
+        .oneshot(bearer_request(
+            Method::POST,
+            "/cloud/tenants",
+            &token,
+            json!({
+                "name": "Acme Cloud",
+                "plan": "enterprise",
+                "deployment_mode": "cloud",
+                "primary_region": "vultr-ewr"
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(duplicate.status(), StatusCode::CONFLICT);
 }
 
 #[tokio::test]

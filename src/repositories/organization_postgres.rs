@@ -36,13 +36,18 @@ impl OrganizationStore for PostgresOrganizationStore {
             .execute(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
-                INSERT INTO organizations (id, slug, name)
-                VALUES ($1::uuid, $2, $3)
+                INSERT INTO organizations (
+                    id, slug, name, plan, deployment_mode, primary_region
+                )
+                VALUES ($1::uuid, $2, $3, $4, $5, $6)
                 "#,
                 values(vec![
                     organization.id.to_string(),
                     organization.slug,
                     organization.name,
+                    organization.plan,
+                    organization.deployment_mode,
+                    organization.primary_region,
                 ]),
             ))
             .await;
@@ -86,7 +91,8 @@ impl OrganizationStore for PostgresOrganizationStore {
                 DatabaseBackend::Postgres,
                 r#"
                 SELECT organizations.id::text, organizations.slug, organizations.name,
-                       organization_members.role
+                       organizations.plan, organizations.deployment_mode,
+                       organizations.primary_region, organization_members.role
                 FROM organization_members
                 INNER JOIN organizations
                     ON organizations.id = organization_members.organization_id
@@ -116,7 +122,8 @@ impl OrganizationStore for PostgresOrganizationStore {
                 DatabaseBackend::Postgres,
                 r#"
                 SELECT organizations.id::text, organizations.slug, organizations.name,
-                       organization_members.role
+                       organizations.plan, organizations.deployment_mode,
+                       organizations.primary_region, organization_members.role
                 FROM organization_members
                 INNER JOIN organizations
                     ON organizations.id = organization_members.organization_id
@@ -178,6 +185,15 @@ fn organization_from_row(
             .map_err(|_| OrganizationError::StoreUnavailable)?,
         role: row
             .try_get::<String>("", "role")
+            .map_err(|_| OrganizationError::StoreUnavailable)?,
+        plan: row
+            .try_get::<String>("", "plan")
+            .map_err(|_| OrganizationError::StoreUnavailable)?,
+        deployment_mode: row
+            .try_get::<String>("", "deployment_mode")
+            .map_err(|_| OrganizationError::StoreUnavailable)?,
+        primary_region: row
+            .try_get::<String>("", "primary_region")
             .map_err(|_| OrganizationError::StoreUnavailable)?,
     })
 }

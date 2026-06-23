@@ -142,6 +142,33 @@ paths:
                 $ref: "#/components/schemas/MeResponse"
         "401":
           description: Missing or invalid bearer session
+  /cloud/tenants:
+    post:
+      summary: Provision a cloud tenant organization
+      description: >
+        Creates the organization and owner membership atomically while setting
+        plan, deployment mode, and primary region for cloud control-plane use.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProvisionTenantRequest"
+      responses:
+        "201":
+          description: Provisioned cloud tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantProvisionResponse"
+        "400":
+          description: Invalid tenant name, plan, deployment mode, or region
+        "401":
+          description: Missing or invalid bearer session
+        "409":
+          description: Organization slug already exists
   /calendar/accounts:
     get:
       summary: List connected calendar accounts for the current user
@@ -1437,6 +1464,34 @@ components:
           type: string
           minLength: 2
           maxLength: 100
+    ProvisionTenantRequest:
+      type: object
+      required:
+        - name
+        - plan
+        - deployment_mode
+        - primary_region
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        plan:
+          type: string
+          enum:
+            - free
+            - team
+            - business
+            - enterprise
+        deployment_mode:
+          type: string
+          enum:
+            - self_hosted
+            - cloud
+        primary_region:
+          type: string
+          minLength: 2
+          maxLength: 64
     Organization:
       type: object
       required:
@@ -1444,6 +1499,9 @@ components:
         - slug
         - name
         - role
+        - plan
+        - deployment_mode
+        - primary_region
       properties:
         id:
           type: string
@@ -1459,6 +1517,62 @@ components:
             - admin
             - member
             - guest
+        plan:
+          type: string
+          enum:
+            - free
+            - team
+            - business
+            - enterprise
+        deployment_mode:
+          type: string
+          enum:
+            - self_hosted
+            - cloud
+        primary_region:
+          type: string
+    Tenant:
+      type: object
+      required:
+        - organization_id
+        - owner_user_id
+        - slug
+        - name
+        - plan
+        - deployment_mode
+        - primary_region
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        owner_user_id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        name:
+          type: string
+        plan:
+          type: string
+          enum:
+            - free
+            - team
+            - business
+            - enterprise
+        deployment_mode:
+          type: string
+          enum:
+            - self_hosted
+            - cloud
+        primary_region:
+          type: string
+    TenantProvisionResponse:
+      type: object
+      required:
+        - tenant
+      properties:
+        tenant:
+          $ref: "#/components/schemas/Tenant"
     Membership:
       type: object
       required:

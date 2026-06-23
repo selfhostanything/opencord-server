@@ -34,6 +34,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route("/auth/logout", post(auth_controller::logout))
         .route("/me", get(auth_controller::me))
         .route(
+            "/cloud/tenants",
+            post(organization_controller::provision_tenant),
+        )
+        .route(
             "/calendar/accounts",
             get(calendar_controller::list_accounts),
         )
