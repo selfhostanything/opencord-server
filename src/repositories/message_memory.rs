@@ -108,4 +108,42 @@ impl MessageStore for MemoryMessageStore {
         state.messages_by_id.insert(message.id, message);
         Ok(())
     }
+
+    async fn purge_for_retention(
+        &self,
+        organization_id: Uuid,
+        created_before: Option<String>,
+        deleted_before: Option<String>,
+        dry_run: bool,
+    ) -> Result<usize, MessageError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| MessageError::StoreUnavailable)?;
+        let expired_ids = state
+            .messages_by_id
+            .values()
+            .filter(|message| message.organization_id == organization_id)
+            .filter(|message| {
+                created_before
+                    .as_deref()
+                    .is_some_and(|cutoff| message.created_at.as_str() < cutoff)
+                    || deleted_before.as_deref().is_some_and(|cutoff| {
+                        message
+                            .deleted_at
+                            .as_deref()
+                            .is_some_and(|deleted_at| deleted_at < cutoff)
+                    })
+            })
+            .map(|message| message.id)
+            .collect::<Vec<_>>();
+
+        if !dry_run {
+            for message_id in &expired_ids {
+                state.messages_by_id.remove(message_id);
+            }
+        }
+
+        Ok(expired_ids.len())
+    }
 }

@@ -596,6 +596,67 @@ paths:
           description: Organization admin permission is required
         "404":
           description: Organization not found for this user
+  /organizations/{organization_id}/retention-policy:
+    get:
+      summary: Return organization retention policy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Retention policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetentionPolicyEnvelope"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization or retention policy not found
+    put:
+      summary: Configure organization retention policy
+      description: >
+        Configures retention windows in days. Null values disable that specific
+        retention class. The worker defaults to dry-run mode until
+        `OPENCORD_RETENTION_DRY_RUN=false`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertRetentionPolicyRequest"
+      responses:
+        "200":
+          description: Stored retention policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RetentionPolicyEnvelope"
+        "400":
+          description: Invalid retention window
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization not found
   /organizations/{organization_id}/oidc:
     get:
       summary: Return OIDC provider settings for an organization
@@ -3400,6 +3461,76 @@ components:
       properties:
         export:
           $ref: "#/components/schemas/DataExport"
+    UpsertRetentionPolicyRequest:
+      type: object
+      properties:
+        messages_retain_days:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 3650
+        files_retain_days:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 3650
+        audit_logs_retain_days:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 3650
+        deleted_message_purge_days:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 3650
+    RetentionPolicy:
+      type: object
+      required:
+        - organization_id
+        - messages_retain_days
+        - files_retain_days
+        - audit_logs_retain_days
+        - deleted_message_purge_days
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        messages_retain_days:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 3650
+        files_retain_days:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 3650
+        audit_logs_retain_days:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 3650
+        deleted_message_purge_days:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+          maximum: 3650
+    RetentionPolicyEnvelope:
+      type: object
+      required:
+        - policy
+      properties:
+        policy:
+          $ref: "#/components/schemas/RetentionPolicy"
     CreateChannelRequest:
       type: object
       required:

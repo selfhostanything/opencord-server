@@ -37,6 +37,8 @@ pub async fn capabilities() -> Json<CapabilitiesResponse> {
             "audit",
             "audit_export",
             "data_export",
+            "retention_policy",
+            "retention_worker",
             "push_tokens",
             "media_control",
             "voice_join",

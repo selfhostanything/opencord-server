@@ -107,6 +107,8 @@ GET /organizations/{organization_id}
 GET /organizations/{organization_id}/usage
 GET /organizations/{organization_id}/audit-events/export
 GET /organizations/{organization_id}/data-export
+GET /organizations/{organization_id}/retention-policy
+PUT /organizations/{organization_id}/retention-policy
 GET /organizations/{organization_id}/oidc
 PUT /organizations/{organization_id}/oidc
 POST /organizations/{organization_id}/scim/token
@@ -197,7 +199,19 @@ jobs with signed downloads remain future work.
 exports organization messages and a linked file manifest in JSON for
 organization owners/admins. The first implementation exports metadata and
 attachment download URLs synchronously; asynchronous export packaging, signed
-download archives, and retention policy integration remain future work.
+download archives, and export job audit events remain future work.
+
+## Retention
+
+`PUT /organizations/{organization_id}/retention-policy` lets an organization
+owner/admin configure message, file, audit-log, and deleted-message retention
+windows in days. `GET /organizations/{organization_id}/retention-policy` returns
+the stored policy.
+
+`opencord-worker` evaluates retention policies on a timer, records each
+retention run, and purges expired messages, files, and audit events when dry-run
+mode is disabled. Dry-run mode is enabled by default so operators can verify
+counts before destructive purges.
 
 ## Cloud Tenants
 
@@ -235,6 +249,8 @@ Local defaults:
 OPENCORD_WORKER_ADDR=0.0.0.0:8082
 OPENCORD_REMINDER_POLL_SECONDS=30
 OPENCORD_REMINDER_BATCH_SIZE=100
+OPENCORD_RETENTION_POLL_SECONDS=3600
+OPENCORD_RETENTION_DRY_RUN=true
 ```
 
 The current dispatcher logs in-app, push, and email reminder deliveries. SMTP,

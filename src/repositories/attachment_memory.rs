@@ -144,4 +144,36 @@ impl AttachmentStore for MemoryAttachmentStore {
             .map(|attachment| attachment.size_bytes)
             .sum())
     }
+
+    async fn purge_for_retention(
+        &self,
+        organization_id: Uuid,
+        created_before: Option<String>,
+        dry_run: bool,
+    ) -> Result<usize, AttachmentError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| AttachmentError::StoreUnavailable)?;
+        let expired_ids = state
+            .attachments_by_id
+            .values()
+            .filter(|attachment| attachment.organization_id == organization_id)
+            .filter(|attachment| {
+                created_before
+                    .as_deref()
+                    .is_some_and(|cutoff| attachment.created_at.as_str() < cutoff)
+            })
+            .map(|attachment| attachment.id)
+            .collect::<Vec<_>>();
+
+        if !dry_run {
+            for attachment_id in &expired_ids {
+                state.attachments_by_id.remove(attachment_id);
+                state.content_by_id.remove(attachment_id);
+            }
+        }
+
+        Ok(expired_ids.len())
+    }
 }

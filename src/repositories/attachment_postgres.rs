@@ -25,11 +25,12 @@ impl AttachmentStore for PostgresAttachmentStore {
                 r#"
                 INSERT INTO attachments (
                     id, organization_id, space_id, channel_id, message_id,
-                    uploader_user_id, file_name, content_type, size_bytes, status
+                    uploader_user_id, file_name, content_type, size_bytes, status,
+                    created_at
                 )
                 VALUES (
                     $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
-                    $6::uuid, $7, $8, $9, $10
+                    $6::uuid, $7, $8, $9, $10, $11::timestamptz
                 )
                 "#,
                 attachment_values(&attachment),
@@ -80,7 +81,7 @@ impl AttachmentStore for PostgresAttachmentStore {
                   AND message_id IS NULL
                 RETURNING id::text, organization_id::text, space_id::text, channel_id::text,
                           message_id::text, uploader_user_id::text, file_name, content_type,
-                          size_bytes, status
+                          size_bytes, status, created_at::text
                 "#,
                 vec![
                     Value::from(attachment.id.to_string()),
@@ -152,7 +153,7 @@ impl AttachmentStore for PostgresAttachmentStore {
                       AND status = 'uploaded'
                     RETURNING id::text, organization_id::text, space_id::text, channel_id::text,
                               message_id::text, uploader_user_id::text, file_name, content_type,
-                              size_bytes, status
+                              size_bytes, status, created_at::text
                     "#,
                     vec![
                         Value::from(attachment_id.to_string()),
@@ -231,6 +232,56 @@ impl AttachmentStore for PostgresAttachmentStore {
             .try_get::<i64>("", "stored_file_bytes")
             .map_err(|_| AttachmentError::StoreUnavailable)
     }
+
+    async fn purge_for_retention(
+        &self,
+        organization_id: Uuid,
+        created_before: Option<String>,
+        dry_run: bool,
+    ) -> Result<usize, AttachmentError> {
+        if created_before.is_none() {
+            return Ok(0);
+        }
+
+        let sql = if dry_run {
+            r#"
+            SELECT COUNT(*)::bigint AS purged_count
+            FROM attachments
+            WHERE organization_id = $1::uuid
+              AND created_at < $2::timestamptz
+            "#
+        } else {
+            r#"
+            WITH deleted AS (
+                DELETE FROM attachments
+                WHERE organization_id = $1::uuid
+                  AND created_at < $2::timestamptz
+                RETURNING id
+            )
+            SELECT COUNT(*)::bigint AS purged_count
+            FROM deleted
+            "#
+        };
+
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                sql,
+                vec![
+                    Value::from(organization_id.to_string()),
+                    Value::from(created_before),
+                ],
+            ))
+            .await
+            .map_err(|_| AttachmentError::StoreUnavailable)?;
+
+        let count = row
+            .ok_or(AttachmentError::StoreUnavailable)?
+            .try_get::<i64>("", "purged_count")
+            .map_err(|_| AttachmentError::StoreUnavailable)?;
+        Ok(count as usize)
+    }
 }
 
 fn attachment_select_sql(where_clause: &str) -> String {
@@ -238,7 +289,7 @@ fn attachment_select_sql(where_clause: &str) -> String {
         r#"
         SELECT id::text, organization_id::text, space_id::text, channel_id::text,
                message_id::text, uploader_user_id::text, file_name, content_type,
-               size_bytes, status
+               size_bytes, status, created_at::text
         FROM attachments
         {where_clause}
         "#
@@ -288,6 +339,9 @@ fn attachment_from_row(row: sea_orm::QueryResult) -> Result<Attachment, Attachme
             .try_get::<i64>("", "size_bytes")
             .map_err(|_| AttachmentError::StoreUnavailable)?,
         status: AttachmentStatus::parse(&status)?,
+        created_at: row
+            .try_get::<String>("", "created_at")
+            .map_err(|_| AttachmentError::StoreUnavailable)?,
     })
 }
 
@@ -307,5 +361,6 @@ fn attachment_values(attachment: &Attachment) -> Vec<Value> {
         Value::from(attachment.content_type.clone()),
         Value::from(attachment.size_bytes),
         Value::from(attachment.status.as_str()),
+        Value::from(attachment.created_at.clone()),
     ]
 }

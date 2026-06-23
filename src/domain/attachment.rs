@@ -1,4 +1,5 @@
 use axum::http::StatusCode;
+use chrono::{SecondsFormat, Utc};
 use uuid::Uuid;
 
 use crate::domain::ids;
@@ -18,6 +19,7 @@ pub struct Attachment {
     pub content_type: String,
     pub size_bytes: i64,
     pub status: AttachmentStatus,
+    pub created_at: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -125,6 +127,12 @@ pub trait AttachmentStore: Send + Sync {
         &self,
         organization_id: Uuid,
     ) -> Result<i64, AttachmentError>;
+    async fn purge_for_retention(
+        &self,
+        organization_id: Uuid,
+        created_before: Option<String>,
+        dry_run: bool,
+    ) -> Result<usize, AttachmentError>;
 }
 
 #[derive(Clone)]
@@ -152,6 +160,7 @@ impl AttachmentService {
             content_type: normalize_content_type(input.content_type)?,
             size_bytes: normalize_size(input.size_bytes)?,
             status: AttachmentStatus::Pending,
+            created_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
         };
 
         self.store.create_attachment(attachment.clone()).await?;

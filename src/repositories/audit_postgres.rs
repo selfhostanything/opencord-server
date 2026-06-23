@@ -92,6 +92,56 @@ impl AuditStore for PostgresAuditStore {
             .map(event_from_row)
             .collect::<Result<Vec<_>, _>>()
     }
+
+    async fn purge_for_retention(
+        &self,
+        organization_id: Uuid,
+        created_before: Option<String>,
+        dry_run: bool,
+    ) -> Result<usize, AuditError> {
+        if created_before.is_none() {
+            return Ok(0);
+        }
+
+        let sql = if dry_run {
+            r#"
+            SELECT COUNT(*)::bigint AS purged_count
+            FROM audit_events
+            WHERE organization_id = $1::uuid
+              AND created_at < $2::timestamptz
+            "#
+        } else {
+            r#"
+            WITH deleted AS (
+                DELETE FROM audit_events
+                WHERE organization_id = $1::uuid
+                  AND created_at < $2::timestamptz
+                RETURNING id
+            )
+            SELECT COUNT(*)::bigint AS purged_count
+            FROM deleted
+            "#
+        };
+
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                sql,
+                vec![
+                    Value::from(organization_id.to_string()),
+                    Value::from(created_before),
+                ],
+            ))
+            .await
+            .map_err(|_| AuditError::StoreUnavailable)?;
+
+        let count = row
+            .ok_or(AuditError::StoreUnavailable)?
+            .try_get::<i64>("", "purged_count")
+            .map_err(|_| AuditError::StoreUnavailable)?;
+        Ok(count as usize)
+    }
 }
 
 fn event_from_row(row: sea_orm::QueryResult) -> Result<AuditEvent, AuditError> {

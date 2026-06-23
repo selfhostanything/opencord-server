@@ -161,6 +161,64 @@ impl MessageStore for PostgresMessageStore {
             Ok(())
         }
     }
+
+    async fn purge_for_retention(
+        &self,
+        organization_id: Uuid,
+        created_before: Option<String>,
+        deleted_before: Option<String>,
+        dry_run: bool,
+    ) -> Result<usize, MessageError> {
+        if created_before.is_none() && deleted_before.is_none() {
+            return Ok(0);
+        }
+
+        let sql = if dry_run {
+            r#"
+            SELECT COUNT(*)::bigint AS purged_count
+            FROM messages
+            WHERE organization_id = $1::uuid
+              AND (
+                  ($2::timestamptz IS NOT NULL AND created_at < $2::timestamptz)
+                  OR ($3::timestamptz IS NOT NULL AND deleted_at IS NOT NULL AND deleted_at < $3::timestamptz)
+              )
+            "#
+        } else {
+            r#"
+            WITH deleted AS (
+                DELETE FROM messages
+                WHERE organization_id = $1::uuid
+                  AND (
+                      ($2::timestamptz IS NOT NULL AND created_at < $2::timestamptz)
+                      OR ($3::timestamptz IS NOT NULL AND deleted_at IS NOT NULL AND deleted_at < $3::timestamptz)
+                  )
+                RETURNING id
+            )
+            SELECT COUNT(*)::bigint AS purged_count
+            FROM deleted
+            "#
+        };
+
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                sql,
+                vec![
+                    Value::from(organization_id.to_string()),
+                    Value::from(created_before),
+                    Value::from(deleted_before),
+                ],
+            ))
+            .await
+            .map_err(|_| MessageError::StoreUnavailable)?;
+
+        let count = row
+            .ok_or(MessageError::StoreUnavailable)?
+            .try_get::<i64>("", "purged_count")
+            .map_err(|_| MessageError::StoreUnavailable)?;
+        Ok(count as usize)
+    }
 }
 
 fn message_select_sql(where_clause: &str) -> String {

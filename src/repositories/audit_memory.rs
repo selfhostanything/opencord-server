@@ -72,4 +72,40 @@ impl AuditStore for MemoryAuditStore {
         });
         Ok(events)
     }
+
+    async fn purge_for_retention(
+        &self,
+        organization_id: Uuid,
+        created_before: Option<String>,
+        dry_run: bool,
+    ) -> Result<usize, AuditError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| AuditError::StoreUnavailable)?;
+        let mut purged = 0;
+
+        for events in state.events_by_space_id.values_mut() {
+            let expired_count = events
+                .iter()
+                .filter(|event| {
+                    event.organization_id == organization_id
+                        && created_before
+                            .as_deref()
+                            .is_some_and(|cutoff| event.created_at.as_str() < cutoff)
+                })
+                .count();
+            if !dry_run {
+                events.retain(|event| {
+                    event.organization_id != organization_id
+                        || created_before
+                            .as_deref()
+                            .is_none_or(|cutoff| event.created_at.as_str() >= cutoff)
+                });
+            }
+            purged += expired_count;
+        }
+
+        Ok(purged)
+    }
 }

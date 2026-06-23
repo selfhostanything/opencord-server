@@ -21,6 +21,7 @@ use crate::domain::organization::{OrganizationService, OrganizationStore};
 use crate::domain::permission::{PermissionService, PermissionStore};
 use crate::domain::push::{PushService, PushTokenStore};
 use crate::domain::realtime::RealtimeHub;
+use crate::domain::retention::{RetentionService, RetentionStore};
 use crate::domain::scim::{ScimService, ScimStore};
 use crate::domain::space::{SpaceService, SpaceStore};
 use crate::domain::usage::UsageService;
@@ -46,6 +47,8 @@ use crate::repositories::permission_memory::MemoryPermissionStore;
 use crate::repositories::permission_postgres::PostgresPermissionStore;
 use crate::repositories::push_memory::MemoryPushTokenStore;
 use crate::repositories::push_postgres::PostgresPushTokenStore;
+use crate::repositories::retention_memory::MemoryRetentionStore;
+use crate::repositories::retention_postgres::PostgresRetentionStore;
 use crate::repositories::scim_memory::MemoryScimStore;
 use crate::repositories::scim_postgres::PostgresScimStore;
 use crate::repositories::space_memory::MemorySpaceStore;
@@ -72,6 +75,7 @@ pub struct AppState {
     pub usage: Arc<UsageService>,
     pub billing: Arc<BillingService>,
     pub scim: Arc<ScimService>,
+    pub retention: Arc<RetentionService>,
 }
 
 impl AppState {
@@ -92,6 +96,7 @@ impl AppState {
                 push: Arc::new(MemoryPushTokenStore::default()),
                 billing: Arc::new(MemoryBillingStore::default()),
                 scim: Arc::new(MemoryScimStore::default()),
+                retention: Arc::new(MemoryRetentionStore::default()),
             },
         )
     }
@@ -113,6 +118,7 @@ impl AppState {
                 push: Arc::new(PostgresPushTokenStore::new(db.clone())),
                 billing: Arc::new(PostgresBillingStore::new(db.clone())),
                 scim: Arc::new(PostgresScimStore::new(db.clone())),
+                retention: Arc::new(PostgresRetentionStore::new(db.clone())),
             },
         )
     }
@@ -162,6 +168,7 @@ impl AppState {
             usage,
             billing,
             scim,
+            retention: Arc::new(RetentionService::new(stores.retention)),
         }
     }
 }
@@ -180,4 +187,5 @@ pub struct AppStores {
     pub push: Arc<dyn PushTokenStore>,
     pub billing: Arc<dyn BillingStore>,
     pub scim: Arc<dyn ScimStore>,
+    pub retention: Arc<dyn RetentionStore>,
 }

@@ -12,6 +12,7 @@ pub mod organization;
 pub mod permission;
 pub mod push;
 pub mod responses;
+pub mod retention;
 pub mod scim;
 pub mod space;
 pub mod usage;

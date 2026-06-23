@@ -77,6 +77,12 @@ pub trait AuditStore: Send + Sync {
         from: String,
         to: String,
     ) -> Result<Vec<AuditEvent>, AuditError>;
+    async fn purge_for_retention(
+        &self,
+        organization_id: Uuid,
+        created_before: Option<String>,
+        dry_run: bool,
+    ) -> Result<usize, AuditError>;
 }
 
 #[derive(Clone)]

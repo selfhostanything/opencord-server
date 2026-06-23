@@ -8,7 +8,8 @@ use crate::controllers::{
     calendar_controller, channel_controller, data_export_controller, discovery_controller,
     health_controller, media_controller, meeting_controller, message_controller,
     metrics_controller, organization_controller, permission_controller, push_controller,
-    realtime_controller, scim_controller, space_controller, usage_controller, voice_controller,
+    realtime_controller, retention_controller, scim_controller, space_controller, usage_controller,
+    voice_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -90,6 +91,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/organizations/{organization_id}/data-export",
             get(data_export_controller::export_for_organization),
+        )
+        .route(
+            "/organizations/{organization_id}/retention-policy",
+            get(retention_controller::get_policy).put(retention_controller::upsert_policy),
         )
         .route(
             "/organizations/{organization_id}/oidc",

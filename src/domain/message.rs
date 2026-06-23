@@ -64,6 +64,13 @@ pub trait MessageStore: Send + Sync {
     async fn get_message(&self, message_id: Uuid) -> Result<Option<Message>, MessageError>;
     async fn update_message(&self, message: Message) -> Result<Message, MessageError>;
     async fn delete_message(&self, message: Message) -> Result<(), MessageError>;
+    async fn purge_for_retention(
+        &self,
+        organization_id: Uuid,
+        created_before: Option<String>,
+        deleted_before: Option<String>,
+        dry_run: bool,
+    ) -> Result<usize, MessageError>;
 }
 
 #[derive(Clone)]
@@ -137,7 +144,7 @@ impl MessageService {
     }
 
     pub async fn delete(&self, mut message: Message) -> Result<(), MessageError> {
-        message.deleted_at = Some("now".to_owned());
+        message.deleted_at = Some(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
         self.store.delete_message(message).await
     }
 }
