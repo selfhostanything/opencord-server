@@ -181,6 +181,109 @@ async fn space_member_can_create_list_and_update_text_channel() {
 }
 
 #[tokio::test]
+async fn space_owner_can_create_list_and_update_voice_channel() {
+    let app = test_app();
+    let token = register_token(&app, "voice-channel-owner@example.com").await;
+    let organization_id = create_organization(&app, &token, "Voice Channel Parent").await;
+    let space_id = create_space(&app, &token, &organization_id, "Voice Channel Space").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/spaces/{space_id}/channels"),
+            &token,
+            json!({
+                "kind": "voice",
+                "name": "Standup Voice",
+                "topic": "daily planning",
+                "is_private": true
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let body = response_json(created).await;
+    let channel_id = body["channel"]["id"].as_str().unwrap();
+    assert_eq!(
+        uuid::Uuid::parse_str(channel_id).unwrap().get_version_num(),
+        7
+    );
+    assert_eq!(body["channel"]["organization_id"], organization_id);
+    assert_eq!(body["channel"]["space_id"], space_id);
+    assert_eq!(body["channel"]["kind"], "voice");
+    assert_eq!(body["channel"]["name"], "Standup Voice");
+    assert_eq!(body["channel"]["slug"], "standup-voice");
+    assert_eq!(body["channel"]["topic"], "daily planning");
+    assert_eq!(body["channel"]["is_private"], true);
+
+    let list = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/spaces/{space_id}/channels"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(list.status(), StatusCode::OK);
+    let body = response_json(list).await;
+    assert_eq!(body["channels"].as_array().unwrap().len(), 1);
+    assert_eq!(body["channels"][0]["kind"], "voice");
+
+    let updated = app
+        .oneshot(bearer_request(
+            Method::PATCH,
+            &format!("/channels/{channel_id}"),
+            &token,
+            json!({
+                "name": "Design Voice",
+                "topic": "design desk"
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(updated.status(), StatusCode::OK);
+    let body = response_json(updated).await;
+    assert_eq!(body["channel"]["kind"], "voice");
+    assert_eq!(body["channel"]["name"], "Design Voice");
+    assert_eq!(body["channel"]["slug"], "design-voice");
+    assert_eq!(body["channel"]["topic"], "design desk");
+}
+
+#[tokio::test]
+async fn channel_create_rejects_unsupported_kind() {
+    let app = test_app();
+    let token = register_token(&app, "channel-kind-owner@example.com").await;
+    let organization_id = create_organization(&app, &token, "Channel Kind Parent").await;
+    let space_id = create_space(&app, &token, &organization_id, "Channel Kind Space").await;
+
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/spaces/{space_id}/channels"),
+            &token,
+            json!({
+                "kind": "forum",
+                "name": "Unsupported Kind"
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response_json(response).await["error"]["message"],
+        "channel kind must be text or voice"
+    );
+}
+
+#[tokio::test]
 async fn channel_endpoints_require_bearer_auth() {
     let app = test_app();
     let response = app

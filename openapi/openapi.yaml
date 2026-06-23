@@ -288,7 +288,7 @@ paths:
           description: Organization not found for this user
   /spaces/{space_id}/channels:
     post:
-      summary: Create a text channel inside a space
+      summary: Create a text or voice channel inside a space
       security:
         - bearerAuth: []
       parameters:
@@ -320,7 +320,7 @@ paths:
         "409":
           description: Channel slug already exists in this space
     get:
-      summary: List text channels inside a space
+      summary: List channels inside a space
       security:
         - bearerAuth: []
       parameters:
@@ -978,6 +978,12 @@ components:
       required:
         - name
       properties:
+        kind:
+          type: string
+          enum:
+            - text
+            - voice
+          default: text
         name:
           type: string
           minLength: 2
@@ -1412,6 +1418,7 @@ components:
           type: string
           enum:
             - text
+            - voice
         name:
           type: string
         slug:

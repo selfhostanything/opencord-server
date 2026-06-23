@@ -4,6 +4,7 @@ use crate::domain::channel::ChannelPatch;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateChannelRequest {
+    pub kind: Option<String>,
     pub name: String,
     pub topic: Option<String>,
     pub is_private: Option<bool>,

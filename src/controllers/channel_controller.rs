@@ -34,6 +34,7 @@ pub async fn create(
         .create(
             space.organization_id,
             space.id,
+            request.kind,
             request.name,
             request.topic,
             request.is_private.unwrap_or(false),

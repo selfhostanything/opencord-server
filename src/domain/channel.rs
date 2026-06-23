@@ -83,6 +83,7 @@ impl ChannelService {
         &self,
         organization_id: Uuid,
         space_id: Uuid,
+        kind: Option<String>,
         name: String,
         topic: Option<String>,
         is_private: bool,
@@ -92,7 +93,7 @@ impl ChannelService {
             id: ids::new_uuid_v7(),
             organization_id,
             space_id,
-            kind: "text".to_owned(),
+            kind: normalize_kind(kind)?,
             slug: slugify(&name)?,
             name,
             position: 0,
@@ -145,6 +146,20 @@ impl ChannelService {
         }
 
         self.store.update_channel(existing).await
+    }
+}
+
+fn normalize_kind(kind: Option<String>) -> Result<String, ChannelError> {
+    let Some(kind) = kind else {
+        return Ok("text".to_owned());
+    };
+
+    match kind.trim().to_ascii_lowercase().as_str() {
+        "" | "text" => Ok("text".to_owned()),
+        "voice" => Ok("voice".to_owned()),
+        _ => Err(ChannelError::InvalidInput(
+            "channel kind must be text or voice",
+        )),
     }
 }
 
