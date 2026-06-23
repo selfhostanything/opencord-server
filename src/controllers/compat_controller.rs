@@ -118,6 +118,7 @@ pub async fn create_message(
     let CreateCompatMessageRequest {
         content,
         embeds,
+        components,
         allowed_mentions,
         message_reference,
         tts: _,
@@ -130,7 +131,7 @@ pub async fn create_message(
     let referenced_attachments =
         attachments_for_message(&state, referenced_message.as_ref()).await?;
     let reply_to_message_id = referenced_message.as_ref().map(|message| message.id);
-    let allow_empty_content = !embeds.is_empty();
+    let allow_empty_content = !embeds.is_empty() || !components.is_empty();
     let message = state
         .messages
         .create_with_embeds(CreateMessageInput {
@@ -141,6 +142,7 @@ pub async fn create_message(
             content,
             allow_empty_content,
             embeds,
+            components,
             mention_user_ids: mention_ids.user_ids,
             mention_role_ids: mention_ids.role_ids,
             mention_everyone: mention_ids.everyone,
@@ -294,21 +296,22 @@ pub async fn update_message(
             .await?;
     }
 
-    let mention_ids = resolve_allowed_mentions(
-        &state,
-        &space,
-        &request.content,
-        request.allowed_mentions.as_ref(),
-    )
-    .await?;
+    let PatchCompatMessageRequest {
+        content,
+        allowed_mentions,
+        components,
+    } = request;
+    let mention_ids =
+        resolve_allowed_mentions(&state, &space, &content, allowed_mentions.as_ref()).await?;
     let message = state
         .messages
         .update_with_mentions(
             message,
-            request.content,
+            content,
             mention_ids.user_ids,
             mention_ids.role_ids,
             mention_ids.everyone,
+            components,
         )
         .await?;
     let attachments = state
@@ -582,6 +585,7 @@ fn compat_message_response(
             .map(|attachment| compat_attachment_response(attachment, public_url))
             .collect(),
         embeds: message.embeds,
+        components: message.components,
         message_reference: message.reply_to_message_id.map(|reply_to_message_id| {
             CompatMessageReferenceResponse {
                 message_id: reply_to_message_id.to_string(),
@@ -659,10 +663,15 @@ fn realtime_message_value(
     public_url: &str,
 ) -> serde_json::Value {
     let embeds = message.embeds.clone();
+    let components = message.components.clone();
     let mut value = serde_json::to_value(message_response(message, attachments, public_url))
         .unwrap_or_else(|_| serde_json::json!({}));
     if let Some(object) = value.as_object_mut() {
         object.insert("embeds".to_owned(), serde_json::Value::Array(embeds));
+        object.insert(
+            "components".to_owned(),
+            serde_json::Value::Array(components),
+        );
         object.insert(
             "mention_everyone".to_owned(),
             serde_json::Value::Bool(mentions.everyone),

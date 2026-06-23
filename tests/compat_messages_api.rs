@@ -258,6 +258,99 @@ async fn create_uploaded_attachment(app: &axum::Router, token: &str, channel_id:
 }
 
 #[tokio::test]
+async fn bot_can_send_list_and_edit_components_through_compat_routes() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "compat-component-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "components").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id, "member").await;
+
+    let action_row = json!({
+        "type": 1,
+        "components": [
+            {
+                "type": 2,
+                "style": 1,
+                "label": "Deploy",
+                "custom_id": "deploy:prod"
+            }
+        ]
+    });
+    let created = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({
+                "content": "",
+                "components": [action_row.clone()],
+                "allowed_mentions": {
+                    "parse": []
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(created.status(), StatusCode::OK);
+    let body = response_json(created).await;
+    let message_id = body["id"].as_str().unwrap().to_owned();
+    assert_eq!(body["author"]["id"], bot_user_id);
+    assert_eq!(body["content"], "");
+    assert_eq!(body["components"], json!([action_row]));
+
+    let listed = app
+        .clone()
+        .oneshot(bot_request(
+            Method::GET,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["id"], message_id);
+    assert_eq!(body[0]["components"], json!([action_row]));
+
+    let edited_row = json!({
+        "type": 1,
+        "components": [
+            {
+                "type": 2,
+                "style": 2,
+                "label": "Cancel",
+                "custom_id": "deploy:cancel"
+            }
+        ]
+    });
+    let edited = app
+        .clone()
+        .oneshot(bot_request(
+            Method::PATCH,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages/{message_id}"),
+            &bot_token,
+            json!({
+                "content": "deployment controls updated",
+                "components": [edited_row.clone()],
+                "allowed_mentions": {
+                    "parse": []
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(edited.status(), StatusCode::OK);
+    let body = response_json(edited).await;
+    assert_eq!(body["content"], "deployment controls updated");
+    assert_eq!(body["components"], json!([edited_row]));
+}
+
+#[tokio::test]
 async fn bot_can_expand_allowed_mentions_through_compat_routes() {
     let app = test_app();
     let (owner_token, _) = register(&app, "compat-mention-owner@example.com").await;

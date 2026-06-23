@@ -16,6 +16,7 @@ pub struct Message {
     pub content: String,
     pub content_format: String,
     pub embeds: Vec<Value>,
+    pub components: Vec<Value>,
     pub mention_user_ids: Vec<Uuid>,
     pub mention_role_ids: Vec<Uuid>,
     pub mention_everyone: bool,
@@ -33,6 +34,7 @@ pub struct CreateMessageInput {
     pub content: String,
     pub allow_empty_content: bool,
     pub embeds: Vec<Value>,
+    pub components: Vec<Value>,
     pub mention_user_ids: Vec<Uuid>,
     pub mention_role_ids: Vec<Uuid>,
     pub mention_everyone: bool,
@@ -121,6 +123,7 @@ impl MessageService {
             content,
             allow_empty_content,
             embeds: Vec::new(),
+            components: Vec::new(),
             mention_user_ids: Vec::new(),
             mention_role_ids: Vec::new(),
             mention_everyone: false,
@@ -141,12 +144,14 @@ impl MessageService {
             content,
             allow_empty_content,
             embeds,
+            components,
             mention_user_ids,
             mention_role_ids,
             mention_everyone,
             reply_to_message_id,
         } = input;
         let embeds = normalize_embeds(embeds)?;
+        let components = normalize_components(components)?;
         let message = Message {
             id: ids::new_uuid_v7(),
             organization_id,
@@ -156,6 +161,7 @@ impl MessageService {
             content: normalize_content(content, allow_empty_content)?,
             content_format: "plain".to_owned(),
             embeds,
+            components,
             mention_user_ids: normalize_mention_ids(mention_user_ids),
             mention_role_ids: normalize_mention_ids(mention_role_ids),
             mention_everyone,
@@ -193,7 +199,7 @@ impl MessageService {
     }
 
     pub async fn update(&self, message: Message, content: String) -> Result<Message, MessageError> {
-        self.update_with_mentions(message, content, Vec::new(), Vec::new(), false)
+        self.update_with_mentions(message, content, Vec::new(), Vec::new(), false, None)
             .await
     }
 
@@ -204,11 +210,15 @@ impl MessageService {
         mention_user_ids: Vec<Uuid>,
         mention_role_ids: Vec<Uuid>,
         mention_everyone: bool,
+        components: Option<Vec<Value>>,
     ) -> Result<Message, MessageError> {
         message.content = normalize_content(content, false)?;
         message.mention_user_ids = normalize_mention_ids(mention_user_ids);
         message.mention_role_ids = normalize_mention_ids(mention_role_ids);
         message.mention_everyone = mention_everyone;
+        if let Some(components) = components {
+            message.components = normalize_components(components)?;
+        }
         message.edited_at = Some("now".to_owned());
 
         self.store.update_message(message).await
@@ -244,6 +254,22 @@ fn normalize_embeds(embeds: Vec<Value>) -> Result<Vec<Value>, MessageError> {
     }
 
     Ok(embeds)
+}
+
+fn normalize_components(components: Vec<Value>) -> Result<Vec<Value>, MessageError> {
+    if components.len() > 5 {
+        return Err(MessageError::InvalidInput(
+            "message components must contain 5 or fewer action rows",
+        ));
+    }
+
+    if components.iter().any(|component| !component.is_object()) {
+        return Err(MessageError::InvalidInput(
+            "message components must be objects",
+        ));
+    }
+
+    Ok(components)
 }
 
 fn normalize_mention_ids(ids: Vec<Uuid>) -> Vec<Uuid> {

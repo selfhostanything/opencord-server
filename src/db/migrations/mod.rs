@@ -24,6 +24,7 @@ mod m20260623060000_incoming_webhooks;
 mod m20260623061000_commands;
 mod m20260623062000_message_embeds;
 mod m20260623063000_message_mentions;
+mod m20260623064000_message_components;
 
 pub struct Migrator;
 
@@ -55,6 +56,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623061000_commands::Migration),
             Box::new(m20260623062000_message_embeds::Migration),
             Box::new(m20260623063000_message_mentions::Migration),
+            Box::new(m20260623064000_message_components::Migration),
         ]
     }
 }

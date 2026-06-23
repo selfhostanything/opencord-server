@@ -7,6 +7,8 @@ pub struct CreateCompatMessageRequest {
     pub content: Option<String>,
     #[serde(default)]
     pub embeds: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub components: Vec<serde_json::Value>,
     pub allowed_mentions: Option<serde_json::Value>,
     pub message_reference: Option<CompatMessageReferenceRequest>,
     pub tts: Option<bool>,
@@ -22,6 +24,7 @@ pub struct CompatMessageReferenceRequest {
 pub struct PatchCompatMessageRequest {
     pub content: String,
     pub allowed_mentions: Option<serde_json::Value>,
+    pub components: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -76,6 +79,7 @@ pub struct CompatMessageResponse {
     pub mention_roles: Vec<String>,
     pub attachments: Vec<serde_json::Value>,
     pub embeds: Vec<serde_json::Value>,
+    pub components: Vec<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_reference: Option<CompatMessageReferenceResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]

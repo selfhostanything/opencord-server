@@ -176,17 +176,18 @@ Authorization: Bearer <session token>
 ```
 
 Discord compatibility message creation accepts `content`, basic `embeds`, and
-`allowed_mentions`. Content may be empty when at least one embed is supplied.
-Embed JSON is persisted and returned through compatibility message responses
-and gateway `MESSAGE_CREATE` dispatches. Linked native attachments are returned
-as Discord-shaped attachment metadata in compatibility list responses and
-gateway dispatches. Compatibility message create accepts same-channel
-`message_reference` replies and returns reply metadata through REST and gateway;
-reply payloads also include a hydrated Discord-shaped `referenced_message` when
-the referenced message is still available. `allowed_mentions` now controls
-Discord-shaped user, role, and everyone mention expansion in compatibility REST
-create/list/edit and gateway payloads. Compatibility file upload and components
-remain future work.
+`allowed_mentions`. Content may be empty when at least one embed or component is
+supplied. Embed and component JSON is persisted and returned through
+compatibility message responses and gateway `MESSAGE_CREATE` dispatches. Linked
+native attachments are returned as Discord-shaped attachment metadata in
+compatibility list responses and gateway dispatches. Compatibility message
+create accepts same-channel `message_reference` replies and returns reply
+metadata through REST and gateway; reply payloads also include a hydrated
+Discord-shaped `referenced_message` when the referenced message is still
+available. `allowed_mentions` now controls Discord-shaped user, role, and
+everyone mention expansion in compatibility REST create/list/edit and gateway
+payloads. Compatibility file upload and component interaction callbacks remain
+future work.
 
 ## Enterprise OIDC
 

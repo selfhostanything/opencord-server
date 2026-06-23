@@ -3341,7 +3341,7 @@ components:
             $ref: "#/components/schemas/IncomingWebhook"
     CreateCompatMessageRequest:
       type: object
-      description: Content is required unless one or more embeds are supplied.
+      description: Content is required unless one or more embeds or components are supplied.
       properties:
         content:
           type: string
@@ -3353,6 +3353,12 @@ components:
           items:
             type: object
           description: Basic Discord-shaped embeds are persisted and returned without field-level rendering guarantees.
+        components:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+          description: Discord-shaped message components are persisted and returned. Component interactions are future work.
         allowed_mentions:
           type: object
           description: Controls compatibility mention expansion for user, role, and everyone mentions.
@@ -3399,6 +3405,12 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+        components:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+          description: Replaces persisted Discord-shaped message components when supplied. Component interactions are future work.
     CompatUser:
       type: object
       required:
@@ -3503,6 +3515,7 @@ components:
         - mention_roles
         - attachments
         - embeds
+        - components
         - pinned
         - type
       properties:
@@ -3568,6 +3581,11 @@ components:
                 type: string
         embeds:
           type: array
+          items:
+            type: object
+        components:
+          type: array
+          description: Persisted Discord-shaped message components. Component interactions are future work.
           items:
             type: object
         message_reference:

@@ -241,6 +241,11 @@ fn compat_message_from_value(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
+    let components = message
+        .get("components")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let attachments = compat_attachments_from_event(message.get("attachments"));
     let message_reference = compat_message_reference_from_event(message);
     let referenced_message = message
@@ -277,6 +282,7 @@ fn compat_message_from_value(
         mention_roles,
         attachments,
         embeds,
+        components,
         message_reference,
         referenced_message,
         pinned: false,

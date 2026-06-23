@@ -260,6 +260,7 @@ fn test_message(
         content: content.to_owned(),
         content_format: "plain".to_owned(),
         embeds: Vec::new(),
+        components: Vec::new(),
         mention_user_ids: Vec::new(),
         mention_role_ids: Vec::new(),
         mention_everyone: false,
