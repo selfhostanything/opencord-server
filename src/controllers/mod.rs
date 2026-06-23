@@ -6,6 +6,7 @@ pub mod discovery_controller;
 pub mod health_controller;
 pub mod media_controller;
 pub mod message_controller;
+pub mod metrics_controller;
 pub mod organization_controller;
 pub mod permission_controller;
 pub mod push_controller;

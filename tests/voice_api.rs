@@ -43,6 +43,13 @@ async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&bytes).expect("response should be json")
 }
 
+async fn response_text(response: axum::response::Response) -> String {
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read response body");
+    String::from_utf8(bytes.to_vec()).expect("response should be utf-8")
+}
+
 fn json_request(method: Method, uri: &str, body: Value) -> Request<Body> {
     Request::builder()
         .method(method)
@@ -277,4 +284,59 @@ async fn join_voice_channel_rejects_text_channels() {
         response_json(response).await["error"]["message"],
         "channel must be a voice channel"
     );
+}
+
+#[tokio::test]
+async fn voice_join_updates_media_metrics() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "voice-metrics-owner@example.com").await;
+    let (member_token, member_id) = register(&app, "voice-metrics-member@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_and_channel(&app, &owner_token, "metrics", "voice").await;
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+
+    let joined = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/voice/channels/{channel_id}/join"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(joined.status(), StatusCode::CREATED);
+
+    let rejected = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/voice/channels/{channel_id}/join"),
+            &member_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rejected.status(), StatusCode::FORBIDDEN);
+
+    let metrics = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(metrics.status(), StatusCode::OK);
+    let body = response_text(metrics).await;
+    assert!(body.contains("opencord_media_voice_join_success_total 1"));
+    assert!(
+        body.contains(r#"opencord_media_voice_join_failures_total{reason="permission_denied"} 1"#)
+    );
+    assert!(body.contains(&format!(
+        r#"opencord_media_voice_participants_current{{organization_id="{organization_id}",space_id="{space_id}",channel_id="{channel_id}"}} 1"#
+    )));
 }

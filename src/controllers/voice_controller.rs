@@ -24,7 +24,23 @@ pub async fn join(
     headers: HeaderMap,
     Path(channel_id): Path<Uuid>,
     Json(request): Json<JoinVoiceChannelRequest>,
-) -> Result<impl IntoResponse, VoiceApiError> {
+) -> Result<(StatusCode, Json<VoiceJoinResponse>), VoiceApiError> {
+    let result = join_inner(&state, headers, channel_id, request).await;
+    if let Err(error) = &result {
+        state
+            .metrics
+            .record_voice_join_failure(error.metrics_reason());
+    }
+
+    result
+}
+
+async fn join_inner(
+    state: &AppState,
+    headers: HeaderMap,
+    channel_id: Uuid,
+    request: JoinVoiceChannelRequest,
+) -> Result<(StatusCode, Json<VoiceJoinResponse>), VoiceApiError> {
     let token = bearer_token(&headers)?;
     let user = state.auth.user_for_token(token).await?;
     let channel = state.channels.get(channel_id).await?;
@@ -70,6 +86,13 @@ pub async fn join(
         self_deaf,
     };
     let event_media = VoiceMediaEventResponse::from(media_response.clone());
+    state.metrics.record_voice_join_success();
+    state.metrics.record_voice_participant_joined(
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        user.id,
+    );
 
     state.realtime.publish(RealtimeEvent::channel(
         "voice.participant_joined",
@@ -127,6 +150,18 @@ impl From<PermissionError> for VoiceApiError {
 impl From<MediaError> for VoiceApiError {
     fn from(error: MediaError) -> Self {
         Self::Media(error)
+    }
+}
+
+impl VoiceApiError {
+    fn metrics_reason(&self) -> &'static str {
+        match self {
+            Self::Auth(_) => "auth_failed",
+            Self::Channel(error) => error.code(),
+            Self::Space(error) => error.code(),
+            Self::Permission(_) => "permission_denied",
+            Self::Media(error) => error.code(),
+        }
     }
 }
 

@@ -6,8 +6,8 @@ use crate::config::AppConfig;
 use crate::controllers::{
     attachment_controller, audit_controller, auth_controller, channel_controller,
     discovery_controller, health_controller, media_controller, message_controller,
-    organization_controller, permission_controller, push_controller, realtime_controller,
-    space_controller, voice_controller,
+    metrics_controller, organization_controller, permission_controller, push_controller,
+    realtime_controller, space_controller, voice_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -19,6 +19,7 @@ pub fn api_router(config: AppConfig) -> Router {
 pub fn api_router_with_state(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health_controller::health))
+        .route("/metrics", get(metrics_controller::prometheus))
         .route("/ws", get(realtime_controller::websocket))
         .route(
             "/.well-known/opencord",

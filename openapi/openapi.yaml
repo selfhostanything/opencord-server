@@ -9,6 +9,20 @@ paths:
       responses:
         "200":
           description: Server is healthy
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: >
+        Exposes process-local Prometheus text metrics. Phase 03 media metrics
+        include voice join successes, voice join failures by reason, and
+        process-known voice participant counts by channel.
+      responses:
+        "200":
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema:
+                type: string
   /ws:
     get:
       summary: WebSocket realtime gateway

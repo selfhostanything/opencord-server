@@ -131,6 +131,11 @@ short-lived LiveKit participant token, and publishes a redacted
 voice join flow. It issues a short-lived LiveKit participant token after auth,
 channel membership, and media permission checks.
 
+`GET /metrics` exposes Prometheus text metrics for process-local media
+observability. Phase 03 tracks voice join successes, voice join failures by
+reason, and process-known voice participant counts by channel. Keep this route
+behind an internal network boundary in production.
+
 Local defaults:
 
 ```text

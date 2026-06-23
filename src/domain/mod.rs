@@ -5,6 +5,7 @@ pub mod channel;
 pub mod ids;
 pub mod media;
 pub mod message;
+pub mod metrics;
 pub mod organization;
 pub mod permission;
 pub mod push;
