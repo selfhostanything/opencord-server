@@ -29,6 +29,29 @@ impl BotStore for MemoryBotStore {
         Ok(())
     }
 
+    async fn get_application(
+        &self,
+        application_id: Uuid,
+    ) -> Result<Option<BotApplication>, BotError> {
+        let state = self.state.lock().map_err(|_| BotError::StoreUnavailable)?;
+        Ok(state.applications.get(&application_id).cloned())
+    }
+
+    async fn rotate_token(&self, token: StoredBotToken) -> Result<(), BotError> {
+        let mut state = self.state.lock().map_err(|_| BotError::StoreUnavailable)?;
+        if !state.applications.contains_key(&token.application_id) {
+            return Err(BotError::NotFound);
+        }
+
+        for existing_token in state.tokens.values_mut() {
+            if existing_token.application_id == token.application_id {
+                existing_token.active = false;
+            }
+        }
+        state.tokens.insert(token.id, token);
+        Ok(())
+    }
+
     async fn find_bot_by_token_hash(
         &self,
         token_hash: &str,

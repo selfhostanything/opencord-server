@@ -120,6 +120,9 @@ PUT /organizations/{organization_id}/retention-policy
 GET /organizations/{organization_id}/oidc
 PUT /organizations/{organization_id}/oidc
 POST /organizations/{organization_id}/scim/token
+POST /organizations/{organization_id}/bot-applications
+POST /organizations/{organization_id}/bot-applications/{application_id}/tokens/rotate
+POST /organizations/{organization_id}/bot-applications/{application_id}/spaces/{space_id}/invite
 POST /organizations/{organization_id}/custom-domains
 GET /organizations/{organization_id}/custom-domains
 POST /organizations/{organization_id}/custom-domains/{custom_domain_id}/verify
@@ -343,6 +346,15 @@ Ports:
 admin create a bot application, internal bot user, and shown-once bot token.
 Bot tokens are stored hashed and are issued with the `ocb_` prefix for later
 compatibility routes under `/api/compat/discord/v10`.
+
+`POST /organizations/{organization_id}/bot-applications/{application_id}/tokens/rotate`
+lets an organization admin rotate a bot token. Existing tokens for that bot
+application are deactivated, and the replacement `ocb_` token is shown once.
+
+`POST /organizations/{organization_id}/bot-applications/{application_id}/spaces/{space_id}/invite`
+adds the bot user to a space through the normal membership model. Bot
+permissions and channel visibility continue to use the same OpenCord permission
+checks as human users.
 
 `POST /channels/{channel_id}/webhooks` lets a channel manager create an incoming
 webhook for a text channel. The server creates an internal webhook bot user and

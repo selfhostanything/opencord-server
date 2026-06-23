@@ -1026,6 +1026,88 @@ paths:
           description: Organization admin permission is required
         "404":
           description: Organization not found for this user
+  /organizations/{organization_id}/bot-applications/{application_id}/tokens/rotate:
+    post:
+      summary: Rotate a bot application's shown-once bot token
+      description: >
+        Deactivates existing active tokens for the bot application and returns a
+        replacement `ocb_` token once. Requires organization admin access.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "201":
+          description: Replacement bot token, shown once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotTokenResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization or bot application not found
+  /organizations/{organization_id}/bot-applications/{application_id}/spaces/{space_id}/invite:
+    post:
+      summary: Invite a bot application to a space
+      description: >
+        Adds the bot user for an active bot application to the target space
+        through the normal OpenCord membership model.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteBotToSpaceRequest"
+      responses:
+        "201":
+          description: Bot application and active space membership
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotApplicationInviteResponse"
+        "400":
+          description: Invalid invite role
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Organization admin permission is required
+        "404":
+          description: Organization, bot application, or space not found
   /organizations/{organization_id}/custom-domains:
     post:
       summary: Create a custom domain mapping for an organization
@@ -2670,6 +2752,14 @@ components:
             - string
             - "null"
           maxLength: 500
+    InviteBotToSpaceRequest:
+      type: object
+      properties:
+        role:
+          type: string
+          enum:
+            - member
+            - guest
     BotApplication:
       type: object
       required:
@@ -2722,6 +2812,13 @@ components:
           description: Shown once when the token is created.
         token_last_four:
           type: string
+    BotTokenResourceResponse:
+      type: object
+      required:
+        - bot_token
+      properties:
+        bot_token:
+          $ref: "#/components/schemas/BotToken"
     BotApplicationCreatedResponse:
       type: object
       required:
@@ -2732,6 +2829,16 @@ components:
           $ref: "#/components/schemas/BotApplication"
         bot_token:
           $ref: "#/components/schemas/BotToken"
+    BotApplicationInviteResponse:
+      type: object
+      required:
+        - bot_application
+        - member
+      properties:
+        bot_application:
+          $ref: "#/components/schemas/BotApplication"
+        member:
+          $ref: "#/components/schemas/SpaceMember"
     CreateIncomingWebhookRequest:
       type: object
       required:

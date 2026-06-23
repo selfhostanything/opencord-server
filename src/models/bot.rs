@@ -1,11 +1,17 @@
 use serde::{Deserialize, Serialize};
 
 use crate::domain::bot::{BotApplication, BotApplicationCreated, BotToken};
+use crate::models::permission::SpaceMemberDetailResponse;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateBotApplicationRequest {
     pub name: String,
     pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InviteBotToSpaceRequest {
+    pub role: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -31,6 +37,17 @@ pub struct BotTokenResponse {
 pub struct BotApplicationCreatedResponse {
     pub bot_application: BotApplicationResponse,
     pub bot_token: BotTokenResponse,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BotTokenResourceResponse {
+    pub bot_token: BotTokenResponse,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BotApplicationInviteResponse {
+    pub bot_application: BotApplicationResponse,
+    pub member: SpaceMemberDetailResponse,
 }
 
 impl From<BotApplicationCreated> for BotApplicationCreatedResponse {

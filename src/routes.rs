@@ -140,6 +140,14 @@ pub fn api_router_with_state(state: AppState) -> Router {
             post(bot_controller::create_application),
         )
         .route(
+            "/organizations/{organization_id}/bot-applications/{application_id}/tokens/rotate",
+            post(bot_controller::rotate_token),
+        )
+        .route(
+            "/organizations/{organization_id}/bot-applications/{application_id}/spaces/{space_id}/invite",
+            post(bot_controller::invite_to_space),
+        )
+        .route(
             "/organizations/{organization_id}/custom-domains",
             post(organization_controller::create_custom_domain)
                 .get(organization_controller::list_custom_domains),

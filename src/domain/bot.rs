@@ -58,9 +58,17 @@ pub struct CreateBotApplicationInput {
 }
 
 #[derive(Debug)]
+pub struct RotateBotTokenInput {
+    pub organization_id: Uuid,
+    pub application_id: Uuid,
+    pub created_by_user_id: Uuid,
+}
+
+#[derive(Debug)]
 pub enum BotError {
     InvalidInput(&'static str),
     Unauthorized,
+    NotFound,
     StoreUnavailable,
 }
 
@@ -69,6 +77,7 @@ impl BotError {
         match self {
             Self::InvalidInput(_) => StatusCode::BAD_REQUEST,
             Self::Unauthorized => StatusCode::UNAUTHORIZED,
+            Self::NotFound => StatusCode::NOT_FOUND,
             Self::StoreUnavailable => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -77,6 +86,7 @@ impl BotError {
         match self {
             Self::InvalidInput(_) => "invalid_request",
             Self::Unauthorized => "unauthorized",
+            Self::NotFound => "bot_application_not_found",
             Self::StoreUnavailable => "bot_store_unavailable",
         }
     }
@@ -85,6 +95,7 @@ impl BotError {
         match self {
             Self::InvalidInput(message) => message,
             Self::Unauthorized => "valid bot token is required",
+            Self::NotFound => "bot application was not found",
             Self::StoreUnavailable => "bot store is unavailable",
         }
     }
@@ -106,6 +117,11 @@ pub trait BotStore: Send + Sync {
         application: BotApplication,
         token: StoredBotToken,
     ) -> Result<(), BotError>;
+    async fn get_application(
+        &self,
+        application_id: Uuid,
+    ) -> Result<Option<BotApplication>, BotError>;
+    async fn rotate_token(&self, token: StoredBotToken) -> Result<(), BotError>;
     async fn find_bot_by_token_hash(
         &self,
         token_hash: &str,
@@ -148,15 +164,7 @@ impl BotService {
             description,
             status: "active".to_owned(),
         };
-        let token = generate_bot_token();
-        let stored_token = StoredBotToken {
-            id: ids::new_uuid_v7(),
-            application_id,
-            token_hash: hash_bot_token(&token),
-            token_last_four: token_last_four(&token),
-            created_by_user_id: input.created_by_user_id,
-            active: true,
-        };
+        let (token, stored_token) = new_bot_token(application_id, input.created_by_user_id);
         self.store
             .create_application(application.clone(), stored_token.clone())
             .await?;
@@ -169,6 +177,39 @@ impl BotService {
                 token,
                 token_last_four: stored_token.token_last_four,
             },
+        })
+    }
+
+    pub async fn application_for_organization(
+        &self,
+        application_id: Uuid,
+        organization_id: Uuid,
+    ) -> Result<BotApplication, BotError> {
+        let application = self
+            .store
+            .get_application(application_id)
+            .await?
+            .ok_or(BotError::NotFound)?;
+
+        if application.organization_id == organization_id && application.status == "active" {
+            Ok(application)
+        } else {
+            Err(BotError::NotFound)
+        }
+    }
+
+    pub async fn rotate_token(&self, input: RotateBotTokenInput) -> Result<BotToken, BotError> {
+        let application = self
+            .application_for_organization(input.application_id, input.organization_id)
+            .await?;
+        let (token, stored_token) = new_bot_token(application.id, input.created_by_user_id);
+        self.store.rotate_token(stored_token.clone()).await?;
+
+        Ok(BotToken {
+            id: stored_token.id,
+            application_id: stored_token.application_id,
+            token,
+            token_last_four: stored_token.token_last_four,
         })
     }
 
@@ -215,6 +256,20 @@ fn generate_bot_token() -> String {
     let mut bytes = [0_u8; 32];
     OsRng.fill_bytes(&mut bytes);
     format!("ocb_{}", hex::encode(bytes))
+}
+
+fn new_bot_token(application_id: Uuid, created_by_user_id: Uuid) -> (String, StoredBotToken) {
+    let token = generate_bot_token();
+    let stored_token = StoredBotToken {
+        id: ids::new_uuid_v7(),
+        application_id,
+        token_hash: hash_bot_token(&token),
+        token_last_four: token_last_four(&token),
+        created_by_user_id,
+        active: true,
+    };
+
+    (token, stored_token)
 }
 
 fn hash_bot_token(token: &str) -> String {
