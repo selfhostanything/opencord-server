@@ -102,6 +102,13 @@ async fn discovery_endpoints_return_basic_metadata() {
             .iter()
             .any(|capability| capability == "audit")
     );
+    assert!(
+        body["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|capability| capability == "push_tokens")
+    );
 }
 
 #[tokio::test]

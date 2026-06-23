@@ -6,7 +6,7 @@ use crate::config::AppConfig;
 use crate::controllers::{
     attachment_controller, audit_controller, auth_controller, channel_controller,
     discovery_controller, health_controller, message_controller, organization_controller,
-    permission_controller, realtime_controller, space_controller,
+    permission_controller, push_controller, realtime_controller, space_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -29,6 +29,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route("/auth/login", post(auth_controller::login))
         .route("/auth/logout", post(auth_controller::logout))
         .route("/me", get(auth_controller::me))
+        .route(
+            "/push-tokens",
+            post(push_controller::register).get(push_controller::list),
+        )
         .route(
             "/organizations",
             post(organization_controller::create).get(organization_controller::list),

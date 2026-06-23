@@ -10,6 +10,7 @@ use crate::domain::channel::{ChannelService, ChannelStore};
 use crate::domain::message::{MessageService, MessageStore};
 use crate::domain::organization::{OrganizationService, OrganizationStore};
 use crate::domain::permission::{PermissionService, PermissionStore};
+use crate::domain::push::{PushService, PushTokenStore};
 use crate::domain::realtime::RealtimeHub;
 use crate::domain::space::{SpaceService, SpaceStore};
 use crate::repositories::attachment_memory::MemoryAttachmentStore;
@@ -26,6 +27,8 @@ use crate::repositories::organization_memory::MemoryOrganizationStore;
 use crate::repositories::organization_postgres::PostgresOrganizationStore;
 use crate::repositories::permission_memory::MemoryPermissionStore;
 use crate::repositories::permission_postgres::PostgresPermissionStore;
+use crate::repositories::push_memory::MemoryPushTokenStore;
+use crate::repositories::push_postgres::PostgresPushTokenStore;
 use crate::repositories::space_memory::MemorySpaceStore;
 use crate::repositories::space_postgres::PostgresSpaceStore;
 
@@ -40,6 +43,7 @@ pub struct AppState {
     pub attachments: Arc<AttachmentService>,
     pub audit: Arc<AuditService>,
     pub permissions: Arc<PermissionService>,
+    pub push: Arc<PushService>,
     pub realtime: Arc<RealtimeHub>,
 }
 
@@ -56,6 +60,7 @@ impl AppState {
                 attachments: Arc::new(MemoryAttachmentStore::default()),
                 audit: Arc::new(MemoryAuditStore::default()),
                 permissions: Arc::new(MemoryPermissionStore::default()),
+                push: Arc::new(MemoryPushTokenStore::default()),
             },
         )
     }
@@ -71,7 +76,8 @@ impl AppState {
                 messages: Arc::new(PostgresMessageStore::new(db.clone())),
                 attachments: Arc::new(PostgresAttachmentStore::new(db.clone())),
                 audit: Arc::new(PostgresAuditStore::new(db.clone())),
-                permissions: Arc::new(PostgresPermissionStore::new(db)),
+                permissions: Arc::new(PostgresPermissionStore::new(db.clone())),
+                push: Arc::new(PostgresPushTokenStore::new(db)),
             },
         )
     }
@@ -87,6 +93,7 @@ impl AppState {
             attachments: Arc::new(AttachmentService::new(stores.attachments)),
             audit: Arc::new(AuditService::new(stores.audit)),
             permissions: Arc::new(PermissionService::new(stores.permissions)),
+            push: Arc::new(PushService::new(stores.push)),
             realtime: Arc::new(RealtimeHub::default()),
         }
     }
@@ -101,4 +108,5 @@ pub struct AppStores {
     pub attachments: Arc<dyn AttachmentStore>,
     pub audit: Arc<dyn AuditStore>,
     pub permissions: Arc<dyn PermissionStore>,
+    pub push: Arc<dyn PushTokenStore>,
 }

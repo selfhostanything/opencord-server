@@ -106,6 +106,45 @@ paths:
                 $ref: "#/components/schemas/MeResponse"
         "401":
           description: Missing or invalid bearer session
+  /push-tokens:
+    post:
+      summary: Register or update a device push token
+      description: >
+        Registers a push notification token for the current user. The response
+        intentionally returns only the token suffix; the raw provider token is
+        stored for future delivery providers and is never echoed to clients.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterPushTokenRequest"
+      responses:
+        "201":
+          description: Registered or updated push token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushTokenResourceResponse"
+        "400":
+          description: Invalid platform, token, or device name
+        "401":
+          description: Missing or invalid bearer session
+    get:
+      summary: List push tokens for the current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Registered push tokens for the current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PushTokenListResponse"
+        "401":
+          description: Missing or invalid bearer session
   /organizations:
     post:
       summary: Create an organization owned by the current user
@@ -729,6 +768,77 @@ components:
       properties:
         user:
           $ref: "#/components/schemas/User"
+    RegisterPushTokenRequest:
+      type: object
+      required:
+        - platform
+        - token
+      properties:
+        platform:
+          type: string
+          enum:
+            - ios
+            - android
+            - web
+            - desktop
+        token:
+          type: string
+          minLength: 8
+          maxLength: 4096
+        device_name:
+          type: string
+          maxLength: 120
+    PushToken:
+      type: object
+      required:
+        - id
+        - user_id
+        - platform
+        - token_last_four
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        platform:
+          type: string
+          enum:
+            - ios
+            - android
+            - web
+            - desktop
+        token_last_four:
+          type: string
+        device_name:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PushTokenResourceResponse:
+      type: object
+      required:
+        - push_token
+      properties:
+        push_token:
+          $ref: "#/components/schemas/PushToken"
+    PushTokenListResponse:
+      type: object
+      required:
+        - push_tokens
+      properties:
+        push_tokens:
+          type: array
+          items:
+            $ref: "#/components/schemas/PushToken"
     CreateOrganizationRequest:
       type: object
       required:

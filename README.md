@@ -79,6 +79,8 @@ POST /auth/register
 POST /auth/login
 POST /auth/logout
 GET /me
+POST /push-tokens
+GET /push-tokens
 POST /organizations
 GET /organizations
 GET /organizations/{organization_id}

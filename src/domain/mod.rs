@@ -6,5 +6,6 @@ pub mod ids;
 pub mod message;
 pub mod organization;
 pub mod permission;
+pub mod push;
 pub mod realtime;
 pub mod space;
