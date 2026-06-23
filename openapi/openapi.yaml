@@ -562,6 +562,31 @@ paths:
           description: Missing or invalid interaction token
         "404":
           description: Original interaction response was not found
+    delete:
+      summary: Delete the original interaction response
+      description: >
+        Soft-deletes the stored original bot-authored response message for an
+        interaction token. Repeating the delete after the message is gone
+        returns `404`.
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: interaction_token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Original response message deleted
+        "401":
+          description: Missing or invalid interaction token
+        "404":
+          description: Original interaction response was not found
   /api/compat/discord/gateway:
     get:
       summary: Discord-compatible gateway websocket

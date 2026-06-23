@@ -449,7 +449,9 @@ with callback type `4` to post a bot-authored channel message, or callback type
 `5` to defer the response and then post one follow-up message through
 `POST /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}`.
 Original interaction responses can be edited through
-`PATCH /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original`.
+`PATCH /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original`
+and deleted through
+`DELETE /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original`.
 
 ## License
 

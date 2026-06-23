@@ -74,7 +74,8 @@ pub fn api_router_with_state(state: AppState) -> Router {
         )
         .route(
             "/api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original",
-            patch(command_controller::update_original_interaction_response),
+            patch(command_controller::update_original_interaction_response)
+                .delete(command_controller::delete_original_interaction_response),
         )
         .route(
             "/api/compat/discord/gateway",

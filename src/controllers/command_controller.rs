@@ -327,6 +327,35 @@ pub async fn update_original_interaction_response(
     ))
 }
 
+pub async fn delete_original_interaction_response(
+    State(state): State<AppState>,
+    Path((application_id, interaction_token)): Path<(Uuid, String)>,
+) -> Result<StatusCode, CommandApiError> {
+    let interaction = state
+        .commands
+        .interaction_for_original_response(application_id, &interaction_token)
+        .await?;
+    let application = state
+        .bots
+        .application_for_organization(interaction.application_id, interaction.organization_id)
+        .await?;
+    let response_message_id = interaction
+        .response_message_id
+        .ok_or(CommandError::NotFound)?;
+    let message = state.messages.get(response_message_id).await?;
+    if message.organization_id != interaction.organization_id
+        || message.space_id != Some(interaction.space_id)
+        || message.channel_id != interaction.channel_id
+        || message.author_user_id != application.bot_user_id
+    {
+        return Err(CommandError::NotFound.into());
+    }
+
+    state.messages.delete(message).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 fn interaction_followup_response(
     message: Message,
     application: &BotApplication,
