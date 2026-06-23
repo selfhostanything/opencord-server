@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::domain::auth::{AuthError, AuthUser};
 use crate::domain::calendar::meeting_invite_ics;
+use crate::domain::calendar_sync::CalendarSyncError;
 use crate::domain::channel::ChannelError;
 use crate::domain::meeting::{MeetingBundle, MeetingError};
 use crate::domain::organization::{OrganizationError, OrganizationMembership};
@@ -14,6 +15,7 @@ use crate::domain::permission::{Permission, PermissionError};
 use crate::domain::space::SpaceError;
 use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
+use crate::models::calendar::{CalendarEventResourceResponse, CalendarEventResponse};
 use crate::models::meeting::{
     CreateMeetingRequest, MeetingListResponse, MeetingResourceResponse, MeetingResponse,
     PatchMeetingRequest,
@@ -179,6 +181,27 @@ pub async fn cancel(
     }))
 }
 
+pub async fn sync_google_calendar(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(meeting_id): Path<Uuid>,
+) -> Result<Json<CalendarEventResourceResponse>, MeetingApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let meeting = state.meetings.get(meeting_id).await?;
+    let organization = require_read_meeting(&state, &user, &meeting).await?;
+    require_meeting_manager(&user, &organization, &meeting)?;
+
+    let calendar_event = state
+        .calendar_sync
+        .sync_google_meeting(user.id, meeting, &state.config.public_url)
+        .await?;
+
+    Ok(Json(CalendarEventResourceResponse {
+        calendar_event: CalendarEventResponse::from(calendar_event),
+    }))
+}
+
 fn meeting_response(meeting: MeetingBundle, state: &AppState) -> MeetingResponse {
     MeetingResponse::from_bundle(meeting, &state.config.public_url)
 }
@@ -285,6 +308,7 @@ fn require_meeting_manager(
 #[derive(Debug)]
 pub enum MeetingApiError {
     Auth(AuthError),
+    Calendar(CalendarSyncError),
     Organization(OrganizationError),
     Space(SpaceError),
     Channel(ChannelError),
@@ -295,6 +319,12 @@ pub enum MeetingApiError {
 impl From<AuthError> for MeetingApiError {
     fn from(error: AuthError) -> Self {
         Self::Auth(error)
+    }
+}
+
+impl From<CalendarSyncError> for MeetingApiError {
+    fn from(error: CalendarSyncError) -> Self {
+        Self::Calendar(error)
     }
 }
 
@@ -332,6 +362,7 @@ impl IntoResponse for MeetingApiError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
             Self::Auth(error) => (error.status_code(), error.code(), error.message()),
+            Self::Calendar(error) => (error.status_code(), error.code(), error.message()),
             Self::Organization(error) => (error.status_code(), error.code(), error.message()),
             Self::Space(error) => (error.status_code(), error.code(), error.message()),
             Self::Channel(error) => (error.status_code(), error.code(), error.message()),

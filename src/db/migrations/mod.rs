@@ -11,6 +11,7 @@ mod m20260623032000_attachments;
 mod m20260623034000_audit_events;
 mod m20260623040000_push_tokens;
 mod m20260623041000_meetings;
+mod m20260623043000_calendar_sync;
 
 pub struct Migrator;
 
@@ -29,6 +30,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623034000_audit_events::Migration),
             Box::new(m20260623040000_push_tokens::Migration),
             Box::new(m20260623041000_meetings::Migration),
+            Box::new(m20260623043000_calendar_sync::Migration),
         ]
     }
 }

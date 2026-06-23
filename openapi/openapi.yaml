@@ -142,6 +142,45 @@ paths:
                 $ref: "#/components/schemas/MeResponse"
         "401":
           description: Missing or invalid bearer session
+  /calendar/accounts:
+    get:
+      summary: List connected calendar accounts for the current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Connected calendar accounts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarAccountListResponse"
+        "401":
+          description: Missing or invalid bearer session
+  /calendar/accounts/google:
+    post:
+      summary: Connect or update the current user's Google Calendar account
+      description: >
+        Stores write-only Google token material for future provider calls and
+        returns redacted account metadata.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectGoogleCalendarRequest"
+      responses:
+        "201":
+          description: Connected Google Calendar account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarAccountResourceResponse"
+        "400":
+          description: Invalid Google account payload
+        "401":
+          description: Missing or invalid bearer session
   /media/rooms/token:
     post:
       summary: Issue a short-lived LiveKit room token
@@ -514,6 +553,37 @@ paths:
                 type: string
         "401":
           description: Missing or invalid bearer session
+        "404":
+          description: Meeting not found for this user
+  /meetings/{meeting_id}/calendar/google/sync:
+    post:
+      summary: Create or update a Google Calendar event for one meeting
+      description: >
+        Requires a connected Google calendar account and meeting management
+        access. The operation is idempotent for the current user, meeting, and
+        provider account.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: meeting_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Provider calendar event sync metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CalendarEventResourceResponse"
+        "400":
+          description: Google Calendar account is not connected
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Current user cannot manage this meeting
         "404":
           description: Meeting not found for this user
   /spaces/{space_id}/channels:
@@ -1579,6 +1649,149 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Meeting"
+    ConnectGoogleCalendarRequest:
+      type: object
+      required:
+        - external_account_id
+        - access_token
+      properties:
+        external_account_id:
+          type: string
+          maxLength: 256
+        calendar_id:
+          type: string
+          default: primary
+          maxLength: 256
+        access_token:
+          type: string
+          writeOnly: true
+          minLength: 8
+        refresh_token:
+          type:
+            - string
+            - "null"
+          writeOnly: true
+          minLength: 8
+    CalendarAccount:
+      type: object
+      required:
+        - id
+        - user_id
+        - provider
+        - external_account_id
+        - calendar_id
+        - token_last_four
+        - sync_enabled
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum:
+            - google
+        external_account_id:
+          type: string
+        calendar_id:
+          type: string
+        token_last_four:
+          type: string
+        sync_enabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CalendarAccountResourceResponse:
+      type: object
+      required:
+        - account
+      properties:
+        account:
+          $ref: "#/components/schemas/CalendarAccount"
+    CalendarAccountListResponse:
+      type: object
+      required:
+        - accounts
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CalendarAccount"
+    CalendarEvent:
+      type: object
+      required:
+        - id
+        - meeting_id
+        - account_id
+        - provider
+        - provider_event_id
+        - calendar_id
+        - status
+        - operation
+        - last_synced_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        meeting_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          enum:
+            - google
+        provider_event_id:
+          type: string
+        provider_event_url:
+          type:
+            - string
+            - "null"
+          format: uri
+        calendar_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - synced
+            - failed
+        operation:
+          type: string
+          enum:
+            - created
+            - updated
+        last_synced_at:
+          type: string
+          format: date-time
+        failure_reason:
+          type:
+            - string
+            - "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CalendarEventResourceResponse:
+      type: object
+      required:
+        - calendar_event
+      properties:
+        calendar_event:
+          $ref: "#/components/schemas/CalendarEvent"
     CreateSpaceRequest:
       type: object
       required:

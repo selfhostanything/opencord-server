@@ -4,6 +4,8 @@ pub mod audit_memory;
 pub mod audit_postgres;
 pub mod auth_memory;
 pub mod auth_postgres;
+pub mod calendar_memory;
+pub mod calendar_postgres;
 pub mod channel_memory;
 pub mod channel_postgres;
 pub mod meeting_memory;

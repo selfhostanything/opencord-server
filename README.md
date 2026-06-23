@@ -89,6 +89,8 @@ POST /auth/register
 POST /auth/login
 POST /auth/logout
 GET /me
+GET /calendar/accounts
+POST /calendar/accounts/google
 POST /media/rooms/token
 POST /voice/channels/{channel_id}/join
 POST /push-tokens
@@ -102,6 +104,7 @@ POST /organizations/{organization_id}/meetings
 GET /organizations/{organization_id}/meetings
 GET /meetings/{meeting_id}
 GET /meetings/{meeting_id}/invite.ics
+POST /meetings/{meeting_id}/calendar/google/sync
 PATCH /meetings/{meeting_id}
 DELETE /meetings/{meeting_id}
 POST /spaces/{space_id}/channels
@@ -144,6 +147,18 @@ OPENCORD_REMINDER_BATCH_SIZE=100
 The current dispatcher logs in-app, push, and email reminder deliveries. SMTP,
 mobile push, and realtime in-app delivery adapters are future integration
 points behind the same worker boundary.
+
+## Calendar Sync
+
+`POST /calendar/accounts/google` connects the current user to a Google Calendar
+account for meeting sync. Access and refresh tokens are write-only request
+fields; responses expose only account metadata and the token suffix.
+
+`POST /meetings/{meeting_id}/calendar/google/sync` creates or updates the
+current user's Google provider event mapping for a meeting the user can manage.
+The first implementation uses a local Google adapter boundary and durable
+provider event metadata, so internal meeting creation does not depend on Google
+network availability.
 
 ## Media Control
 

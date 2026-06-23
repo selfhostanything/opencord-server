@@ -4,10 +4,11 @@ use axum::routing::{get, patch, post, put};
 
 use crate::config::AppConfig;
 use crate::controllers::{
-    attachment_controller, audit_controller, auth_controller, channel_controller,
-    discovery_controller, health_controller, media_controller, meeting_controller,
-    message_controller, metrics_controller, organization_controller, permission_controller,
-    push_controller, realtime_controller, space_controller, voice_controller,
+    attachment_controller, audit_controller, auth_controller, calendar_controller,
+    channel_controller, discovery_controller, health_controller, media_controller,
+    meeting_controller, message_controller, metrics_controller, organization_controller,
+    permission_controller, push_controller, realtime_controller, space_controller,
+    voice_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -32,6 +33,14 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route("/auth/login", post(auth_controller::login))
         .route("/auth/logout", post(auth_controller::logout))
         .route("/me", get(auth_controller::me))
+        .route(
+            "/calendar/accounts",
+            get(calendar_controller::list_accounts),
+        )
+        .route(
+            "/calendar/accounts/google",
+            post(calendar_controller::connect_google),
+        )
         .route(
             "/media/rooms/token",
             post(media_controller::create_room_token),
@@ -69,6 +78,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/meetings/{meeting_id}/invite.ics",
             get(meeting_controller::invite_ics),
+        )
+        .route(
+            "/meetings/{meeting_id}/calendar/google/sync",
+            post(meeting_controller::sync_google_calendar),
         )
         .route(
             "/spaces/{space_id}/channels",

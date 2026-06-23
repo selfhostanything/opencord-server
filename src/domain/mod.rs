@@ -2,6 +2,7 @@ pub mod attachment;
 pub mod audit;
 pub mod auth;
 pub mod calendar;
+pub mod calendar_sync;
 pub mod channel;
 pub mod ids;
 pub mod media;

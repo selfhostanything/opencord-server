@@ -6,6 +6,9 @@ use crate::config::AppConfig;
 use crate::domain::attachment::{AttachmentService, AttachmentStore};
 use crate::domain::audit::{AuditService, AuditStore};
 use crate::domain::auth::{AuthService, AuthStore};
+use crate::domain::calendar_sync::{
+    CalendarStore, CalendarSyncService, LocalGoogleCalendarAdapter,
+};
 use crate::domain::channel::{ChannelService, ChannelStore};
 use crate::domain::media::MediaControlService;
 use crate::domain::meeting::{MeetingService, MeetingStore};
@@ -22,6 +25,8 @@ use crate::repositories::audit_memory::MemoryAuditStore;
 use crate::repositories::audit_postgres::PostgresAuditStore;
 use crate::repositories::auth_memory::MemoryAuthStore;
 use crate::repositories::auth_postgres::PostgresAuthStore;
+use crate::repositories::calendar_memory::MemoryCalendarStore;
+use crate::repositories::calendar_postgres::PostgresCalendarStore;
 use crate::repositories::channel_memory::MemoryChannelStore;
 use crate::repositories::channel_postgres::PostgresChannelStore;
 use crate::repositories::meeting_memory::MemoryMeetingStore;
@@ -46,6 +51,7 @@ pub struct AppState {
     pub channels: Arc<ChannelService>,
     pub messages: Arc<MessageService>,
     pub meetings: Arc<MeetingService>,
+    pub calendar_sync: Arc<CalendarSyncService>,
     pub attachments: Arc<AttachmentService>,
     pub audit: Arc<AuditService>,
     pub permissions: Arc<PermissionService>,
@@ -66,6 +72,7 @@ impl AppState {
                 channels: Arc::new(MemoryChannelStore::default()),
                 messages: Arc::new(MemoryMessageStore::default()),
                 meetings: Arc::new(MemoryMeetingStore::default()),
+                calendar: Arc::new(MemoryCalendarStore::default()),
                 attachments: Arc::new(MemoryAttachmentStore::default()),
                 audit: Arc::new(MemoryAuditStore::default()),
                 permissions: Arc::new(MemoryPermissionStore::default()),
@@ -84,6 +91,7 @@ impl AppState {
                 channels: Arc::new(PostgresChannelStore::new(db.clone())),
                 messages: Arc::new(PostgresMessageStore::new(db.clone())),
                 meetings: Arc::new(PostgresMeetingStore::new(db.clone())),
+                calendar: Arc::new(PostgresCalendarStore::new(db.clone())),
                 attachments: Arc::new(PostgresAttachmentStore::new(db.clone())),
                 audit: Arc::new(PostgresAuditStore::new(db.clone())),
                 permissions: Arc::new(PostgresPermissionStore::new(db.clone())),
@@ -101,6 +109,10 @@ impl AppState {
             channels: Arc::new(ChannelService::new(stores.channels)),
             messages: Arc::new(MessageService::new(stores.messages)),
             meetings: Arc::new(MeetingService::new(stores.meetings)),
+            calendar_sync: Arc::new(CalendarSyncService::new(
+                stores.calendar,
+                Arc::new(LocalGoogleCalendarAdapter),
+            )),
             attachments: Arc::new(AttachmentService::new(stores.attachments)),
             audit: Arc::new(AuditService::new(stores.audit)),
             permissions: Arc::new(PermissionService::new(stores.permissions)),
@@ -119,6 +131,7 @@ pub struct AppStores {
     pub channels: Arc<dyn ChannelStore>,
     pub messages: Arc<dyn MessageStore>,
     pub meetings: Arc<dyn MeetingStore>,
+    pub calendar: Arc<dyn CalendarStore>,
     pub attachments: Arc<dyn AttachmentStore>,
     pub audit: Arc<dyn AuditStore>,
     pub permissions: Arc<dyn PermissionStore>,
