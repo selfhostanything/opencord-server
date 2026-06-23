@@ -56,6 +56,27 @@ impl PermissionStore for MemoryPermissionStore {
             .cloned())
     }
 
+    async fn list_roles_for_space(&self, space_id: Uuid) -> Result<Vec<Role>, PermissionError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| PermissionError::StoreUnavailable)?;
+        let mut roles = state
+            .roles_by_id
+            .values()
+            .filter(|role| role.space_id == space_id)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        roles.sort_by(|left, right| {
+            left.position
+                .cmp(&right.position)
+                .then_with(|| left.name.cmp(&right.name))
+        });
+
+        Ok(roles)
+    }
+
     async fn assign_role(&self, assignment: RoleAssignment) -> Result<(), PermissionError> {
         let mut state = self
             .state

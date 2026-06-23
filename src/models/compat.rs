@@ -38,6 +38,18 @@ pub struct CompatChannelResponse {
 }
 
 #[derive(Clone, Debug, Serialize)]
+pub struct CompatRoleResponse {
+    pub id: String,
+    pub name: String,
+    pub color: i32,
+    pub hoist: bool,
+    pub position: i32,
+    pub permissions: String,
+    pub managed: bool,
+    pub mentionable: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct CompatMessageResponse {
     pub id: String,
     pub channel_id: String,

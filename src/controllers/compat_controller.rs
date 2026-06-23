@@ -8,12 +8,12 @@ use crate::controllers::message_controller::message_response;
 use crate::domain::bot::{AuthenticatedBot, BotError};
 use crate::domain::channel::{Channel, ChannelError};
 use crate::domain::message::{Message, MessageError};
-use crate::domain::permission::{Permission, PermissionError};
+use crate::domain::permission::{Permission, PermissionError, Role};
 use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::{SpaceError, SpaceMembership};
 use crate::models::compat::{
     CompatChannelResponse, CompatErrorResponse, CompatGuildResponse, CompatMessageResponse,
-    CompatUserResponse, CreateCompatMessageRequest, PatchCompatMessageRequest,
+    CompatRoleResponse, CompatUserResponse, CreateCompatMessageRequest, PatchCompatMessageRequest,
 };
 use crate::state::AppState;
 
@@ -62,6 +62,18 @@ pub async fn list_guild_channels(
     }
 
     Ok(Json(visible_channels))
+}
+
+pub async fn list_guild_roles(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(space_id): Path<Uuid>,
+) -> Result<Json<Vec<CompatRoleResponse>>, CompatApiError> {
+    let bot = authenticate_bot(&state, &headers).await?;
+    let space = visible_space_for_bot(&state, &bot, space_id).await?;
+    let roles = state.permissions.list_roles_for_space(space.id).await?;
+
+    Ok(Json(roles.into_iter().map(compat_role_response).collect()))
 }
 
 pub async fn create_message(
@@ -368,4 +380,24 @@ fn compat_channel_kind(kind: &str) -> i32 {
         "voice" => 2,
         _ => 0,
     }
+}
+
+fn compat_role_response(role: Role) -> CompatRoleResponse {
+    CompatRoleResponse {
+        id: role.id.to_string(),
+        name: role.name,
+        color: compat_role_color(role.color.as_deref()),
+        hoist: false,
+        position: role.position,
+        permissions: role.permissions_bitset.to_string(),
+        managed: false,
+        mentionable: true,
+    }
+}
+
+fn compat_role_color(color: Option<&str>) -> i32 {
+    color
+        .and_then(|color| color.strip_prefix('#'))
+        .and_then(|color| i32::from_str_radix(color, 16).ok())
+        .unwrap_or(0)
 }

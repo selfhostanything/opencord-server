@@ -67,6 +67,27 @@ impl PermissionStore for PostgresPermissionStore {
         row.map(role_from_row).transpose()
     }
 
+    async fn list_roles_for_space(&self, space_id: Uuid) -> Result<Vec<Role>, PermissionError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                role_select_sql(
+                    r#"
+                    WHERE space_id = $1::uuid
+                    ORDER BY position ASC, name ASC
+                    "#,
+                ),
+                vec![Value::from(space_id.to_string())],
+            ))
+            .await
+            .map_err(|_| PermissionError::StoreUnavailable)?;
+
+        rows.into_iter()
+            .map(role_from_row)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
     async fn assign_role(&self, assignment: RoleAssignment) -> Result<(), PermissionError> {
         self.db
             .execute(Statement::from_sql_and_values(

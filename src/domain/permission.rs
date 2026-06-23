@@ -225,6 +225,7 @@ pub trait PermissionStore: Send + Sync {
         space_id: Uuid,
         role_id: Uuid,
     ) -> Result<Option<Role>, PermissionError>;
+    async fn list_roles_for_space(&self, space_id: Uuid) -> Result<Vec<Role>, PermissionError>;
     async fn assign_role(&self, assignment: RoleAssignment) -> Result<(), PermissionError>;
     async fn assigned_roles_for_user(
         &self,
@@ -298,6 +299,10 @@ impl PermissionService {
         self.store.assign_role(assignment.clone()).await?;
 
         Ok(assignment)
+    }
+
+    pub async fn list_roles_for_space(&self, space_id: Uuid) -> Result<Vec<Role>, PermissionError> {
+        self.store.list_roles_for_space(space_id).await
     }
 
     pub async fn set_channel_override(

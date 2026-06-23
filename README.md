@@ -89,6 +89,7 @@ POST /api/webhooks/{webhook_id}/{webhook_token}
 GET /api/compat/discord/v10/users/@me
 GET /api/compat/discord/v10/guilds/{space_id}
 GET /api/compat/discord/v10/guilds/{space_id}/channels
+GET /api/compat/discord/v10/guilds/{space_id}/roles
 POST /api/compat/discord/v10/channels/{channel_id}/messages
 GET /api/compat/discord/v10/channels/{channel_id}/messages
 PATCH /api/compat/discord/v10/channels/{channel_id}/messages/{message_id}
@@ -393,9 +394,10 @@ Exhausted buckets return `429` with the same headers plus `Retry-After`.
 `GET /api/compat/discord/v10/users/@me`,
 `GET /api/compat/discord/v10/guilds/{space_id}`, and
 `GET /api/compat/discord/v10/guilds/{space_id}/channels` support basic bot SDK
-discovery flows. They return Discord-shaped current bot user, guild, and
-channel objects while enforcing normal OpenCord bot-user space membership and
-channel visibility permissions.
+discovery flows. `GET /api/compat/discord/v10/guilds/{space_id}/roles`
+returns custom space roles in a Discord-shaped role payload. Discovery routes
+enforce normal OpenCord bot-user space membership and channel visibility
+permissions where channels are involved.
 
 `/api/compat/discord/v10/channels/{channel_id}/messages` supports the first
 Discord-compatible bot message routes: send, list, edit, and delete. Requests

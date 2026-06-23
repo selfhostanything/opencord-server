@@ -49,6 +49,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
             get(compat_controller::list_guild_channels),
         )
         .route(
+            "/api/compat/discord/v10/guilds/{space_id}/roles",
+            get(compat_controller::list_guild_roles),
+        )
+        .route(
             "/api/compat/discord/v10/channels/{channel_id}/messages",
             post(compat_controller::create_message).get(compat_controller::list_messages),
         )
