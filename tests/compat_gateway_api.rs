@@ -2107,6 +2107,73 @@ async fn compat_gateway_dispatches_component_interaction_and_callback_response()
 }
 
 #[tokio::test]
+async fn compat_gateway_closes_unknown_opcode_with_protocol_error() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 99,
+                "d": {}
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send unknown opcode");
+
+    let invalid_session = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("invalid session event");
+    assert_eq!(invalid_session["op"], 9);
+    assert_eq!(invalid_session["d"], false);
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut socket))
+        .await
+        .expect("unknown opcode close frame");
+    assert_eq!(code, CloseCode::Library(4001));
+    assert_eq!(reason, "unknown opcode");
+}
+
+#[tokio::test]
+async fn compat_gateway_closes_malformed_gateway_payload_with_decode_error() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text("{not json".into()))
+        .await
+        .expect("send malformed payload");
+
+    let invalid_session = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("invalid session event");
+    assert_eq!(invalid_session["op"], 9);
+    assert_eq!(invalid_session["d"], false);
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut socket))
+        .await
+        .expect("decode error close frame");
+    assert_eq!(code, CloseCode::Library(4002));
+    assert_eq!(reason, "decode error");
+}
+
+#[tokio::test]
 async fn compat_gateway_rejects_unknown_resume_session() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;

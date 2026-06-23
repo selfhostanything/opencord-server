@@ -24,6 +24,8 @@ const OP_INVALID_SESSION: i32 = 9;
 const OP_HELLO: i32 = 10;
 const OP_HEARTBEAT_ACK: i32 = 11;
 const HEARTBEAT_INTERVAL_MS: u64 = 45_000;
+const CLOSE_UNKNOWN_OPCODE: u16 = 4001;
+const CLOSE_DECODE_ERROR: u16 = 4002;
 const CLOSE_AUTHENTICATION_FAILED: u16 = 4004;
 const CLOSE_SESSION_TIMED_OUT: u16 = 4009;
 const INTENT_GUILDS: u64 = 1 << 0;
@@ -220,8 +222,9 @@ async fn handle_client_message(
     match message {
         WebSocketMessage::Text(text) => {
             let Ok(message) = serde_json::from_str::<GatewayMessage>(&text) else {
-                let _ = send_invalid_session(socket).await;
-                return true;
+                let _ = send_invalid_session_and_close(socket, CLOSE_DECODE_ERROR, "decode error")
+                    .await;
+                return false;
             };
 
             match message.op {
@@ -253,8 +256,13 @@ async fn handle_client_message(
                     .await
                 }
                 _ => {
-                    let _ = send_invalid_session(socket).await;
-                    true
+                    let _ = send_invalid_session_and_close(
+                        socket,
+                        CLOSE_UNKNOWN_OPCODE,
+                        "unknown opcode",
+                    )
+                    .await;
+                    false
                 }
             }
         }
@@ -264,8 +272,9 @@ async fn handle_client_message(
         WebSocketMessage::Pong(_) => true,
         WebSocketMessage::Close(_) => false,
         WebSocketMessage::Binary(_) => {
-            let _ = send_invalid_session(socket).await;
-            true
+            let _ =
+                send_invalid_session_and_close(socket, CLOSE_DECODE_ERROR, "decode error").await;
+            false
         }
     }
 }
