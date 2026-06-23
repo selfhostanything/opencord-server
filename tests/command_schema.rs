@@ -80,3 +80,26 @@ fn deferred_interactions_migration_extends_status_schema() {
     assert!(migrator.contains("mod m20260623070000_deferred_interactions;"));
     assert!(migrator.contains("Box::new(m20260623070000_deferred_interactions::Migration)"));
 }
+
+#[test]
+fn interaction_response_messages_migration_tracks_original_response() {
+    let migration = repo_file("src/db/migrations/m20260623071000_interaction_response_messages.rs");
+
+    for expected in [
+        "ADD COLUMN IF NOT EXISTS response_message_id uuid NULL REFERENCES messages(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS idx_command_interactions_response_message",
+        "WHERE response_message_id IS NOT NULL",
+        "DROP COLUMN IF EXISTS response_message_id",
+    ] {
+        assert!(
+            migration.contains(expected),
+            "interaction response message migration should contain {expected}"
+        );
+    }
+
+    let migrator = repo_file("src/db/migrations/mod.rs");
+    assert!(migrator.contains("mod m20260623071000_interaction_response_messages;"));
+    assert!(
+        migrator.contains("Box::new(m20260623071000_interaction_response_messages::Migration)")
+    );
+}

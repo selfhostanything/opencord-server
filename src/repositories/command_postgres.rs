@@ -94,12 +94,12 @@ impl CommandStore for PostgresCommandStore {
                     id, application_id, organization_id, space_id, channel_id,
                     interaction_type, command_id, message_id, invoking_user_id,
                     token_hash, token_last_four, status, options, custom_id, component_type,
-                    created_at, responded_at
+                    response_message_id, created_at, responded_at
                 )
                 VALUES (
                     $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
                     $6, $7::uuid, $8::uuid, $9::uuid, $10, $11, $12, $13::jsonb,
-                    $14, $15, $16::timestamptz, $17::timestamptz
+                    $14, $15, $16::uuid, $17::timestamptz, $18::timestamptz
                 )
                 "#,
                 interaction_values(&interaction),
@@ -176,7 +176,8 @@ impl CommandStore for PostgresCommandStore {
                           space_id::text, channel_id::text, interaction_type,
                           command_id::text, message_id::text, invoking_user_id::text,
                           token_hash, token_last_four, status, options::text,
-                          custom_id, component_type, created_at::text, responded_at::text
+                          custom_id, component_type, response_message_id::text,
+                          created_at::text, responded_at::text
                 "#,
                 vec![
                     Value::from(interaction_id.to_string()),
@@ -194,6 +195,7 @@ impl CommandStore for PostgresCommandStore {
     async fn mark_interaction_responded(
         &self,
         interaction_id: Uuid,
+        response_message_id: Option<Uuid>,
         responded_at: String,
     ) -> Result<CommandInteraction, CommandError> {
         let row = self
@@ -203,17 +205,20 @@ impl CommandStore for PostgresCommandStore {
                 r#"
                 UPDATE command_interactions
                 SET status = 'responded',
-                    responded_at = $2::timestamptz
+                    response_message_id = COALESCE($2::uuid, response_message_id),
+                    responded_at = $3::timestamptz
                 WHERE id = $1::uuid
                   AND status IN ('pending', 'deferred')
                 RETURNING id::text, application_id::text, organization_id::text,
                           space_id::text, channel_id::text, interaction_type,
                           command_id::text, message_id::text, invoking_user_id::text,
                           token_hash, token_last_four, status, options::text,
-                          custom_id, component_type, created_at::text, responded_at::text
+                          custom_id, component_type, response_message_id::text,
+                          created_at::text, responded_at::text
                 "#,
                 vec![
                     Value::from(interaction_id.to_string()),
+                    Value::from(response_message_id.map(|id| id.to_string())),
                     Value::from(responded_at),
                 ],
             ))
@@ -245,7 +250,8 @@ fn command_interaction_select_sql(where_clause: &str) -> String {
                space_id::text, channel_id::text, interaction_type,
                command_id::text, message_id::text, invoking_user_id::text,
                token_hash, token_last_four, status, options::text, custom_id,
-               component_type, created_at::text, responded_at::text
+               component_type, response_message_id::text, created_at::text,
+               responded_at::text
         FROM command_interactions
         {where_clause}
         "#
@@ -292,6 +298,10 @@ fn interaction_from_row(row: sea_orm::QueryResult) -> Result<CommandInteraction,
         component_type: row
             .try_get::<Option<i32>>("", "component_type")
             .map_err(|_| CommandError::StoreUnavailable)?,
+        response_message_id: parse_optional_uuid(row_optional_string(
+            &row,
+            "response_message_id",
+        )?)?,
         created_at: row_string(&row, "created_at")?,
         responded_at: row
             .try_get::<Option<String>>("", "responded_at")
@@ -316,6 +326,7 @@ fn interaction_values(interaction: &CommandInteraction) -> Vec<Value> {
         Value::from(interaction.options.to_string()),
         Value::from(interaction.custom_id.clone()),
         Value::from(interaction.component_type),
+        Value::from(interaction.response_message_id.map(|id| id.to_string())),
         Value::from(interaction.created_at.clone()),
         Value::from(interaction.responded_at.clone()),
     ]

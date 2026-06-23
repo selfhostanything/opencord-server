@@ -524,6 +524,44 @@ paths:
           description: Interaction application or channel not found
         "409":
           description: Interaction is not deferred or has already received its first follow-up
+  /api/compat/discord/v10/webhooks/{application_id}/{interaction_token}/messages/@original:
+    patch:
+      summary: Edit the original interaction response
+      description: >
+        Edits the stored original bot-authored response message for an
+        interaction token. The original response is created by callback type `4`
+        or by the first follow-up after callback type `5`.
+      parameters:
+        - name: application_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: interaction_token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchInteractionOriginalResponseRequest"
+      responses:
+        "200":
+          description: Original response message edited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompatMessage"
+        "400":
+          description: Invalid edit payload
+        "401":
+          description: Missing or invalid interaction token
+        "404":
+          description: Original interaction response was not found
   /api/compat/discord/gateway:
     get:
       summary: Discord-compatible gateway websocket
@@ -3858,6 +3896,11 @@ components:
           type: integer
           nullable: true
           description: Present for message component interactions.
+        response_message_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Present after the original interaction response message has been created.
         created_at:
           type: string
           format: date-time
@@ -3896,6 +3939,15 @@ components:
           minLength: 1
           maxLength: 4000
     CreateInteractionFollowupRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+    PatchInteractionOriginalResponseRequest:
       type: object
       required:
         - content

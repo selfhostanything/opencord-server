@@ -26,7 +26,7 @@ use crate::models::command::{
     CommandInteractionCreatedResponse, CompatApplicationCommandResponse,
     CreateCommandInteractionRequest, CreateCompatApplicationCommandRequest,
     CreateComponentInteractionRequest, CreateInteractionCallbackRequest,
-    CreateInteractionFollowupRequest,
+    CreateInteractionFollowupRequest, PatchInteractionOriginalResponseRequest,
 };
 use crate::models::compat::{CompatErrorResponse, CompatMessageResponse, CompatUserResponse};
 use crate::state::AppState;
@@ -227,6 +227,7 @@ pub async fn create_interaction_callback(
             false,
         )
         .await?;
+    let response_message_id = message.id;
     state.realtime.publish(RealtimeEvent::channel(
         "message.created",
         interaction.organization_id,
@@ -238,7 +239,7 @@ pub async fn create_interaction_callback(
     ));
     state
         .commands
-        .mark_interaction_responded(interaction.id)
+        .mark_interaction_responded(interaction.id, Some(response_message_id))
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
@@ -275,6 +276,7 @@ pub async fn create_interaction_followup(
             false,
         )
         .await?;
+    let response_message_id = message.id;
     let response = interaction_followup_response(message.clone(), &application);
     state.realtime.publish(RealtimeEvent::channel(
         "message.created",
@@ -287,10 +289,42 @@ pub async fn create_interaction_followup(
     ));
     state
         .commands
-        .mark_interaction_responded(interaction.id)
+        .mark_interaction_responded(interaction.id, Some(response_message_id))
         .await?;
 
     Ok((StatusCode::OK, Json(response)))
+}
+
+pub async fn update_original_interaction_response(
+    State(state): State<AppState>,
+    Path((application_id, interaction_token)): Path<(Uuid, String)>,
+    Json(request): Json<PatchInteractionOriginalResponseRequest>,
+) -> Result<impl IntoResponse, CommandApiError> {
+    let interaction = state
+        .commands
+        .interaction_for_original_response(application_id, &interaction_token)
+        .await?;
+    let application = state
+        .bots
+        .application_for_organization(interaction.application_id, interaction.organization_id)
+        .await?;
+    let response_message_id = interaction
+        .response_message_id
+        .ok_or(CommandError::NotFound)?;
+    let message = state.messages.get(response_message_id).await?;
+    if message.organization_id != interaction.organization_id
+        || message.space_id != Some(interaction.space_id)
+        || message.channel_id != interaction.channel_id
+        || message.author_user_id != application.bot_user_id
+    {
+        return Err(CommandError::NotFound.into());
+    }
+
+    let message = state.messages.update(message, request.content).await?;
+    Ok((
+        StatusCode::OK,
+        Json(interaction_followup_response(message, &application)),
+    ))
 }
 
 fn interaction_followup_response(

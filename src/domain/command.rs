@@ -46,6 +46,7 @@ pub struct CommandInteraction {
     pub options: Value,
     pub custom_id: Option<String>,
     pub component_type: Option<i32>,
+    pub response_message_id: Option<Uuid>,
     pub created_at: String,
     pub responded_at: Option<String>,
 }
@@ -158,6 +159,7 @@ pub trait CommandStore: Send + Sync {
     async fn mark_interaction_responded(
         &self,
         interaction_id: Uuid,
+        response_message_id: Option<Uuid>,
         responded_at: String,
     ) -> Result<CommandInteraction, CommandError>;
 }
@@ -229,6 +231,7 @@ impl CommandService {
             options: normalize_interaction_options(input.options)?,
             custom_id: None,
             component_type: None,
+            response_message_id: None,
             created_at: now,
             responded_at: None,
         };
@@ -260,6 +263,7 @@ impl CommandService {
             options: Value::Array(Vec::new()),
             custom_id: Some(normalize_component_custom_id(input.custom_id)?),
             component_type: Some(normalize_component_type(input.component_type)?),
+            response_message_id: None,
             created_at: now,
             responded_at: None,
         };
@@ -317,6 +321,32 @@ impl CommandService {
         Ok(interaction)
     }
 
+    pub async fn interaction_for_original_response(
+        &self,
+        application_id: Uuid,
+        token: &str,
+    ) -> Result<CommandInteraction, CommandError> {
+        if !token.starts_with("oci_") {
+            return Err(CommandError::Unauthorized);
+        }
+
+        let interaction = self
+            .store
+            .find_interaction_by_token_hash(&hash_interaction_token(token))
+            .await?
+            .ok_or(CommandError::Unauthorized)?;
+
+        if interaction.application_id != application_id {
+            return Err(CommandError::Unauthorized);
+        }
+
+        if interaction.status != "responded" || interaction.response_message_id.is_none() {
+            return Err(CommandError::NotFound);
+        }
+
+        Ok(interaction)
+    }
+
     pub async fn mark_interaction_deferred(
         &self,
         interaction_id: Uuid,
@@ -332,10 +362,12 @@ impl CommandService {
     pub async fn mark_interaction_responded(
         &self,
         interaction_id: Uuid,
+        response_message_id: Option<Uuid>,
     ) -> Result<CommandInteraction, CommandError> {
         self.store
             .mark_interaction_responded(
                 interaction_id,
+                response_message_id,
                 Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             )
             .await

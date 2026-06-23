@@ -113,6 +113,7 @@ impl CommandStore for MemoryCommandStore {
     async fn mark_interaction_responded(
         &self,
         interaction_id: Uuid,
+        response_message_id: Option<Uuid>,
         responded_at: String,
     ) -> Result<CommandInteraction, CommandError> {
         let mut state = self
@@ -128,6 +129,9 @@ impl CommandStore for MemoryCommandStore {
         }
 
         interaction.status = "responded".to_owned();
+        if response_message_id.is_some() {
+            interaction.response_message_id = response_message_id;
+        }
         interaction.responded_at = Some(responded_at);
         Ok(interaction.clone())
     }

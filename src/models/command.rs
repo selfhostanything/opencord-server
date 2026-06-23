@@ -79,6 +79,8 @@ pub struct CommandInteractionResponse {
     pub custom_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub component_type: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_message_id: Option<String>,
     pub created_at: String,
     pub responded_at: Option<String>,
 }
@@ -101,6 +103,10 @@ impl From<CommandInteractionCreated> for CommandInteractionCreatedResponse {
                 options: created.interaction.options,
                 custom_id: created.interaction.custom_id,
                 component_type: created.interaction.component_type,
+                response_message_id: created
+                    .interaction
+                    .response_message_id
+                    .map(|id| id.to_string()),
                 created_at: created.interaction.created_at,
                 responded_at: created.interaction.responded_at,
             },
@@ -122,5 +128,10 @@ pub struct InteractionCallbackData {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateInteractionFollowupRequest {
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PatchInteractionOriginalResponseRequest {
     pub content: String,
 }
