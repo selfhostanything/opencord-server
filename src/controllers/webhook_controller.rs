@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde_json::json;
 use uuid::Uuid;
@@ -11,6 +11,7 @@ use crate::domain::auth::AuthError;
 use crate::domain::channel::{Channel, ChannelError};
 use crate::domain::message::MessageError;
 use crate::domain::permission::{Permission, PermissionError};
+use crate::domain::rate_limit::RateLimitDecision;
 use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::SpaceError;
 use crate::domain::webhook::{IncomingWebhook, WebhookError};
@@ -147,6 +148,13 @@ pub async fn execute(
     Path((webhook_id, webhook_token)): Path<(Uuid, String)>,
     Json(request): Json<ExecuteIncomingWebhookRequest>,
 ) -> Result<impl IntoResponse, WebhookApiError> {
+    let rate_limit = state
+        .webhook_execution_rate_limits
+        .check(public_webhook_bucket(webhook_id));
+    if !rate_limit.allowed {
+        return Err(WebhookApiError::RateLimited(rate_limit));
+    }
+
     let webhook = state.webhooks.verify(webhook_id, &webhook_token).await?;
     let channel = state.channels.get(webhook.channel_id).await?;
     ensure_webhook_matches_channel(&webhook, &channel)?;
@@ -173,6 +181,7 @@ pub async fn execute(
 
     Ok((
         StatusCode::CREATED,
+        rate_limit_headers(&rate_limit),
         Json(MessageResourceResponse { message }),
     ))
 }
@@ -186,6 +195,7 @@ pub enum WebhookApiError {
     Webhook(WebhookError),
     Message(MessageError),
     Audit(AuditError),
+    RateLimited(RateLimitDecision),
 }
 
 impl From<AuthError> for WebhookApiError {
@@ -232,6 +242,20 @@ impl From<AuditError> for WebhookApiError {
 
 impl IntoResponse for WebhookApiError {
     fn into_response(self) -> Response {
+        if let Self::RateLimited(decision) = self {
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                rate_limit_headers(&decision),
+                Json(ErrorResponse {
+                    error: ErrorDetail {
+                        code: "rate_limited",
+                        message: "rate limit exceeded",
+                    },
+                }),
+            )
+                .into_response();
+        }
+
         let (status, code, message) = match self {
             Self::Auth(error) => (error.status_code(), error.code(), error.message()),
             Self::Channel(error) => (error.status_code(), error.code(), error.message()),
@@ -240,6 +264,7 @@ impl IntoResponse for WebhookApiError {
             Self::Webhook(error) => (error.status_code(), error.code(), error.message()),
             Self::Message(error) => (error.status_code(), error.code(), error.message()),
             Self::Audit(error) => (error.status_code(), error.code(), error.message()),
+            Self::RateLimited(_) => unreachable!("rate limited responses are returned above"),
         };
 
         (
@@ -250,6 +275,39 @@ impl IntoResponse for WebhookApiError {
         )
             .into_response()
     }
+}
+
+fn public_webhook_bucket(webhook_id: Uuid) -> String {
+    format!("webhook:{webhook_id}")
+}
+
+fn rate_limit_headers(decision: &RateLimitDecision) -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "x-ratelimit-limit",
+        HeaderValue::from_str(&decision.limit.to_string()).expect("valid rate limit header"),
+    );
+    headers.insert(
+        "x-ratelimit-remaining",
+        HeaderValue::from_str(&decision.remaining.to_string()).expect("valid rate limit header"),
+    );
+    headers.insert(
+        "x-ratelimit-reset",
+        HeaderValue::from_str(&decision.reset_after_seconds.to_string())
+            .expect("valid rate limit header"),
+    );
+    headers.insert(
+        "x-ratelimit-bucket",
+        HeaderValue::from_str(&decision.bucket).expect("valid rate limit header"),
+    );
+    if !decision.allowed {
+        headers.insert(
+            header::RETRY_AFTER,
+            HeaderValue::from_str(&decision.reset_after_seconds.to_string())
+                .expect("valid retry-after header"),
+        );
+    }
+    headers
 }
 
 async fn manageable_text_channel(

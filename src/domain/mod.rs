@@ -16,6 +16,7 @@ pub mod metrics;
 pub mod organization;
 pub mod permission;
 pub mod push;
+pub mod rate_limit;
 pub mod realtime;
 pub mod reminder;
 pub mod retention;

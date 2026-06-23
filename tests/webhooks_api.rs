@@ -592,6 +592,85 @@ async fn webhook_execution_rejects_invalid_token() {
 }
 
 #[tokio::test]
+async fn webhook_execution_is_rate_limited_per_webhook_url() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "webhook-rate-limit-owner@example.com").await;
+    let (_, _, channel_id) =
+        create_space_with_channel(&app, &owner_token, "rate-limit", "text").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/webhooks"),
+            &owner_token,
+            json!({ "name": "Rate Limit Hook" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let body = response_json(created).await;
+    let webhook_id = body["webhook"]["id"].as_str().unwrap().to_owned();
+    let raw_token = body["webhook"]["token"].as_str().unwrap().to_owned();
+    let execute_path = format!("/api/webhooks/{webhook_id}/{raw_token}");
+
+    for remaining in (0..5).rev() {
+        let response = app
+            .clone()
+            .oneshot(json_request(
+                Method::POST,
+                &execute_path,
+                json!({ "content": format!("allowed {remaining}") }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(
+            response.headers()["x-ratelimit-limit"].to_str().unwrap(),
+            "5"
+        );
+        assert_eq!(
+            response.headers()["x-ratelimit-remaining"]
+                .to_str()
+                .unwrap(),
+            remaining.to_string()
+        );
+        assert_eq!(
+            response.headers()["x-ratelimit-bucket"].to_str().unwrap(),
+            format!("webhook:{webhook_id}")
+        );
+        assert!(response.headers().contains_key("x-ratelimit-reset"));
+    }
+
+    let limited = app
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            &execute_path,
+            json!({ "content": "must be limited" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        limited.headers()["x-ratelimit-limit"].to_str().unwrap(),
+        "5"
+    );
+    assert_eq!(
+        limited.headers()["x-ratelimit-remaining"].to_str().unwrap(),
+        "0"
+    );
+    assert_eq!(
+        limited.headers()["x-ratelimit-bucket"].to_str().unwrap(),
+        format!("webhook:{webhook_id}")
+    );
+    assert!(limited.headers().contains_key("x-ratelimit-reset"));
+    assert!(limited.headers().contains_key("retry-after"));
+    let body = response_json(limited).await;
+    assert_eq!(body["error"]["code"], "rate_limited");
+}
+
+#[tokio::test]
 async fn webhooks_are_limited_to_text_channels() {
     let app = test_app();
     let (owner_token, _) = register(&app, "webhook-voice-owner@example.com").await;

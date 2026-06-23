@@ -22,6 +22,7 @@ use crate::domain::metrics::MediaMetrics;
 use crate::domain::organization::{OrganizationService, OrganizationStore};
 use crate::domain::permission::{PermissionService, PermissionStore};
 use crate::domain::push::{PushService, PushTokenStore};
+use crate::domain::rate_limit::FixedWindowRateLimiter;
 use crate::domain::realtime::RealtimeHub;
 use crate::domain::retention::{RetentionService, RetentionStore};
 use crate::domain::scim::{ScimService, ScimStore};
@@ -87,6 +88,7 @@ pub struct AppState {
     pub retention: Arc<RetentionService>,
     pub bots: Arc<BotService>,
     pub webhooks: Arc<IncomingWebhookService>,
+    pub webhook_execution_rate_limits: Arc<FixedWindowRateLimiter>,
     pub commands: Arc<CommandService>,
 }
 
@@ -195,6 +197,9 @@ impl AppState {
             retention: Arc::new(RetentionService::new(stores.retention)),
             bots,
             webhooks,
+            webhook_execution_rate_limits: Arc::new(
+                FixedWindowRateLimiter::public_webhook_execution(),
+            ),
             commands,
         }
     }

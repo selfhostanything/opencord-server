@@ -382,6 +382,10 @@ Webhook create, token rotation, and delete write `webhook.created`,
 `webhook.token_rotated`, and `webhook.deleted` audit events. Event metadata
 includes webhook IDs and token last-four values, never raw `ocw_` token
 material.
+Public webhook execution is limited to 5 requests per minute per webhook URL
+bucket. Successful execution responses include `X-RateLimit-Limit`,
+`X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `X-RateLimit-Bucket`.
+Exhausted buckets return `429` with the same headers plus `Retry-After`.
 
 `/api/compat/discord/v10/channels/{channel_id}/messages` supports the first
 Discord-compatible bot message routes: send, list, edit, and delete. Requests

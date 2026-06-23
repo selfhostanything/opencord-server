@@ -88,7 +88,7 @@ paths:
       description: >
         Public Discord-style incoming webhook execution endpoint. The path
         token is the webhook credential and is only shown when the webhook is
-        created.
+        created. Execution is rate-limited per webhook bucket.
       parameters:
         - name: webhook_id
           in: path
@@ -110,6 +110,23 @@ paths:
       responses:
         "201":
           description: Created message authored by the webhook bot user
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+              description: Request limit for the current webhook bucket.
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+              description: Remaining requests in the current window.
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+              description: Seconds until the current bucket resets.
+            X-RateLimit-Bucket:
+              schema:
+                type: string
+              description: Stable OpenCord rate-limit bucket key.
           content:
             application/json:
               schema:
@@ -118,6 +135,25 @@ paths:
           description: Invalid webhook message content
         "404":
           description: Webhook not found, disabled, or token invalid
+        "429":
+          description: Webhook execution rate limit exceeded
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+            X-RateLimit-Bucket:
+              schema:
+                type: string
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until retry is allowed.
   /api/compat/discord/v10/channels/{channel_id}/messages:
     post:
       summary: Create a Discord-compatible channel message
