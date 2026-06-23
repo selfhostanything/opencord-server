@@ -27,6 +27,7 @@ const HEARTBEAT_INTERVAL_MS: u64 = 45_000;
 const CLOSE_UNKNOWN_OPCODE: u16 = 4001;
 const CLOSE_DECODE_ERROR: u16 = 4002;
 const CLOSE_AUTHENTICATION_FAILED: u16 = 4004;
+const CLOSE_ALREADY_AUTHENTICATED: u16 = 4005;
 const CLOSE_SESSION_TIMED_OUT: u16 = 4009;
 const INTENT_GUILDS: u64 = 1 << 0;
 const INTENT_GUILD_MEMBERS: u64 = 1 << 1;
@@ -288,6 +289,16 @@ async fn identify_bot(
     active_intents: &mut u64,
     sequence: &mut i64,
 ) -> bool {
+    if identified_bot.is_some() {
+        let _ = send_invalid_session_and_close(
+            socket,
+            CLOSE_ALREADY_AUTHENTICATED,
+            "already authenticated",
+        )
+        .await;
+        return false;
+    }
+
     let Some(payload) = payload else {
         let _ = send_invalid_session(socket).await;
         return true;

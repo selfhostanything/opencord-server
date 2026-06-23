@@ -2258,3 +2258,58 @@ async fn compat_gateway_rejects_invalid_identify_token() {
     assert_eq!(code, CloseCode::Library(4004));
     assert_eq!(reason, "authentication failed");
 }
+
+#[tokio::test]
+async fn compat_gateway_closes_second_identify_with_already_authenticated() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-second-identify-owner@example.com").await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "second-identify").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    let identify = json!({
+        "op": 2,
+        "d": {
+            "token": bot_token,
+            "intents": 512,
+            "properties": {}
+        }
+    });
+    socket
+        .send(WsMessage::Text(identify.to_string().into()))
+        .await
+        .expect("send first identify");
+
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["op"], 0);
+    assert_eq!(ready["t"], "READY");
+
+    socket
+        .send(WsMessage::Text(identify.to_string().into()))
+        .await
+        .expect("send second identify");
+
+    let invalid_session = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("invalid session event");
+    assert_eq!(invalid_session["op"], 9);
+    assert_eq!(invalid_session["d"], false);
+    let (code, reason) = timeout(Duration::from_secs(2), next_close(&mut socket))
+        .await
+        .expect("already authenticated close frame");
+    assert_eq!(code, CloseCode::Library(4005));
+    assert_eq!(reason, "already authenticated");
+}

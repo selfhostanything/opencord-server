@@ -602,8 +602,9 @@ paths:
         Channel and guild-create dispatches require `GUILDS`; guild-member-add
         dispatches require `GUILD_MEMBERS`.
         Unknown opcodes close with `4001`; malformed payloads close with
-        `4002`; invalid IDENTIFY tokens close with `4004`; unknown RESUME
-        sessions close with `4009` after OP 9.
+        `4002`; invalid IDENTIFY tokens close with `4004`; duplicate IDENTIFY
+        frames close with `4005`; unknown RESUME sessions close with `4009`
+        after OP 9.
       responses:
         "101":
           description: WebSocket protocol switch
