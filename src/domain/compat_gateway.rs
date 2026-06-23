@@ -12,6 +12,7 @@ pub struct CompatGatewaySession {
     pub organization_id: Uuid,
     pub bot_user_id: Uuid,
     pub sequence: i64,
+    pub intents: u64,
 }
 
 #[derive(Default)]
@@ -25,6 +26,7 @@ impl CompatGatewaySessions {
         session_id: String,
         bot: &AuthenticatedBot,
         sequence: i64,
+        intents: u64,
     ) -> CompatGatewaySession {
         let session = CompatGatewaySession {
             session_id: session_id.clone(),
@@ -32,6 +34,7 @@ impl CompatGatewaySessions {
             organization_id: bot.organization_id,
             bot_user_id: bot.bot_user_id,
             sequence,
+            intents,
         };
         self.sessions
             .lock()

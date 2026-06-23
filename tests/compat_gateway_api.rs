@@ -1211,6 +1211,53 @@ async fn compat_gateway_ready_includes_visible_guilds() {
 }
 
 #[tokio::test]
+async fn compat_gateway_suppresses_message_create_without_guild_messages_intent() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-intents-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "intents").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 1,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+    assert_eq!(ready["d"]["intents"], 1);
+
+    send_message(&app, &owner_token, &channel_id, "intent-filtered").await;
+    let filtered = timeout(Duration::from_millis(250), next_json(&mut socket)).await;
+    assert!(
+        filtered.is_err(),
+        "message event should require GUILD_MESSAGES intent"
+    );
+}
+
+#[tokio::test]
 async fn compat_gateway_identify_ready_heartbeat_and_message_create() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;

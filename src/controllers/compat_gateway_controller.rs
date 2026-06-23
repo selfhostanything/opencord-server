@@ -24,6 +24,7 @@ const OP_INVALID_SESSION: i32 = 9;
 const OP_HELLO: i32 = 10;
 const OP_HEARTBEAT_ACK: i32 = 11;
 const HEARTBEAT_INTERVAL_MS: u64 = 45_000;
+const INTENT_GUILD_MESSAGES: u64 = 1 << 9;
 
 #[derive(Debug, Deserialize)]
 struct GatewayMessage {
@@ -72,6 +73,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
     let mut events = state.realtime.subscribe();
     let mut identified_bot: Option<AuthenticatedBot> = None;
     let mut active_session_id: Option<String> = None;
+    let mut active_intents: u64 = 0;
     let mut sequence: i64 = 0;
 
     loop {
@@ -87,6 +89,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     message,
                     &mut identified_bot,
                     &mut active_session_id,
+                    &mut active_intents,
                     &mut sequence
                 ).await {
                     break;
@@ -101,6 +104,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                 };
 
                 if event.event_type == "message.created"
+                    && has_intent(active_intents, INTENT_GUILD_MESSAGES)
                     && can_bot_receive_event(&state, bot, &event).await
                 {
                     let Some(message) = compat_message_from_event(&event, bot) else {
@@ -112,6 +116,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "message.updated"
+                    && has_intent(active_intents, INTENT_GUILD_MESSAGES)
                     && can_bot_receive_event(&state, bot, &event).await
                 {
                     let Some(message) = compat_message_from_event(&event, bot) else {
@@ -123,6 +128,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "message.deleted"
+                    && has_intent(active_intents, INTENT_GUILD_MESSAGES)
                     && can_bot_receive_event(&state, bot, &event).await
                 {
                     let Some(message) = compat_message_delete_from_event(&event) else {
@@ -200,6 +206,7 @@ async fn handle_client_message(
     message: WebSocketMessage,
     identified_bot: &mut Option<AuthenticatedBot>,
     active_session_id: &mut Option<String>,
+    active_intents: &mut u64,
     sequence: &mut i64,
 ) -> bool {
     match message {
@@ -220,6 +227,7 @@ async fn handle_client_message(
                         message.d,
                         identified_bot,
                         active_session_id,
+                        active_intents,
                         sequence,
                     )
                     .await
@@ -231,6 +239,7 @@ async fn handle_client_message(
                         message.d,
                         identified_bot,
                         active_session_id,
+                        active_intents,
                         sequence,
                     )
                     .await
@@ -259,6 +268,7 @@ async fn identify_bot(
     payload: Option<Value>,
     identified_bot: &mut Option<AuthenticatedBot>,
     active_session_id: &mut Option<String>,
+    active_intents: &mut u64,
     sequence: &mut i64,
 ) -> bool {
     let Some(payload) = payload else {
@@ -288,6 +298,7 @@ async fn identify_bot(
         .collect::<Vec<_>>();
 
     *sequence += 1;
+    let intents = payload.intents.unwrap_or_default();
     let session_id = format!("gw_{}", ids::new_uuid_v7());
     let ready = json!({
         "v": 10,
@@ -302,14 +313,15 @@ async fn identify_bot(
         "application": {
             "id": bot.application_id.to_string()
         },
-        "intents": payload.intents.unwrap_or_default()
+        "intents": intents
     });
 
     state
         .compat_gateway_sessions
-        .create(session_id.clone(), &bot, *sequence);
+        .create(session_id.clone(), &bot, *sequence, intents);
     *identified_bot = Some(bot);
     *active_session_id = Some(session_id);
+    *active_intents = intents;
 
     send_dispatch(socket, "READY", *sequence, ready)
         .await
@@ -330,6 +342,7 @@ async fn resume_bot(
     payload: Option<Value>,
     identified_bot: &mut Option<AuthenticatedBot>,
     active_session_id: &mut Option<String>,
+    active_intents: &mut u64,
     sequence: &mut i64,
 ) -> bool {
     let Some(payload) = payload else {
@@ -361,6 +374,7 @@ async fn resume_bot(
         .update_sequence(&session.session_id, *sequence);
     *identified_bot = Some(bot);
     *active_session_id = Some(session.session_id.clone());
+    *active_intents = session.intents;
 
     send_dispatch(
         socket,
@@ -372,6 +386,10 @@ async fn resume_bot(
     )
     .await
     .is_ok()
+}
+
+fn has_intent(intents: u64, required: u64) -> bool {
+    intents & required == required
 }
 
 fn update_active_session_sequence(state: &AppState, session_id: Option<&str>, sequence: i64) {

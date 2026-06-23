@@ -597,6 +597,8 @@ paths:
         heartbeats, and dispatches CHANNEL_CREATE, CHANNEL_UPDATE,
         GUILD_CREATE, GUILD_MEMBER_ADD, MESSAGE_CREATE, MESSAGE_UPDATE,
         MESSAGE_DELETE, and INTERACTION_CREATE events visible to the bot user.
+        Message create, update, and delete dispatches require the Discord
+        `GUILD_MESSAGES` intent.
       responses:
         "101":
           description: WebSocket protocol switch

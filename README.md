@@ -437,7 +437,8 @@ initial implementation sends HELLO, accepts IDENTIFY with an OpenCord bot
 token, emits READY with bot-visible spaces as guilds, supports process-local
 RESUME by `session_id`, acknowledges heartbeats, and dispatches CHANNEL_CREATE,
 CHANNEL_UPDATE, GUILD_CREATE, GUILD_MEMBER_ADD, MESSAGE_CREATE, MESSAGE_UPDATE,
-and MESSAGE_DELETE for resources visible to the bot user.
+and MESSAGE_DELETE for resources visible to the bot user. Message create,
+update, and delete dispatches require the Discord `GUILD_MESSAGES` intent.
 
 `POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands`
 registers a space-scoped chat input command for the current bot application.
