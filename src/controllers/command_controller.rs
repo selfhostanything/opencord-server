@@ -321,10 +321,17 @@ pub async fn update_original_interaction_response(
     }
 
     let message = state.messages.update(message, request.content).await?;
-    Ok((
-        StatusCode::OK,
-        Json(interaction_followup_response(message, &application)),
-    ))
+    let response = interaction_followup_response(message.clone(), &application);
+    state.realtime.publish(RealtimeEvent::channel(
+        "message.updated",
+        interaction.organization_id,
+        interaction.space_id,
+        interaction.channel_id,
+        serde_json::json!({
+            "message": message_response(message, Vec::new(), &state.config.public_url)
+        }),
+    ));
+    Ok((StatusCode::OK, Json(response)))
 }
 
 pub async fn delete_original_interaction_response(

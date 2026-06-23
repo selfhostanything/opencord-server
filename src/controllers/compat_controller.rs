@@ -339,6 +339,25 @@ pub async fn update_message(
         Some(message) => compat_mentions_for_message(&state, message, &bot).await?,
         None => CompatResolvedMentions::default(),
     };
+    state.realtime.publish(RealtimeEvent::channel(
+        "message.updated",
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        serde_json::json!({
+            "message": realtime_message_payload(
+                message.clone(),
+                attachments.clone(),
+                mentions.clone(),
+                referenced_message.clone().map(|message| ReferencedCompatMessage {
+                    message,
+                    attachments: referenced_attachments.clone(),
+                    mentions: referenced_mentions.clone(),
+                }),
+                &state.config.public_url
+            )
+        }),
+    ));
 
     Ok((
         rate_limit_headers(&rate_limit),

@@ -110,6 +110,17 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                         break;
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                } else if event.event_type == "message.updated"
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(message) = compat_message_from_event(&event, bot) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "MESSAGE_UPDATE", sequence, message).await.is_err() {
+                        break;
+                    }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "message.deleted"
                     && can_bot_receive_event(&state, bot, &event).await
                 {

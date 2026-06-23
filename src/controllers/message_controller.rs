@@ -145,10 +145,16 @@ pub async fn update(
         .attachments
         .list_for_message_ids(&[message.id])
         .await?;
+    let message = message_response(message, attachments, &state.config.public_url);
+    state.realtime.publish(RealtimeEvent::channel(
+        "message.updated",
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        json!({ "message": message.clone() }),
+    ));
 
-    Ok(Json(MessageResourceResponse {
-        message: message_response(message, attachments, &state.config.public_url),
-    }))
+    Ok(Json(MessageResourceResponse { message }))
 }
 
 pub async fn delete(
