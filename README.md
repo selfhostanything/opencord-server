@@ -101,6 +101,7 @@ GET /organizations/{organization_id}/spaces
 POST /organizations/{organization_id}/meetings
 GET /organizations/{organization_id}/meetings
 GET /meetings/{meeting_id}
+GET /meetings/{meeting_id}/invite.ics
 PATCH /meetings/{meeting_id}
 DELETE /meetings/{meeting_id}
 POST /spaces/{space_id}/channels

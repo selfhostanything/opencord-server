@@ -493,6 +493,29 @@ paths:
           description: Current user cannot manage this meeting
         "404":
           description: Meeting not found for this user
+  /meetings/{meeting_id}/invite.ics:
+    get:
+      summary: Download an ICS calendar invite for one visible meeting
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: meeting_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Calendar invite file for the meeting
+          content:
+            text/calendar:
+              schema:
+                type: string
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Meeting not found for this user
   /spaces/{space_id}/channels:
     post:
       summary: Create a text or voice channel inside a space

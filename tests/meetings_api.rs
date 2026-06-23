@@ -19,6 +19,13 @@ async fn response_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&bytes).expect("response should be json")
 }
 
+async fn response_text(response: axum::response::Response) -> String {
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read response body");
+    String::from_utf8(bytes.to_vec()).expect("response should be utf-8")
+}
+
 fn json_request(method: Method, uri: &str, body: Value) -> Request<Body> {
     Request::builder()
         .method(method)
@@ -353,6 +360,75 @@ async fn meeting_join_url_resolves_to_visible_meeting() {
         .await
         .unwrap();
     assert_eq!(outsider.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn meeting_invite_ics_contains_schedule_attendee_and_join_url() {
+    let app = test_app();
+    let (token, _) = register(&app, "meeting-ics-owner@example.com").await;
+    let organization_id = create_organization(&app, &token, "Meeting ICS Parent").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/meetings"),
+            &token,
+            json!({
+                "title": "Roadmap, Review",
+                "description": "Discuss launch; scope",
+                "starts_at": "2026-06-24T09:00:00Z",
+                "ends_at": "2026-06-24T09:30:00Z",
+                "timezone": "Asia/Bangkok",
+                "attendees": [
+                    {
+                        "email": "external@example.com",
+                        "display_name": "External Guest",
+                        "role": "required"
+                    }
+                ]
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let body = response_json(created).await;
+    let meeting_id = body["meeting"]["id"].as_str().unwrap();
+    let join_slug = body["meeting"]["join_slug"].as_str().unwrap();
+    let join_url = format!("https://chat.example.com/join/{join_slug}");
+
+    let response = app
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/meetings/{meeting_id}/invite.ics"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "text/calendar; charset=utf-8"
+    );
+    let body = response_text(response).await;
+    assert!(body.starts_with("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"));
+    assert!(body.contains("PRODID:-//OpenCord//OpenCord Calendar//EN\r\n"));
+    assert!(body.contains("BEGIN:VEVENT\r\n"));
+    assert!(body.contains(&format!("UID:{meeting_id}@opencord\r\n")));
+    assert!(body.contains("DTSTART:20260624T090000Z\r\n"));
+    assert!(body.contains("DTEND:20260624T093000Z\r\n"));
+    assert!(body.contains("SUMMARY:Roadmap\\, Review\r\n"));
+    assert!(body.contains(&format!(
+        "DESCRIPTION:Discuss launch\\; scope\\n\\nJoin: {join_url}\r\n"
+    )));
+    assert!(body.contains(&format!("LOCATION:{join_url}\r\n")));
+    assert!(body.contains(&format!("URL:{join_url}\r\n")));
+    assert!(body.contains(
+        "ATTENDEE;ROLE=REQ-PARTICIPANT;CN=\"External Guest\":mailto:external@example.com\r\n"
+    ));
+    assert!(body.ends_with("END:VEVENT\r\nEND:VCALENDAR\r\n"));
 }
 
 #[tokio::test]

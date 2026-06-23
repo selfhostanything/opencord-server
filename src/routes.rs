@@ -67,6 +67,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
                 .delete(meeting_controller::cancel),
         )
         .route(
+            "/meetings/{meeting_id}/invite.ics",
+            get(meeting_controller::invite_ics),
+        )
+        .route(
             "/spaces/{space_id}/channels",
             post(channel_controller::create).get(channel_controller::list),
         )

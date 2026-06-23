@@ -1,10 +1,12 @@
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use chrono::Utc;
 use uuid::Uuid;
 
 use crate::domain::auth::{AuthError, AuthUser};
+use crate::domain::calendar::meeting_invite_ics;
 use crate::domain::channel::ChannelError;
 use crate::domain::meeting::{MeetingBundle, MeetingError};
 use crate::domain::organization::{OrganizationError, OrganizationMembership};
@@ -103,6 +105,26 @@ pub async fn get(
     Ok(Json(MeetingResourceResponse {
         meeting: meeting_response(meeting, &state),
     }))
+}
+
+pub async fn invite_ics(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(meeting_id): Path<Uuid>,
+) -> Result<impl IntoResponse, MeetingApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let meeting = state.meetings.get(meeting_id).await?;
+    require_read_meeting(&state, &user, &meeting).await?;
+
+    let body = meeting_invite_ics(&meeting, &state.config.public_url, Utc::now())?;
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/calendar; charset=utf-8"),
+    );
+
+    Ok((response_headers, body))
 }
 
 pub async fn resolve_join(
