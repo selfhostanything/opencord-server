@@ -593,8 +593,9 @@ paths:
       description: >
         Upgrades to a WebSocket, sends HELLO, accepts IDENTIFY with an
         OpenCord `ocb_` bot token, emits READY with bot-visible spaces as
-        guilds, supports process-local RESUME by `session_id`, acknowledges
-        heartbeats, and dispatches CHANNEL_CREATE, CHANNEL_UPDATE,
+        guilds, persists RESUME session records for DB-backed deployments with
+        a 24-hour session TTL, acknowledges heartbeats, and dispatches
+        CHANNEL_CREATE, CHANNEL_UPDATE,
         CHANNEL_DELETE, GUILD_CREATE, GUILD_UPDATE, GUILD_DELETE,
         GUILD_MEMBER_ADD, GUILD_MEMBER_REMOVE, MESSAGE_CREATE, MESSAGE_UPDATE,
         MESSAGE_DELETE, and INTERACTION_CREATE events visible to the bot user.

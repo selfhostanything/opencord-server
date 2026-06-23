@@ -145,7 +145,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "MESSAGE_CREATE", sequence, message).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "message.updated"
                     && has_intent(active_intents, INTENT_GUILD_MESSAGES)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -157,7 +157,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "MESSAGE_UPDATE", sequence, message).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "message.deleted"
                     && has_intent(active_intents, INTENT_GUILD_MESSAGES)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -169,7 +169,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "MESSAGE_DELETE", sequence, message).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "channel.created"
                     && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -181,7 +181,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "CHANNEL_CREATE", sequence, channel).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "channel.updated"
                     && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -193,7 +193,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "CHANNEL_UPDATE", sequence, channel).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "channel.deleted"
                     && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -205,7 +205,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "CHANNEL_DELETE", sequence, channel).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "space.updated"
                     && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -217,7 +217,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "GUILD_UPDATE", sequence, guild).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "space.deleted"
                     && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -229,7 +229,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "GUILD_DELETE", sequence, guild).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "space.bot.invited"
                     && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -241,7 +241,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "GUILD_CREATE", sequence, guild).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "space.member.added"
                     && has_intent(active_intents, INTENT_GUILD_MEMBERS)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -253,7 +253,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "GUILD_MEMBER_ADD", sequence, member).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "space.member.removed"
                     && has_intent(active_intents, INTENT_GUILD_MEMBERS)
                     && can_bot_receive_event(&state, bot, &event).await
@@ -265,7 +265,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "GUILD_MEMBER_REMOVE", sequence, member).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 } else if event.event_type == "interaction.created"
                     && can_bot_receive_event(&state, bot, &event).await
                 {
@@ -276,7 +276,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     if send_dispatch(&mut socket, "INTERACTION_CREATE", sequence, interaction).await.is_err() {
                         break;
                     }
-                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence).await;
                 }
             }
         }
@@ -474,9 +474,15 @@ async fn identify_bot(
         "intents": intents
     });
 
-    state
+    if state
         .compat_gateway_sessions
-        .create(session_id.clone(), &bot, *sequence, intents);
+        .create(session_id.clone(), &bot, *sequence, intents)
+        .await
+        .is_err()
+    {
+        let _ = send_invalid_session(socket).await;
+        return true;
+    }
     *identified_bot = Some(bot);
     *active_session_id = Some(session_id);
     *active_intents = intents;
@@ -541,11 +547,19 @@ async fn resume_bot(
         return false;
     };
 
-    let session = match state.compat_gateway_sessions.resume(
-        &payload.session_id,
-        &bot,
-        payload.seq.unwrap_or_default(),
-    ) {
+    let session = match state
+        .compat_gateway_sessions
+        .resume(&payload.session_id, &bot, payload.seq.unwrap_or_default())
+        .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            let _ = send_invalid_session(socket).await;
+            return true;
+        }
+    };
+
+    let session = match session {
         CompatGatewayResumeResult::Resumed(session) => session,
         CompatGatewayResumeResult::InvalidSequence => {
             let _ =
@@ -567,7 +581,9 @@ async fn resume_bot(
     *sequence = session.sequence + 1;
     state
         .compat_gateway_sessions
-        .update_sequence(&session.session_id, *sequence);
+        .update_sequence(&session.session_id, *sequence)
+        .await
+        .ok();
     *identified_bot = Some(bot);
     *active_session_id = Some(session.session_id.clone());
     *active_intents = session.intents;
@@ -588,11 +604,13 @@ fn has_intent(intents: u64, required: u64) -> bool {
     intents & required == required
 }
 
-fn update_active_session_sequence(state: &AppState, session_id: Option<&str>, sequence: i64) {
+async fn update_active_session_sequence(state: &AppState, session_id: Option<&str>, sequence: i64) {
     if let Some(session_id) = session_id {
         state
             .compat_gateway_sessions
-            .update_sequence(session_id, sequence);
+            .update_sequence(session_id, sequence)
+            .await
+            .ok();
     }
 }
 

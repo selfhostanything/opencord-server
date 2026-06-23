@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::Arc;
 
 use uuid::Uuid;
 
@@ -15,11 +14,6 @@ pub struct CompatGatewaySession {
     pub intents: u64,
 }
 
-#[derive(Default)]
-pub struct CompatGatewaySessions {
-    sessions: Mutex<HashMap<String, CompatGatewaySession>>,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompatGatewayResumeResult {
     Resumed(CompatGatewaySession),
@@ -27,64 +21,76 @@ pub enum CompatGatewayResumeResult {
     NotFound,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompatGatewayError {
+    StoreUnavailable,
+}
+
+#[async_trait::async_trait]
+pub trait CompatGatewaySessionStore: Send + Sync {
+    async fn create_session(
+        &self,
+        session: CompatGatewaySession,
+    ) -> Result<CompatGatewaySession, CompatGatewayError>;
+
+    async fn update_sequence(
+        &self,
+        session_id: &str,
+        sequence: i64,
+    ) -> Result<(), CompatGatewayError>;
+
+    async fn resume_session(
+        &self,
+        session_id: &str,
+        bot: &AuthenticatedBot,
+        client_sequence: i64,
+    ) -> Result<CompatGatewayResumeResult, CompatGatewayError>;
+}
+
+pub struct CompatGatewaySessions {
+    store: Arc<dyn CompatGatewaySessionStore>,
+}
+
 impl CompatGatewaySessions {
-    pub fn create(
+    pub fn new(store: Arc<dyn CompatGatewaySessionStore>) -> Self {
+        Self { store }
+    }
+
+    pub async fn create(
         &self,
         session_id: String,
         bot: &AuthenticatedBot,
         sequence: i64,
         intents: u64,
-    ) -> CompatGatewaySession {
-        let session = CompatGatewaySession {
-            session_id: session_id.clone(),
-            application_id: bot.application_id,
-            organization_id: bot.organization_id,
-            bot_user_id: bot.bot_user_id,
-            sequence,
-            intents,
-        };
-        self.sessions
-            .lock()
-            .expect("compat gateway sessions mutex poisoned")
-            .insert(session_id, session.clone());
-        session
+    ) -> Result<CompatGatewaySession, CompatGatewayError> {
+        self.store
+            .create_session(CompatGatewaySession {
+                session_id,
+                application_id: bot.application_id,
+                organization_id: bot.organization_id,
+                bot_user_id: bot.bot_user_id,
+                sequence,
+                intents,
+            })
+            .await
     }
 
-    pub fn update_sequence(&self, session_id: &str, sequence: i64) {
-        if let Some(session) = self
-            .sessions
-            .lock()
-            .expect("compat gateway sessions mutex poisoned")
-            .get_mut(session_id)
-        {
-            session.sequence = session.sequence.max(sequence);
-        }
+    pub async fn update_sequence(
+        &self,
+        session_id: &str,
+        sequence: i64,
+    ) -> Result<(), CompatGatewayError> {
+        self.store.update_sequence(session_id, sequence).await
     }
 
-    pub fn resume(
+    pub async fn resume(
         &self,
         session_id: &str,
         bot: &AuthenticatedBot,
         client_sequence: i64,
-    ) -> CompatGatewayResumeResult {
-        let mut sessions = self
-            .sessions
-            .lock()
-            .expect("compat gateway sessions mutex poisoned");
-        let Some(session) = sessions.get_mut(session_id) else {
-            return CompatGatewayResumeResult::NotFound;
-        };
-        if session.application_id != bot.application_id
-            || session.organization_id != bot.organization_id
-            || session.bot_user_id != bot.bot_user_id
-        {
-            return CompatGatewayResumeResult::NotFound;
-        }
-        if client_sequence > session.sequence {
-            return CompatGatewayResumeResult::InvalidSequence;
-        }
-
-        session.sequence = session.sequence.max(client_sequence);
-        CompatGatewayResumeResult::Resumed(session.clone())
+    ) -> Result<CompatGatewayResumeResult, CompatGatewayError> {
+        self.store
+            .resume_session(session_id, bot, client_sequence)
+            .await
     }
 }

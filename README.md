@@ -438,8 +438,9 @@ minute per bot application bucket. Successful responses include
 
 `GET /api/compat/discord/gateway` upgrades to a Discord-shaped WebSocket. The
 initial implementation sends HELLO, accepts IDENTIFY with an OpenCord bot
-token, emits READY with bot-visible spaces as guilds, supports process-local
-RESUME by `session_id`, acknowledges heartbeats, and dispatches CHANNEL_CREATE,
+token, emits READY with bot-visible spaces as guilds, persists RESUME session
+records for DB-backed deployments with a 24-hour session TTL, acknowledges
+heartbeats, and dispatches CHANNEL_CREATE,
 CHANNEL_UPDATE, CHANNEL_DELETE, GUILD_CREATE, GUILD_UPDATE, GUILD_MEMBER_ADD,
 GUILD_DELETE, GUILD_MEMBER_REMOVE, MESSAGE_CREATE, MESSAGE_UPDATE, and
 MESSAGE_DELETE for resources visible to the bot user. Message create, update,

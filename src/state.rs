@@ -14,7 +14,7 @@ use crate::domain::calendar_sync::{
 };
 use crate::domain::channel::{ChannelService, ChannelStore};
 use crate::domain::command::{CommandService, CommandStore};
-use crate::domain::compat_gateway::CompatGatewaySessions;
+use crate::domain::compat_gateway::{CompatGatewaySessionStore, CompatGatewaySessions};
 use crate::domain::data_export::DataExportService;
 use crate::domain::media::MediaControlService;
 use crate::domain::meeting::{MeetingService, MeetingStore};
@@ -46,6 +46,8 @@ use crate::repositories::channel_memory::MemoryChannelStore;
 use crate::repositories::channel_postgres::PostgresChannelStore;
 use crate::repositories::command_memory::MemoryCommandStore;
 use crate::repositories::command_postgres::PostgresCommandStore;
+use crate::repositories::compat_gateway_memory::MemoryCompatGatewaySessionStore;
+use crate::repositories::compat_gateway_postgres::PostgresCompatGatewaySessionStore;
 use crate::repositories::meeting_memory::MemoryMeetingStore;
 use crate::repositories::meeting_postgres::PostgresMeetingStore;
 use crate::repositories::message_memory::MemoryMessageStore;
@@ -118,6 +120,7 @@ impl AppState {
                 bots: Arc::new(MemoryBotStore::default()),
                 webhooks: Arc::new(MemoryIncomingWebhookStore::default()),
                 commands: Arc::new(MemoryCommandStore::default()),
+                compat_gateway_sessions: Arc::new(MemoryCompatGatewaySessionStore::default()),
             },
         )
     }
@@ -143,6 +146,7 @@ impl AppState {
                 bots: Arc::new(PostgresBotStore::new(db.clone())),
                 webhooks: Arc::new(PostgresIncomingWebhookStore::new(db.clone())),
                 commands: Arc::new(PostgresCommandStore::new(db.clone())),
+                compat_gateway_sessions: Arc::new(PostgresCompatGatewaySessionStore::new(db)),
             },
         )
     }
@@ -208,7 +212,9 @@ impl AppState {
             compat_gateway_identify_rate_limits: Arc::new(
                 FixedWindowRateLimiter::compat_gateway_identify(),
             ),
-            compat_gateway_sessions: Arc::new(CompatGatewaySessions::default()),
+            compat_gateway_sessions: Arc::new(CompatGatewaySessions::new(
+                stores.compat_gateway_sessions,
+            )),
             commands,
         }
     }
@@ -232,4 +238,5 @@ pub struct AppStores {
     pub bots: Arc<dyn BotStore>,
     pub webhooks: Arc<dyn IncomingWebhookStore>,
     pub commands: Arc<dyn CommandStore>,
+    pub compat_gateway_sessions: Arc<dyn CompatGatewaySessionStore>,
 }

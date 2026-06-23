@@ -14,6 +14,8 @@ pub mod channel_memory;
 pub mod channel_postgres;
 pub mod command_memory;
 pub mod command_postgres;
+pub mod compat_gateway_memory;
+pub mod compat_gateway_postgres;
 pub mod meeting_memory;
 pub mod meeting_postgres;
 pub mod message_memory;
