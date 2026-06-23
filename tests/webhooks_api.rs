@@ -363,6 +363,118 @@ async fn channel_manager_can_list_rotate_and_delete_incoming_webhook() {
 }
 
 #[tokio::test]
+async fn webhook_management_writes_audit_events_without_raw_tokens() {
+    let app = test_app();
+    let (owner_token, owner_id) = register(&app, "webhook-audit-owner@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "audit", "text").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/webhooks"),
+            &owner_token,
+            json!({ "name": "Audit Hook" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let body = response_json(created).await;
+    let webhook_id = body["webhook"]["id"].as_str().unwrap().to_owned();
+    let first_token = body["webhook"]["token"].as_str().unwrap().to_owned();
+    let first_last_four = body["webhook"]["token_last_four"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let rotated = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/channels/{channel_id}/webhooks/{webhook_id}/token/rotate"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rotated.status(), StatusCode::CREATED);
+    let body = response_json(rotated).await;
+    let second_token = body["webhook"]["token"].as_str().unwrap().to_owned();
+    let second_last_four = body["webhook"]["token_last_four"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let deleted = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::DELETE,
+            &format!("/channels/{channel_id}/webhooks/{webhook_id}"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+
+    let audit = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/spaces/{space_id}/audit-events"),
+            &owner_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(audit.status(), StatusCode::OK);
+    let body = response_json(audit).await;
+    let events = body["audit_events"].as_array().unwrap();
+    assert_eq!(events.len(), 3);
+    let actions = events
+        .iter()
+        .map(|event| event["action"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actions,
+        vec![
+            "webhook.created",
+            "webhook.token_rotated",
+            "webhook.deleted"
+        ]
+    );
+
+    let created_event = &events[0];
+    assert_eq!(created_event["organization_id"], organization_id);
+    assert_eq!(created_event["space_id"], space_id);
+    assert_eq!(created_event["actor_user_id"], owner_id);
+    assert_eq!(created_event["target_type"], "incoming_webhook");
+    assert_eq!(created_event["target_id"], webhook_id);
+    assert_eq!(created_event["metadata"]["channel_id"], channel_id);
+    assert_eq!(created_event["metadata"]["name"], "Audit Hook");
+    assert_eq!(
+        created_event["metadata"]["token_last_four"],
+        first_last_four
+    );
+
+    let rotated_event = &events[1];
+    assert_eq!(rotated_event["metadata"]["channel_id"], channel_id);
+    assert_eq!(
+        rotated_event["metadata"]["token_last_four"],
+        second_last_four
+    );
+
+    let deleted_event = &events[2];
+    assert_eq!(deleted_event["metadata"]["channel_id"], channel_id);
+    assert_eq!(deleted_event["metadata"]["name"], "Audit Hook");
+
+    let serialized_events = serde_json::to_string(events).unwrap();
+    assert!(!serialized_events.contains(&first_token));
+    assert!(!serialized_events.contains(&second_token));
+}
+
+#[tokio::test]
 async fn webhook_create_requires_manage_channels() {
     let app = test_app();
     let (owner_token, _) = register(&app, "webhook-permission-owner@example.com").await;

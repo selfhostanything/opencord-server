@@ -137,10 +137,10 @@ impl IncomingWebhookStore for PostgresIncomingWebhookStore {
         &self,
         webhook_id: Uuid,
         channel_id: Uuid,
-    ) -> Result<bool, WebhookError> {
-        let result = self
+    ) -> Result<Option<IncomingWebhook>, WebhookError> {
+        let row = self
             .db
-            .execute(Statement::from_sql_and_values(
+            .query_one(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                 UPDATE incoming_webhooks
@@ -149,6 +149,9 @@ impl IncomingWebhookStore for PostgresIncomingWebhookStore {
                 WHERE id = $1::uuid
                   AND channel_id = $2::uuid
                   AND status = 'active'
+                RETURNING id::text, organization_id::text, space_id::text, channel_id::text,
+                          bot_user_id::text, created_by_user_id::text, name, token_hash,
+                          token_last_four, status, created_at::text
                 "#,
                 vec![
                     Value::from(webhook_id.to_string()),
@@ -158,7 +161,7 @@ impl IncomingWebhookStore for PostgresIncomingWebhookStore {
             .await
             .map_err(|_| WebhookError::StoreUnavailable)?;
 
-        Ok(result.rows_affected() > 0)
+        row.map(webhook_from_row).transpose()
     }
 }
 

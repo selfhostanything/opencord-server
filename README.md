@@ -378,6 +378,10 @@ token material. `POST
 shown-once token and invalidates the old one. `DELETE
 /channels/{channel_id}/webhooks/{webhook_id}` soft-disables the webhook so
 existing execution URLs stop working.
+Webhook create, token rotation, and delete write `webhook.created`,
+`webhook.token_rotated`, and `webhook.deleted` audit events. Event metadata
+includes webhook IDs and token last-four values, never raw `ocw_` token
+material.
 
 `/api/compat/discord/v10/channels/{channel_id}/messages` supports the first
 Discord-compatible bot message routes: send, list, edit, and delete. Requests

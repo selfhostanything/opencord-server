@@ -85,20 +85,20 @@ impl IncomingWebhookStore for MemoryIncomingWebhookStore {
         &self,
         webhook_id: Uuid,
         channel_id: Uuid,
-    ) -> Result<bool, WebhookError> {
+    ) -> Result<Option<IncomingWebhook>, WebhookError> {
         let mut state = self
             .state
             .lock()
             .map_err(|_| WebhookError::StoreUnavailable)?;
         let Some(webhook) = state.webhooks.get_mut(&webhook_id) else {
-            return Ok(false);
+            return Ok(None);
         };
 
         if webhook.channel_id != channel_id || webhook.status != "active" {
-            return Ok(false);
+            return Ok(None);
         }
 
         webhook.status = "disabled".to_owned();
-        Ok(true)
+        Ok(Some(webhook.clone()))
     }
 }

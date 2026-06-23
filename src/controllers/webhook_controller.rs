@@ -6,6 +6,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::controllers::message_controller::message_response;
+use crate::domain::audit::{AuditError, NewAuditEvent};
 use crate::domain::auth::AuthError;
 use crate::domain::channel::{Channel, ChannelError};
 use crate::domain::message::MessageError;
@@ -40,6 +41,23 @@ pub async fn create(
             request.name,
         )
         .await?;
+    state
+        .audit
+        .record(NewAuditEvent {
+            organization_id: created.webhook.organization_id,
+            space_id: created.webhook.space_id,
+            actor_user_id: user_id,
+            action: "webhook.created",
+            target_type: "incoming_webhook",
+            target_id: created.webhook.id,
+            metadata: json!({
+                "channel_id": created.webhook.channel_id,
+                "bot_user_id": created.webhook.bot_user_id,
+                "name": created.webhook.name,
+                "token_last_four": created.webhook.token_last_four
+            }),
+        })
+        .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -70,9 +88,24 @@ pub async fn rotate_token(
     headers: HeaderMap,
     Path((channel_id, webhook_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, WebhookApiError> {
-    let (_, channel) = manageable_text_channel(&state, &headers, channel_id).await?;
+    let (user_id, channel) = manageable_text_channel(&state, &headers, channel_id).await?;
     let rotated = state.webhooks.rotate_token(webhook_id, channel.id).await?;
     ensure_webhook_matches_channel(&rotated.webhook, &channel)?;
+    state
+        .audit
+        .record(NewAuditEvent {
+            organization_id: rotated.webhook.organization_id,
+            space_id: rotated.webhook.space_id,
+            actor_user_id: user_id,
+            action: "webhook.token_rotated",
+            target_type: "incoming_webhook",
+            target_id: rotated.webhook.id,
+            metadata: json!({
+                "channel_id": rotated.webhook.channel_id,
+                "token_last_four": rotated.webhook.token_last_four
+            }),
+        })
+        .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -87,8 +120,24 @@ pub async fn delete(
     headers: HeaderMap,
     Path((channel_id, webhook_id)): Path<(Uuid, Uuid)>,
 ) -> Result<impl IntoResponse, WebhookApiError> {
-    let (_, channel) = manageable_text_channel(&state, &headers, channel_id).await?;
-    state.webhooks.disable(webhook_id, channel.id).await?;
+    let (user_id, channel) = manageable_text_channel(&state, &headers, channel_id).await?;
+    let webhook = state.webhooks.disable(webhook_id, channel.id).await?;
+    state
+        .audit
+        .record(NewAuditEvent {
+            organization_id: webhook.organization_id,
+            space_id: webhook.space_id,
+            actor_user_id: user_id,
+            action: "webhook.deleted",
+            target_type: "incoming_webhook",
+            target_id: webhook.id,
+            metadata: json!({
+                "channel_id": webhook.channel_id,
+                "bot_user_id": webhook.bot_user_id,
+                "name": webhook.name
+            }),
+        })
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -136,6 +185,7 @@ pub enum WebhookApiError {
     Permission(PermissionError),
     Webhook(WebhookError),
     Message(MessageError),
+    Audit(AuditError),
 }
 
 impl From<AuthError> for WebhookApiError {
@@ -174,6 +224,12 @@ impl From<MessageError> for WebhookApiError {
     }
 }
 
+impl From<AuditError> for WebhookApiError {
+    fn from(error: AuditError) -> Self {
+        Self::Audit(error)
+    }
+}
+
 impl IntoResponse for WebhookApiError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
@@ -183,6 +239,7 @@ impl IntoResponse for WebhookApiError {
             Self::Permission(error) => (error.status_code(), error.code(), error.message()),
             Self::Webhook(error) => (error.status_code(), error.code(), error.message()),
             Self::Message(error) => (error.status_code(), error.code(), error.message()),
+            Self::Audit(error) => (error.status_code(), error.code(), error.message()),
         };
 
         (

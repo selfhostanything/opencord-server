@@ -93,7 +93,7 @@ pub trait IncomingWebhookStore: Send + Sync {
         &self,
         webhook_id: Uuid,
         channel_id: Uuid,
-    ) -> Result<bool, WebhookError>;
+    ) -> Result<Option<IncomingWebhook>, WebhookError>;
 }
 
 #[derive(Clone)]
@@ -175,12 +175,15 @@ impl IncomingWebhookService {
         Ok(IncomingWebhookCreated { webhook, token })
     }
 
-    pub async fn disable(&self, webhook_id: Uuid, channel_id: Uuid) -> Result<(), WebhookError> {
-        if self.store.disable_webhook(webhook_id, channel_id).await? {
-            Ok(())
-        } else {
-            Err(WebhookError::NotFound)
-        }
+    pub async fn disable(
+        &self,
+        webhook_id: Uuid,
+        channel_id: Uuid,
+    ) -> Result<IncomingWebhook, WebhookError> {
+        self.store
+            .disable_webhook(webhook_id, channel_id)
+            .await?
+            .ok_or(WebhookError::NotFound)
     }
 
     pub async fn verify(
