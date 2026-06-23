@@ -18,7 +18,7 @@ retention, and cloud tenant operations.
 - Bot applications, incoming webhooks, and a Discord-compatible migration API
   for common bot and webhook workflows.
 - Enterprise identity and compliance primitives: OIDC, SCIM, data export,
-  retention, custom domains, usage, and metrics.
+  retention, custom domains, usage, request IDs, and metrics.
 - Cloud operations hooks for tenant provisioning and billing-provider events.
 
 ## Design
@@ -33,8 +33,10 @@ Core stack:
 - SeaORM migrations
 - TimescaleDB/PostgreSQL 18
 - Valkey-compatible cache
+- Apache Kafka-compatible queue and event backbone
+- ScyllaDB high-write non-ACID event/ephemeral store
 - S3-compatible object storage
-- Prometheus metrics
+- Prometheus metrics with optional OTEL-ready configuration
 
 ## Quick Start
 
@@ -53,6 +55,10 @@ src/bin        API, realtime, worker, and migration entrypoints
 src/routes.rs  Axum route composition
 src/controllers HTTP controllers
 src/domain     Domain services and authorization logic
+src/events     Event envelopes and Kafka topic names
+src/queue      Kafka producer/consumer boundary
+src/jobs       Worker retry, idempotency, and dead-letter boundary
+src/scylla     High-write ScyllaDB reference stores
 src/repositories In-memory and Postgres adapters
 src/db/migrations SeaORM migrations
 openapi/       OpenAPI contract

@@ -13,7 +13,7 @@ lint:
 	cargo clippy --all-targets -- -D warnings
 
 dev-deps:
-	docker compose -f $(COMPOSE_FILE) up timescaledb valkey minio meilisearch mailpit
+	docker compose -f $(COMPOSE_FILE) up timescaledb valkey kafka scylladb minio meilisearch mailpit
 
 dev-media:
 	docker compose -f $(COMPOSE_FILE) --profile media up livekit

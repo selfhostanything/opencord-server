@@ -8,6 +8,8 @@
 - Tokio async runtime
 - TimescaleDB/PostgreSQL 18 local database
 - Valkey-compatible cache
+- Apache Kafka-compatible event and job backbone
+- ScyllaDB high-write non-ACID reference store
 
 ## Structure
 
@@ -21,6 +23,11 @@ src/models            response/request DTOs
 src/routes.rs         Axum route composition
 src/domain            auth, permissions, media-control, bot, and domain helpers
 src/repositories      in-memory and Postgres persistence adapters
+src/events            event envelopes, topic names, and idempotency keys
+src/queue             queue producer/consumer contracts and consumer groups
+src/jobs              worker retry and idempotency primitives
+src/scylla            ScyllaDB table names and high-write store contracts
+src/observability     log, trace-context, request ID, and OTEL config helpers
 src/db/migrations     SeaORM migrations
 ```
 
@@ -34,6 +41,40 @@ microservice overhead.
 make dev-deps
 make migrate
 make dev-api
+```
+
+Host-run Rust services use these local dependency defaults:
+
+```text
+KAFKA_BOOTSTRAP_SERVERS=localhost:29092
+SCYLLA_CONTACT_POINTS=localhost:9042
+VALKEY_URL=redis://localhost:6379/0
+OPENCORD_LOG_FORMAT=text
+OPENCORD_OTEL_ENABLED=false
+```
+
+Kafka and ScyllaDB architecture smokes are opt-in so the normal test loop stays
+fast:
+
+```bash
+docker compose -f deploy/docker-compose/compose.yaml up -d kafka scylladb
+
+docker compose -f deploy/docker-compose/compose.yaml exec -T kafka \
+  /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create \
+  --if-not-exists \
+  --topic opencord.events.chat.v1 \
+  --partitions 3 \
+  --replication-factor 1
+
+OPENCORD_KAFKA_SMOKE=1 \
+KAFKA_BOOTSTRAP_SERVERS=localhost:29092 \
+cargo test --test kafka_queue_smoke -- --nocapture
+
+OPENCORD_SCYLLA_SMOKE=1 \
+SCYLLA_CONTACT_POINTS=localhost:9042 \
+cargo test --test scylla_store_smoke -- --nocapture
 ```
 
 ## Full Local Stack
@@ -75,8 +116,29 @@ networking.
 make test
 make fmt
 make compose-config
+cargo test --test architecture_foundation --test openapi_contract
 ```
 
 For the supported HTTP contract, use `openapi/openapi.yaml` as the source of
-truth. The compatibility bot contract is also covered by the
-`compat_*` integration tests.
+truth. `tests/openapi_contract.rs` checks contract-critical routes locally. The
+compatibility bot contract is also covered by the `compat_*` integration tests.
+
+## Observability
+
+The server must run without OTEL infrastructure:
+
+```text
+OPENCORD_OTEL_ENABLED=false
+```
+
+Every HTTP response includes `x-request-id`. If the client sends a non-empty
+`x-request-id`, the server preserves it; otherwise the server generates a
+`req_<uuidv7>` value. Prometheus `/metrics` includes HTTP request, Kafka, job,
+and ScyllaDB counters.
+
+Use JSON logs when a collector or log pipeline expects structured records:
+
+```text
+OPENCORD_LOG_FORMAT=json
+OPENCORD_LOG_FILTER=opencord_server=info,info
+```

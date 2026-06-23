@@ -13,6 +13,7 @@ use crate::controllers::{
     webhook_controller,
 };
 use crate::http::cors::browser_cors;
+use crate::http::request_id::request_observability;
 use crate::state::AppState;
 
 pub fn api_router(config: AppConfig) -> Router {
@@ -21,6 +22,7 @@ pub fn api_router(config: AppConfig) -> Router {
 
 pub fn api_router_with_state(state: AppState) -> Router {
     let cors_state = state.clone();
+    let request_state = state.clone();
     Router::new()
         .route("/healthz", get(health_controller::health))
         .route("/metrics", get(metrics_controller::prometheus))
@@ -312,23 +314,37 @@ pub fn api_router_with_state(state: AppState) -> Router {
             patch(message_controller::update).delete(message_controller::delete),
         )
         .layer(middleware::from_fn_with_state(cors_state, browser_cors))
+        .layer(middleware::from_fn_with_state(
+            request_state,
+            request_observability,
+        ))
         .with_state(state)
 }
 
 pub fn health_router(config: AppConfig) -> Router {
     let state = AppState::in_memory(config);
     let cors_state = state.clone();
+    let request_state = state.clone();
     Router::new()
         .route("/healthz", get(health_controller::health))
         .layer(middleware::from_fn_with_state(cors_state, browser_cors))
+        .layer(middleware::from_fn_with_state(
+            request_state,
+            request_observability,
+        ))
         .with_state(state)
 }
 
 pub fn realtime_router_with_state(state: AppState) -> Router {
     let cors_state = state.clone();
+    let request_state = state.clone();
     Router::new()
         .route("/healthz", get(health_controller::health))
         .route("/ws", get(realtime_controller::websocket))
         .layer(middleware::from_fn_with_state(cors_state, browser_cors))
+        .layer(middleware::from_fn_with_state(
+            request_state,
+            request_observability,
+        ))
         .with_state(state)
 }

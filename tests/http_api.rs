@@ -1,9 +1,11 @@
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
 use opencord_server::config::AppConfig;
+use opencord_server::http::request_id::REQUEST_ID_HEADER;
 use opencord_server::routes::api_router;
 use serde_json::Value;
 use tower::ServiceExt;
+use uuid::Uuid;
 
 fn test_app() -> axum::Router {
     api_router(AppConfig {
@@ -17,6 +19,13 @@ async fn response_json(response: axum::response::Response) -> Value {
         .await
         .expect("read response body");
     serde_json::from_slice(&bytes).expect("response should be json")
+}
+
+async fn response_text(response: axum::response::Response) -> String {
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read response body");
+    String::from_utf8(bytes.to_vec()).expect("response should be utf-8")
 }
 
 #[tokio::test]
@@ -64,6 +73,68 @@ async fn api_responses_include_security_headers() {
         headers["strict-transport-security"],
         "max-age=31536000; includeSubDomains"
     );
+}
+
+#[tokio::test]
+async fn api_responses_include_request_id_and_http_metrics() {
+    let app = test_app();
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/healthz")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let generated_request_id = response
+        .headers()
+        .get(REQUEST_ID_HEADER)
+        .expect("response includes x-request-id")
+        .to_str()
+        .expect("request ID is valid header text");
+    let uuid = Uuid::parse_str(
+        generated_request_id
+            .strip_prefix("req_")
+            .expect("generated request IDs use req_ prefix"),
+    )
+    .expect("generated request ID suffix is a UUID");
+    assert_eq!(uuid.get_version_num(), 7);
+
+    let metrics = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let body = response_text(metrics).await;
+    assert!(body.contains("opencord_http_requests_total{method=\"GET\",status=\"200\"} 1"));
+}
+
+#[tokio::test]
+async fn api_responses_preserve_client_request_id() {
+    let response = test_app()
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/healthz")
+                .header(REQUEST_ID_HEADER, "client-request-1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[REQUEST_ID_HEADER], "client-request-1");
 }
 
 #[tokio::test]
