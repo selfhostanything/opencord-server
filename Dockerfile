@@ -15,4 +15,6 @@ COPY --from=build /src/target/release/${SERVICE} /usr/local/bin/opencord
 
 EXPOSE 8080
 
+USER 10001:10001
+
 CMD ["/usr/local/bin/opencord"]

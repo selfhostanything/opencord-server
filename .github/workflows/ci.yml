@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-24.04
@@ -17,3 +20,35 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo test --all-targets
       - run: docker compose -f deploy/docker-compose/compose.yaml config
+
+  security:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Scan dependencies with Trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.71.2
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          hide-progress: true
+      - name: Generate CycloneDX SBOM
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.71.2
+          scan-type: fs
+          scan-ref: .
+          format: cyclonedx
+          output: opencord-server-sbom.cdx.json
+          list-all-pkgs: true
+          hide-progress: true
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: opencord-server-sbom
+          path: opencord-server-sbom.cdx.json
+          if-no-files-found: error

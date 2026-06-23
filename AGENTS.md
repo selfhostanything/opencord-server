@@ -7,6 +7,12 @@ Important local rules:
 - Use TDD for behavior changes.
 - Use `cargo test --all-targets` for focused and broad backend checks.
 - Run `cargo fmt --all` before finishing Rust changes.
+- Prefer larger coherent checkpoints over tiny commits. Keep test-first
+  red/green iterations local, batch related backend/API/docs behavior, run local
+  validation first, then commit and push once for the batch.
+- Do not use CI as the inner development loop. Push after local tests, format,
+  clippy, Docker/Compose checks, and contract checks have already passed or
+  after documenting a real local blocker.
 - Use UUIDv7 for all native UUID identifiers.
 - Use SeaORM migrations for schema changes.
 - Use `timescale/timescaledb:2.28.1-pg18-oss` for local TimescaleDB/PostgreSQL.
