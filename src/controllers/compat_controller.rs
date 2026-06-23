@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -121,9 +121,11 @@ pub async fn create_message(
         message_reference,
         tts: _,
     } = request;
-    let reply_to_message_id = validate_message_reference(&state, channel.id, message_reference)
-        .await?
-        .map(|message| message.id);
+    let referenced_message =
+        validate_message_reference(&state, channel.id, message_reference).await?;
+    let referenced_attachments =
+        attachments_for_message(&state, referenced_message.as_ref()).await?;
+    let reply_to_message_id = referenced_message.as_ref().map(|message| message.id);
     let allow_empty_content = !embeds.is_empty();
     let message = state
         .messages
@@ -144,7 +146,14 @@ pub async fn create_message(
         channel.space_id,
         channel.id,
         serde_json::json!({
-            "message": realtime_message_with_embeds(message.clone(), &state.config.public_url)
+            "message": realtime_message_payload(
+                message.clone(),
+                referenced_message.clone().map(|message| ReferencedCompatMessage {
+                    message,
+                    attachments: referenced_attachments.clone(),
+                }),
+                &state.config.public_url
+            )
         }),
     ));
 
@@ -153,6 +162,10 @@ pub async fn create_message(
         Json(compat_message_response(
             message,
             Vec::new(),
+            referenced_message.map(|message| ReferencedCompatMessage {
+                message,
+                attachments: referenced_attachments,
+            }),
             &bot,
             &state.config.public_url,
         )),
@@ -177,8 +190,18 @@ pub async fn list_messages(
         .iter()
         .map(|message| message.id)
         .collect::<Vec<_>>();
-    let attachments = state.attachments.list_for_message_ids(&message_ids).await?;
-    let mut attachments_by_message_id = attachments_by_message_id(attachments);
+    let referenced_message_ids = messages
+        .iter()
+        .filter_map(|message| message.reply_to_message_id)
+        .collect::<Vec<_>>();
+    let referenced_messages = referenced_messages_by_id(&state, &referenced_message_ids).await?;
+    let mut attachment_message_ids = message_ids;
+    attachment_message_ids.extend(referenced_messages.keys().copied());
+    let attachments = state
+        .attachments
+        .list_for_message_ids(&attachment_message_ids)
+        .await?;
+    let attachments_by_message_id = attachments_by_message_id(attachments);
 
     Ok((
         rate_limit_headers(&rate_limit),
@@ -187,9 +210,27 @@ pub async fn list_messages(
                 .into_iter()
                 .map(|message| {
                     let attachments = attachments_by_message_id
-                        .remove(&message.id)
+                        .get(&message.id)
+                        .cloned()
                         .unwrap_or_default();
-                    compat_message_response(message, attachments, &bot, &state.config.public_url)
+                    let referenced_message = message
+                        .reply_to_message_id
+                        .and_then(|message_id| referenced_messages.get(&message_id))
+                        .cloned()
+                        .map(|referenced_message| ReferencedCompatMessage {
+                            attachments: attachments_by_message_id
+                                .get(&referenced_message.id)
+                                .cloned()
+                                .unwrap_or_default(),
+                            message: referenced_message,
+                        });
+                    compat_message_response(
+                        message,
+                        attachments,
+                        referenced_message,
+                        &bot,
+                        &state.config.public_url,
+                    )
                 })
                 .collect::<Vec<_>>(),
         ),
@@ -229,12 +270,19 @@ pub async fn update_message(
         .attachments
         .list_for_message_ids(&[message.id])
         .await?;
+    let referenced_message = referenced_message_by_id(&state, message.reply_to_message_id).await?;
+    let referenced_attachments =
+        attachments_for_message(&state, referenced_message.as_ref()).await?;
 
     Ok((
         rate_limit_headers(&rate_limit),
         Json(compat_message_response(
             message,
             attachments,
+            referenced_message.map(|message| ReferencedCompatMessage {
+                message,
+                attachments: referenced_attachments,
+            }),
             &bot,
             &state.config.public_url,
         )),
@@ -427,9 +475,16 @@ async fn message_in_channel(
     }
 }
 
+#[derive(Clone)]
+struct ReferencedCompatMessage {
+    message: Message,
+    attachments: Vec<Attachment>,
+}
+
 fn compat_message_response(
     message: Message,
     attachments: Vec<Attachment>,
+    referenced_message: Option<ReferencedCompatMessage>,
     current_bot: &AuthenticatedBot,
     public_url: &str,
 ) -> CompatMessageResponse {
@@ -465,6 +520,15 @@ fn compat_message_response(
                 guild_id: message.space_id.map(|space_id| space_id.to_string()),
             }
         }),
+        referenced_message: referenced_message.map(|referenced_message| {
+            Box::new(compat_message_response(
+                referenced_message.message,
+                referenced_message.attachments,
+                None,
+                current_bot,
+                public_url,
+            ))
+        }),
         pinned: false,
         kind: 0,
     }
@@ -495,9 +559,34 @@ fn compat_attachment_response(attachment: Attachment, public_url: &str) -> serde
     })
 }
 
-fn realtime_message_with_embeds(message: Message, public_url: &str) -> serde_json::Value {
+fn realtime_message_payload(
+    message: Message,
+    referenced_message: Option<ReferencedCompatMessage>,
+    public_url: &str,
+) -> serde_json::Value {
+    let mut value = realtime_message_value(message, Vec::new(), public_url);
+    if let Some(object) = value.as_object_mut()
+        && let Some(referenced_message) = referenced_message
+    {
+        object.insert(
+            "referenced_message".to_owned(),
+            realtime_message_value(
+                referenced_message.message,
+                referenced_message.attachments,
+                public_url,
+            ),
+        );
+    }
+    value
+}
+
+fn realtime_message_value(
+    message: Message,
+    attachments: Vec<Attachment>,
+    public_url: &str,
+) -> serde_json::Value {
     let embeds = message.embeds.clone();
-    let mut value = serde_json::to_value(message_response(message, Vec::new(), public_url))
+    let mut value = serde_json::to_value(message_response(message, attachments, public_url))
         .unwrap_or_else(|_| serde_json::json!({}));
     if let Some(object) = value.as_object_mut() {
         object.insert("embeds".to_owned(), serde_json::Value::Array(embeds));
@@ -524,6 +613,58 @@ async fn validate_message_reference(
     Ok(Some(
         message_in_channel(state, message_reference.message_id, channel_id).await?,
     ))
+}
+
+async fn referenced_messages_by_id(
+    state: &AppState,
+    message_ids: &[Uuid],
+) -> Result<HashMap<Uuid, Message>, CompatApiError> {
+    let mut referenced_messages = HashMap::new();
+    let mut seen = HashSet::new();
+    for message_id in message_ids {
+        if !seen.insert(*message_id) {
+            continue;
+        }
+
+        match state.messages.get(*message_id).await {
+            Ok(message) => {
+                referenced_messages.insert(message.id, message);
+            }
+            Err(MessageError::NotFound) => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    Ok(referenced_messages)
+}
+
+async fn referenced_message_by_id(
+    state: &AppState,
+    message_id: Option<Uuid>,
+) -> Result<Option<Message>, CompatApiError> {
+    let Some(message_id) = message_id else {
+        return Ok(None);
+    };
+
+    match state.messages.get(message_id).await {
+        Ok(message) => Ok(Some(message)),
+        Err(MessageError::NotFound) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn attachments_for_message(
+    state: &AppState,
+    message: Option<&Message>,
+) -> Result<Vec<Attachment>, CompatApiError> {
+    let Some(message) = message else {
+        return Ok(Vec::new());
+    };
+
+    Ok(state
+        .attachments
+        .list_for_message_ids(&[message.id])
+        .await?)
 }
 
 fn compat_user_response(bot: &AuthenticatedBot) -> CompatUserResponse {

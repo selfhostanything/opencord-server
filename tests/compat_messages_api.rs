@@ -382,6 +382,12 @@ async fn bot_can_create_and_list_reply_messages_through_compat_routes() {
     assert_eq!(body["content"], "reply message");
     assert_eq!(body["message_reference"]["message_id"], base_message_id);
     assert_eq!(body["message_reference"]["channel_id"], channel_id);
+    assert_eq!(body["referenced_message"]["id"], base_message_id);
+    assert_eq!(body["referenced_message"]["channel_id"], channel_id);
+    assert_eq!(body["referenced_message"]["author"]["id"], bot_user_id);
+    assert_eq!(body["referenced_message"]["author"]["bot"], true);
+    assert_eq!(body["referenced_message"]["content"], "base message");
+    assert_eq!(body["referenced_message"]["type"], 0);
 
     let listed = app
         .clone()
@@ -399,6 +405,8 @@ async fn bot_can_create_and_list_reply_messages_through_compat_routes() {
     assert_eq!(body[1]["id"], reply_message_id);
     assert_eq!(body[1]["message_reference"]["message_id"], base_message_id);
     assert_eq!(body[1]["message_reference"]["channel_id"], channel_id);
+    assert_eq!(body[1]["referenced_message"]["id"], base_message_id);
+    assert_eq!(body[1]["referenced_message"]["content"], "base message");
 }
 
 #[tokio::test]

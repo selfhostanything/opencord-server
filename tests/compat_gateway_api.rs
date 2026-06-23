@@ -471,7 +471,7 @@ async fn next_json(socket: &mut TestWebSocket) -> Value {
 async fn compat_gateway_message_create_includes_reply_reference() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;
-    let (owner_token, _) = register(&app, "compat-gateway-reply-owner@example.com").await;
+    let (owner_token, owner_id) = register(&app, "compat-gateway-reply-owner@example.com").await;
     let (organization_id, space_id, channel_id) =
         create_space_with_channel(&app, &owner_token, "reply").await;
     let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
@@ -528,6 +528,12 @@ async fn compat_gateway_message_create_includes_reply_reference() {
         base_message_id
     );
     assert_eq!(event["d"]["message_reference"]["channel_id"], channel_id);
+    assert_eq!(event["d"]["referenced_message"]["id"], base_message_id);
+    assert_eq!(event["d"]["referenced_message"]["channel_id"], channel_id);
+    assert_eq!(event["d"]["referenced_message"]["author"]["id"], owner_id);
+    assert_eq!(event["d"]["referenced_message"]["author"]["bot"], false);
+    assert_eq!(event["d"]["referenced_message"]["content"], "base message");
+    assert_eq!(event["d"]["referenced_message"]["type"], 0);
 }
 
 #[tokio::test]

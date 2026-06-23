@@ -182,7 +182,9 @@ and gateway `MESSAGE_CREATE` dispatches. Linked native attachments are returned
 as Discord-shaped attachment metadata in compatibility list responses and
 gateway dispatches. Compatibility message create accepts same-channel
 `message_reference` replies and returns reply metadata through REST and gateway;
-compatibility file upload, mention expansion, and components remain future work.
+reply payloads also include a hydrated Discord-shaped `referenced_message` when
+the referenced message is still available. Compatibility file upload, mention
+expansion, and components remain future work.
 
 ## Enterprise OIDC
 

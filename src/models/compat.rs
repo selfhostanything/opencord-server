@@ -77,6 +77,8 @@ pub struct CompatMessageResponse {
     pub embeds: Vec<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_reference: Option<CompatMessageReferenceResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub referenced_message: Option<Box<CompatMessageResponse>>,
     pub pinned: bool,
     #[serde(rename = "type")]
     pub kind: i32,

@@ -3540,6 +3540,8 @@ components:
             guild_id:
               type: string
               format: uuid
+        referenced_message:
+          $ref: "#/components/schemas/CompatMessage"
         pinned:
           type: boolean
         type:

@@ -227,6 +227,13 @@ fn compat_message_from_event(
     current_bot: &AuthenticatedBot,
 ) -> Option<CompatMessageResponse> {
     let message = event.data.get("message")?;
+    compat_message_from_value(message, current_bot)
+}
+
+fn compat_message_from_value(
+    message: &Value,
+    current_bot: &AuthenticatedBot,
+) -> Option<CompatMessageResponse> {
     let author_user_id = message.get("author_user_id")?.as_str()?.to_owned();
     let author_is_current_bot = author_user_id == current_bot.bot_user_id.to_string();
     let embeds = message
@@ -236,6 +243,10 @@ fn compat_message_from_event(
         .unwrap_or_default();
     let attachments = compat_attachments_from_event(message.get("attachments"));
     let message_reference = compat_message_reference_from_event(message);
+    let referenced_message = message
+        .get("referenced_message")
+        .and_then(|referenced_message| compat_message_from_value(referenced_message, current_bot))
+        .map(Box::new);
 
     Some(CompatMessageResponse {
         id: message.get("id")?.as_str()?.to_owned(),
@@ -262,6 +273,7 @@ fn compat_message_from_event(
         attachments,
         embeds,
         message_reference,
+        referenced_message,
         pinned: false,
         kind: 0,
     })
