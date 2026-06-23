@@ -101,6 +101,7 @@ GET /push-tokens
 POST /organizations
 GET /organizations
 GET /organizations/{organization_id}
+GET /organizations/{organization_id}/usage
 POST /organizations/{organization_id}/spaces
 GET /organizations/{organization_id}/spaces
 POST /organizations/{organization_id}/meetings
@@ -141,6 +142,10 @@ Authorization: Bearer <session token>
 store transaction while setting the initial `plan`, `deployment_mode`, and
 `primary_region`. Normal self-hosted organization creation remains available at
 `POST /organizations` and defaults to the `free` plan in `self_hosted` mode.
+
+`GET /organizations/{organization_id}/usage` exposes billing/admin usage
+counters for visible organizations, including active users, stored attachment
+bytes, and connected calendar accounts for active members.
 
 ## Worker
 

@@ -95,6 +95,11 @@ pub trait OrganizationStore: Send + Sync {
         organization_id: Uuid,
     ) -> Result<Option<OrganizationMembership>, OrganizationError>;
 
+    async fn active_member_user_ids(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<Vec<Uuid>, OrganizationError>;
+
     async fn add_member_if_missing(
         &self,
         member: StoredOrganizationMember,

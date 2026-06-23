@@ -195,6 +195,44 @@ impl CalendarStore for PostgresCalendarStore {
             .transpose()?
             .ok_or(CalendarSyncError::StoreUnavailable)
     }
+
+    async fn count_accounts_for_user_ids(
+        &self,
+        user_ids: &[Uuid],
+    ) -> Result<i64, CalendarSyncError> {
+        if user_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let placeholders = (1..=user_ids.len())
+            .map(|index| format!("${index}::uuid"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let values = user_ids
+            .iter()
+            .map(|user_id| Value::from(user_id.to_string()))
+            .collect::<Vec<_>>();
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                format!(
+                    r#"
+                    SELECT COUNT(*)::bigint AS connected_accounts
+                    FROM connected_calendar_accounts
+                    WHERE user_id IN ({placeholders})
+                      AND sync_enabled = true
+                    "#
+                ),
+                values,
+            ))
+            .await
+            .map_err(|_| CalendarSyncError::StoreUnavailable)?;
+
+        row.ok_or(CalendarSyncError::StoreUnavailable)?
+            .try_get::<i64>("", "connected_accounts")
+            .map_err(|_| CalendarSyncError::StoreUnavailable)
+    }
 }
 
 fn account_values(account: &ConnectedCalendarAccount) -> Vec<Value> {

@@ -103,4 +103,24 @@ impl CalendarStore for MemoryCalendarStore {
 
         Ok(event)
     }
+
+    async fn count_accounts_for_user_ids(
+        &self,
+        user_ids: &[Uuid],
+    ) -> Result<i64, CalendarSyncError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| CalendarSyncError::StoreUnavailable)?;
+        let user_ids = user_ids
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+
+        Ok(state
+            .accounts_by_user_provider
+            .values()
+            .filter(|account| account.sync_enabled && user_ids.contains(&account.user_id))
+            .count() as i64)
+    }
 }

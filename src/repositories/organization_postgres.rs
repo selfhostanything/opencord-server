@@ -140,6 +140,36 @@ impl OrganizationStore for PostgresOrganizationStore {
         row.map(organization_from_row).transpose()
     }
 
+    async fn active_member_user_ids(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<Vec<Uuid>, OrganizationError> {
+        let rows = self
+            .db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT user_id::text
+                FROM organization_members
+                WHERE organization_id = $1::uuid
+                  AND status = 'active'
+                ORDER BY user_id ASC
+                "#,
+                values(vec![organization_id.to_string()]),
+            ))
+            .await
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+
+        rows.into_iter()
+            .map(|row| {
+                let user_id = row
+                    .try_get::<String>("", "user_id")
+                    .map_err(|_| OrganizationError::StoreUnavailable)?;
+                Uuid::parse_str(&user_id).map_err(|_| OrganizationError::StoreUnavailable)
+            })
+            .collect()
+    }
+
     async fn add_member_if_missing(
         &self,
         member: StoredOrganizationMember,

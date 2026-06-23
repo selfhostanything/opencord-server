@@ -14,4 +14,5 @@ pub mod permission_controller;
 pub mod push_controller;
 pub mod realtime_controller;
 pub mod space_controller;
+pub mod usage_controller;
 pub mod voice_controller;

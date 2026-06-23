@@ -198,6 +198,82 @@ async fn cloud_can_provision_tenant_with_plan_region_and_owner_atomically() {
 }
 
 #[tokio::test]
+async fn organization_usage_shows_active_users_storage_and_calendar_accounts() {
+    let app = test_app();
+    let (token, _) = register_user(&app, "usage-owner@example.com").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            "/cloud/tenants",
+            &token,
+            json!({
+                "name": "Usage Cloud",
+                "plan": "team",
+                "deployment_mode": "cloud",
+                "primary_region": "vultr-sgp"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let organization_id = response_json(created).await["tenant"]["organization_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let initial_usage = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/usage"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(initial_usage.status(), StatusCode::OK);
+    let body = response_json(initial_usage).await;
+    assert_eq!(body["usage"]["organization_id"], organization_id);
+    assert_eq!(body["usage"]["active_users"], 1);
+    assert_eq!(body["usage"]["stored_file_bytes"], 0);
+    assert_eq!(body["usage"]["calendar_connected_accounts"], 0);
+
+    let connected_calendar = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            "/calendar/accounts/google",
+            &token,
+            json!({
+                "external_account_id": "usage-google-user",
+                "calendar_id": "primary",
+                "access_token": "usage-access-secret",
+                "refresh_token": "usage-refresh-secret"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(connected_calendar.status(), StatusCode::CREATED);
+
+    let updated_usage = app
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/usage"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(updated_usage.status(), StatusCode::OK);
+    let body = response_json(updated_usage).await;
+    assert_eq!(body["usage"]["active_users"], 1);
+    assert_eq!(body["usage"]["stored_file_bytes"], 0);
+    assert_eq!(body["usage"]["calendar_connected_accounts"], 1);
+}
+
+#[tokio::test]
 async fn organization_endpoints_require_bearer_auth() {
     let app = test_app();
 

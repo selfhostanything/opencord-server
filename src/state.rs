@@ -20,6 +20,7 @@ use crate::domain::permission::{PermissionService, PermissionStore};
 use crate::domain::push::{PushService, PushTokenStore};
 use crate::domain::realtime::RealtimeHub;
 use crate::domain::space::{SpaceService, SpaceStore};
+use crate::domain::usage::UsageService;
 use crate::repositories::attachment_memory::MemoryAttachmentStore;
 use crate::repositories::attachment_postgres::PostgresAttachmentStore;
 use crate::repositories::audit_memory::MemoryAuditStore;
@@ -60,6 +61,7 @@ pub struct AppState {
     pub media: Arc<MediaControlService>,
     pub metrics: Arc<MediaMetrics>,
     pub realtime: Arc<RealtimeHub>,
+    pub usage: Arc<UsageService>,
 }
 
 impl AppState {
@@ -102,6 +104,12 @@ impl AppState {
     }
 
     pub fn with_stores(config: AppConfig, stores: AppStores) -> Self {
+        let usage = Arc::new(UsageService::new(
+            stores.organizations.clone(),
+            stores.attachments.clone(),
+            stores.calendar.clone(),
+        ));
+
         Self {
             config,
             auth: Arc::new(AuthService::new(stores.auth)),
@@ -123,6 +131,7 @@ impl AppState {
             media: Arc::new(MediaControlService::from_env()),
             metrics: Arc::new(MediaMetrics::default()),
             realtime: Arc::new(RealtimeHub::default()),
+            usage,
         }
     }
 }

@@ -422,6 +422,33 @@ paths:
           description: Missing or invalid bearer session
         "404":
           description: Organization not found for this user
+  /organizations/{organization_id}/usage:
+    get:
+      summary: Return usage counters for one organization
+      description: >
+        Exposes billing/admin counters derived from local stores for the current
+        organization: active users, stored attachment bytes, and connected
+        calendar accounts.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Usage counters for the organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Organization not found for this user
   /organizations/{organization_id}/spaces:
     post:
       summary: Create a space inside an organization
@@ -1604,6 +1631,33 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Organization"
+    UsageSummary:
+      type: object
+      required:
+        - organization_id
+        - active_users
+        - stored_file_bytes
+        - calendar_connected_accounts
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        active_users:
+          type: integer
+          minimum: 0
+        stored_file_bytes:
+          type: integer
+          minimum: 0
+        calendar_connected_accounts:
+          type: integer
+          minimum: 0
+    UsageResourceResponse:
+      type: object
+      required:
+        - usage
+      properties:
+        usage:
+          $ref: "#/components/schemas/UsageSummary"
     CreateMeetingRequest:
       type: object
       required:

@@ -121,6 +121,10 @@ pub trait AttachmentStore: Send + Sync {
         &self,
         message_ids: &[Uuid],
     ) -> Result<Vec<Attachment>, AttachmentError>;
+    async fn stored_bytes_for_organization(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<i64, AttachmentError>;
 }
 
 #[derive(Clone)]

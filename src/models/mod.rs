@@ -11,4 +11,5 @@ pub mod permission;
 pub mod push;
 pub mod responses;
 pub mod space;
+pub mod usage;
 pub mod voice;

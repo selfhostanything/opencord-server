@@ -118,6 +118,29 @@ impl OrganizationStore for MemoryOrganizationStore {
             }))
     }
 
+    async fn active_member_user_ids(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<Vec<Uuid>, OrganizationError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| OrganizationError::StoreUnavailable)?;
+        if !state.organizations_by_id.contains_key(&organization_id) {
+            return Err(OrganizationError::NotFound);
+        }
+
+        let mut user_ids = state
+            .members_by_org_user
+            .values()
+            .filter(|member| member.organization_id == organization_id && member.status == "active")
+            .map(|member| member.user_id)
+            .collect::<Vec<_>>();
+        user_ids.sort();
+
+        Ok(user_ids)
+    }
+
     async fn add_member_if_missing(
         &self,
         member: StoredOrganizationMember,

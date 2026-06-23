@@ -121,4 +121,27 @@ impl AttachmentStore for MemoryAttachmentStore {
         attachments.sort_by_key(|attachment| attachment.id);
         Ok(attachments)
     }
+
+    async fn stored_bytes_for_organization(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<i64, AttachmentError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| AttachmentError::StoreUnavailable)?;
+
+        Ok(state
+            .attachments_by_id
+            .values()
+            .filter(|attachment| attachment.organization_id == organization_id)
+            .filter(|attachment| {
+                matches!(
+                    attachment.status,
+                    AttachmentStatus::Uploaded | AttachmentStatus::Linked
+                )
+            })
+            .map(|attachment| attachment.size_bytes)
+            .sum())
+    }
 }

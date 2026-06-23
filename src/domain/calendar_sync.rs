@@ -117,6 +117,10 @@ pub trait CalendarStore: Send + Sync {
         &self,
         event: CalendarEventSync,
     ) -> Result<CalendarEventSync, CalendarSyncError>;
+    async fn count_accounts_for_user_ids(
+        &self,
+        user_ids: &[Uuid],
+    ) -> Result<i64, CalendarSyncError>;
 }
 
 #[async_trait::async_trait]

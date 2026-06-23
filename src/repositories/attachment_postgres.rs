@@ -207,6 +207,30 @@ impl AttachmentStore for PostgresAttachmentStore {
             .map(attachment_from_row)
             .collect::<Result<Vec<_>, _>>()
     }
+
+    async fn stored_bytes_for_organization(
+        &self,
+        organization_id: Uuid,
+    ) -> Result<i64, AttachmentError> {
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                SELECT COALESCE(SUM(size_bytes), 0)::bigint AS stored_file_bytes
+                FROM attachments
+                WHERE organization_id = $1::uuid
+                  AND status IN ('uploaded', 'linked')
+                "#,
+                vec![Value::from(organization_id.to_string())],
+            ))
+            .await
+            .map_err(|_| AttachmentError::StoreUnavailable)?;
+
+        row.ok_or(AttachmentError::StoreUnavailable)?
+            .try_get::<i64>("", "stored_file_bytes")
+            .map_err(|_| AttachmentError::StoreUnavailable)
+    }
 }
 
 fn attachment_select_sql(where_clause: &str) -> String {

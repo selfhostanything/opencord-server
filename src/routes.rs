@@ -8,7 +8,7 @@ use crate::controllers::{
     channel_controller, discovery_controller, health_controller, media_controller,
     meeting_controller, message_controller, metrics_controller, organization_controller,
     permission_controller, push_controller, realtime_controller, space_controller,
-    voice_controller,
+    usage_controller, voice_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -72,6 +72,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/organizations/{organization_id}",
             get(organization_controller::get),
+        )
+        .route(
+            "/organizations/{organization_id}/usage",
+            get(usage_controller::get),
         )
         .route(
             "/organizations/{organization_id}/spaces",
