@@ -18,3 +18,4 @@ pub mod scim;
 pub mod space;
 pub mod usage;
 pub mod voice;
+pub mod webhook;

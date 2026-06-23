@@ -9,7 +9,7 @@ use crate::controllers::{
     health_controller, media_controller, meeting_controller, message_controller,
     metrics_controller, organization_controller, permission_controller, push_controller,
     realtime_controller, retention_controller, scim_controller, space_controller, usage_controller,
-    voice_controller,
+    voice_controller, webhook_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::state::AppState;
@@ -31,6 +31,14 @@ pub fn api_router_with_state(state: AppState) -> Router {
         )
         .route("/api/version", get(discovery_controller::version))
         .route("/api/capabilities", get(discovery_controller::capabilities))
+        .route(
+            "/api/webhooks/{webhook_id}/{webhook_token}",
+            post(webhook_controller::execute),
+        )
+        .route(
+            "/webhooks/{webhook_id}/{webhook_token}",
+            post(webhook_controller::execute),
+        )
         .route("/auth/register", post(auth_controller::register))
         .route("/auth/login", post(auth_controller::login))
         .route("/auth/oidc/providers", get(auth_controller::oidc_providers))
@@ -182,6 +190,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/channels/{channel_id}/permission-overrides",
             post(permission_controller::set_channel_override),
+        )
+        .route(
+            "/channels/{channel_id}/webhooks",
+            post(webhook_controller::create),
         )
         .route(
             "/channels/{channel_id}/messages",

@@ -21,3 +21,4 @@ pub mod retention;
 pub mod scim;
 pub mod space;
 pub mod usage;
+pub mod webhook;

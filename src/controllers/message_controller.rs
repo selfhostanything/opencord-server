@@ -246,7 +246,7 @@ impl IntoResponse for MessageApiError {
     }
 }
 
-fn message_response(
+pub(crate) fn message_response(
     message: Message,
     attachments: Vec<Attachment>,
     public_url: &str,

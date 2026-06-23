@@ -82,6 +82,42 @@ paths:
       responses:
         "200":
           description: Capability list
+  /api/webhooks/{webhook_id}/{webhook_token}:
+    post:
+      summary: Execute an incoming webhook
+      description: >
+        Public Discord-style incoming webhook execution endpoint. The path
+        token is the webhook credential and is only shown when the webhook is
+        created.
+      parameters:
+        - name: webhook_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: webhook_token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecuteIncomingWebhookRequest"
+      responses:
+        "201":
+          description: Created message authored by the webhook bot user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResourceResponse"
+        "400":
+          description: Invalid webhook message content
+        "404":
+          description: Webhook not found, disabled, or token invalid
   /auth/register:
     post:
       summary: Register a user and create a bearer session
@@ -1514,6 +1550,42 @@ paths:
           description: Missing MANAGE_CHANNELS permission
         "404":
           description: Channel or parent space not found for this user
+  /channels/{channel_id}/webhooks:
+    post:
+      summary: Create an incoming webhook for a text channel
+      description: >
+        Creates a webhook bot user and a shown-once `ocw_` execution token.
+        The returned `execute_url` uses `/api/webhooks/{webhook_id}/{token}`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: channel_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIncomingWebhookRequest"
+      responses:
+        "201":
+          description: Created incoming webhook and shown-once token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncomingWebhookResourceResponse"
+        "400":
+          description: Invalid webhook name or non-text channel
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_CHANNELS permission
+        "404":
+          description: Channel or parent space not found for this user
   /channels/{channel_id}/messages:
     post:
       summary: Send a message to a channel
@@ -2400,6 +2472,94 @@ components:
           $ref: "#/components/schemas/BotApplication"
         bot_token:
           $ref: "#/components/schemas/BotToken"
+    CreateIncomingWebhookRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+    ExecuteIncomingWebhookRequest:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        username:
+          type:
+            - string
+            - "null"
+          description: Accepted for Discord-style compatibility; ignored in Phase 07.
+        avatar_url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: Accepted for Discord-style compatibility; ignored in Phase 07.
+    IncomingWebhook:
+      type: object
+      required:
+        - id
+        - organization_id
+        - space_id
+        - channel_id
+        - bot_user_id
+        - created_by_user_id
+        - name
+        - status
+        - token
+        - token_last_four
+        - execute_url
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        space_id:
+          type: string
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        bot_user_id:
+          type: string
+          format: uuid
+        created_by_user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - disabled
+        token:
+          type: string
+          description: Shown once when the webhook is created.
+        token_last_four:
+          type: string
+        execute_url:
+          type: string
+          format: uri
+        created_at:
+          type: string
+          format: date-time
+    IncomingWebhookResourceResponse:
+      type: object
+      required:
+        - webhook
+      properties:
+        webhook:
+          $ref: "#/components/schemas/IncomingWebhook"
     CreateCustomDomainRequest:
       type: object
       required:

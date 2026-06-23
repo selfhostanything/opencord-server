@@ -26,6 +26,7 @@ use crate::domain::retention::{RetentionService, RetentionStore};
 use crate::domain::scim::{ScimService, ScimStore};
 use crate::domain::space::{SpaceService, SpaceStore};
 use crate::domain::usage::UsageService;
+use crate::domain::webhook::{IncomingWebhookService, IncomingWebhookStore};
 use crate::repositories::attachment_memory::MemoryAttachmentStore;
 use crate::repositories::attachment_postgres::PostgresAttachmentStore;
 use crate::repositories::audit_memory::MemoryAuditStore;
@@ -56,6 +57,8 @@ use crate::repositories::scim_memory::MemoryScimStore;
 use crate::repositories::scim_postgres::PostgresScimStore;
 use crate::repositories::space_memory::MemorySpaceStore;
 use crate::repositories::space_postgres::PostgresSpaceStore;
+use crate::repositories::webhook_memory::MemoryIncomingWebhookStore;
+use crate::repositories::webhook_postgres::PostgresIncomingWebhookStore;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -80,6 +83,7 @@ pub struct AppState {
     pub scim: Arc<ScimService>,
     pub retention: Arc<RetentionService>,
     pub bots: Arc<BotService>,
+    pub webhooks: Arc<IncomingWebhookService>,
 }
 
 impl AppState {
@@ -102,6 +106,7 @@ impl AppState {
                 scim: Arc::new(MemoryScimStore::default()),
                 retention: Arc::new(MemoryRetentionStore::default()),
                 bots: Arc::new(MemoryBotStore::default()),
+                webhooks: Arc::new(MemoryIncomingWebhookStore::default()),
             },
         )
     }
@@ -125,6 +130,7 @@ impl AppState {
                 scim: Arc::new(PostgresScimStore::new(db.clone())),
                 retention: Arc::new(PostgresRetentionStore::new(db.clone())),
                 bots: Arc::new(PostgresBotStore::new(db.clone())),
+                webhooks: Arc::new(PostgresIncomingWebhookStore::new(db.clone())),
             },
         )
     }
@@ -145,6 +151,10 @@ impl AppState {
             stores.organizations.clone(),
         ));
         let bots = Arc::new(BotService::new(stores.bots.clone(), stores.auth.clone()));
+        let webhooks = Arc::new(IncomingWebhookService::new(
+            stores.webhooks.clone(),
+            stores.auth.clone(),
+        ));
         let data_exports = Arc::new(DataExportService::new(
             stores.messages.clone(),
             stores.attachments.clone(),
@@ -177,6 +187,7 @@ impl AppState {
             scim,
             retention: Arc::new(RetentionService::new(stores.retention)),
             bots,
+            webhooks,
         }
     }
 }
@@ -197,4 +208,5 @@ pub struct AppStores {
     pub scim: Arc<dyn ScimStore>,
     pub retention: Arc<dyn RetentionStore>,
     pub bots: Arc<dyn BotStore>,
+    pub webhooks: Arc<dyn IncomingWebhookStore>,
 }

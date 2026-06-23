@@ -28,3 +28,5 @@ pub mod scim_memory;
 pub mod scim_postgres;
 pub mod space_memory;
 pub mod space_postgres;
+pub mod webhook_memory;
+pub mod webhook_postgres;

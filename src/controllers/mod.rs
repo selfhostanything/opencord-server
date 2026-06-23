@@ -21,3 +21,4 @@ pub mod scim_controller;
 pub mod space_controller;
 pub mod usage_controller;
 pub mod voice_controller;
+pub mod webhook_controller;

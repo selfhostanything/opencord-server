@@ -85,6 +85,7 @@ GET /join/{join_slug}
 GET /.well-known/opencord
 GET /api/version
 GET /api/capabilities
+POST /api/webhooks/{webhook_id}/{webhook_token}
 POST /auth/register
 POST /auth/login
 GET /auth/oidc/providers
@@ -138,6 +139,7 @@ POST /spaces/{space_id}/roles/{role_id}/assignments
 GET /spaces/{space_id}/audit-events
 PATCH /channels/{channel_id}
 POST /channels/{channel_id}/permission-overrides
+POST /channels/{channel_id}/webhooks
 POST /channels/{channel_id}/messages
 GET /channels/{channel_id}/messages
 POST /attachments/presign
@@ -333,6 +335,12 @@ Ports:
 admin create a bot application, internal bot user, and shown-once bot token.
 Bot tokens are stored hashed and are issued with the `ocb_` prefix for later
 compatibility routes under `/api/compat/discord/v10`.
+
+`POST /channels/{channel_id}/webhooks` lets a channel manager create an incoming
+webhook for a text channel. The server creates an internal webhook bot user and
+returns a shown-once `ocw_` token plus an execute URL. `POST
+/api/webhooks/{webhook_id}/{webhook_token}` accepts a Discord-style webhook
+payload with `content` and posts the message as the webhook bot user.
 
 ## License
 
