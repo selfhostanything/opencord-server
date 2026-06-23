@@ -30,6 +30,11 @@ pub struct SpaceMembership {
     pub role: String,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SpacePatch {
+    pub name: Option<String>,
+}
+
 #[derive(Debug)]
 pub enum SpaceError {
     InvalidInput(&'static str),
@@ -89,6 +94,10 @@ pub trait SpaceStore: Send + Sync {
 
     async fn add_member(&self, member: StoredSpaceMember) -> Result<SpaceMembership, SpaceError>;
     async fn remove_member(&self, space_id: Uuid, user_id: Uuid) -> Result<(), SpaceError>;
+    async fn update_space(
+        &self,
+        membership: SpaceMembership,
+    ) -> Result<SpaceMembership, SpaceError>;
 }
 
 #[derive(Clone)]
@@ -181,6 +190,20 @@ impl SpaceService {
 
         self.store.remove_member(space_id, user_id).await?;
         Ok(membership)
+    }
+
+    pub async fn update(
+        &self,
+        mut existing: SpaceMembership,
+        patch: SpacePatch,
+    ) -> Result<SpaceMembership, SpaceError> {
+        if let Some(name) = patch.name {
+            let name = normalize_name(name)?;
+            existing.slug = slugify(&name)?;
+            existing.name = name;
+        }
+
+        self.store.update_space(existing).await
     }
 }
 

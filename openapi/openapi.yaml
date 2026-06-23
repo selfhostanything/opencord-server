@@ -595,12 +595,12 @@ paths:
         OpenCord `ocb_` bot token, emits READY with bot-visible spaces as
         guilds, supports process-local RESUME by `session_id`, acknowledges
         heartbeats, and dispatches CHANNEL_CREATE, CHANNEL_UPDATE,
-        CHANNEL_DELETE, GUILD_CREATE, GUILD_MEMBER_ADD, GUILD_MEMBER_REMOVE,
-        MESSAGE_CREATE, MESSAGE_UPDATE, MESSAGE_DELETE, and INTERACTION_CREATE
-        events visible to the bot user.
+        CHANNEL_DELETE, GUILD_CREATE, GUILD_UPDATE, GUILD_MEMBER_ADD,
+        GUILD_MEMBER_REMOVE, MESSAGE_CREATE, MESSAGE_UPDATE, MESSAGE_DELETE,
+        and INTERACTION_CREATE events visible to the bot user.
         Message create, update, and delete dispatches require the Discord
         `GUILD_MESSAGES` intent.
-        Channel create/update/delete and guild-create dispatches require
+        Channel create/update/delete and guild create/update dispatches require
         `GUILDS`; guild-member add/remove dispatches require `GUILD_MEMBERS`.
         Unknown opcodes close with `4001`; malformed payloads close with
         `4002`; invalid IDENTIFY tokens close with `4004`; duplicate IDENTIFY
@@ -1994,6 +1994,44 @@ paths:
           description: Missing or invalid bearer session
         "404":
           description: Space not found for this user
+  /spaces/{space_id}:
+    patch:
+      summary: Update a space
+      description: >
+        Renames a visible space and regenerates its slug. Requires MANAGE_SPACE
+        on the target space and emits a realtime space update event.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: space_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchSpaceRequest"
+      responses:
+        "200":
+          description: Updated space and caller membership
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpaceMembershipResponse"
+        "400":
+          description: Invalid space name
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing MANAGE_SPACE permission
+        "404":
+          description: Space not found for this user
+        "409":
+          description: Space slug already exists in this organization
   /spaces/{space_id}/members:
     post:
       summary: Add a registered user to a space
@@ -4781,6 +4819,13 @@ components:
       type: object
       required:
         - name
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+    PatchSpaceRequest:
+      type: object
       properties:
         name:
           type: string

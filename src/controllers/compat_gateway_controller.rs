@@ -183,11 +183,23 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                         break;
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
+                } else if event.event_type == "space.updated"
+                    && has_intent(active_intents, INTENT_GUILDS)
+                    && can_bot_receive_event(&state, bot, &event).await
+                {
+                    let Some(guild) = compat_guild_from_event(&event) else {
+                        continue;
+                    };
+                    sequence += 1;
+                    if send_dispatch(&mut socket, "GUILD_UPDATE", sequence, guild).await.is_err() {
+                        break;
+                    }
+                    update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "space.bot.invited"
                     && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
                 {
-                    let Some(guild) = compat_guild_create_from_event(&event) else {
+                    let Some(guild) = compat_guild_from_event(&event) else {
                         continue;
                     };
                     sequence += 1;
@@ -578,7 +590,7 @@ fn compat_channel_kind(kind: &str) -> i32 {
     }
 }
 
-fn compat_guild_create_from_event(event: &RealtimeEvent) -> Option<Value> {
+fn compat_guild_from_event(event: &RealtimeEvent) -> Option<Value> {
     event.data.get("guild").cloned()
 }
 

@@ -1175,6 +1175,68 @@ async fn compat_gateway_dispatches_guild_create_when_bot_invited_to_space() {
 }
 
 #[tokio::test]
+async fn compat_gateway_dispatches_guild_update_when_space_renamed() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-guild-update-owner@example.com").await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "guild-update").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 1,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+    assert_eq!(ready["s"], 1);
+
+    let updated = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::PATCH,
+            &format!("/spaces/{space_id}"),
+            &owner_token,
+            json!({ "name": "Renamed Guild Space" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), StatusCode::OK);
+
+    let event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("guild update dispatch");
+    assert_eq!(event["op"], 0);
+    assert_eq!(event["t"], "GUILD_UPDATE");
+    assert_eq!(event["s"], 2);
+    assert_eq!(event["d"]["id"], space_id);
+    assert_eq!(event["d"]["name"], "Renamed Guild Space");
+    assert_eq!(event["d"]["unavailable"], false);
+}
+
+#[tokio::test]
 async fn compat_gateway_ready_includes_visible_guilds() {
     let app = test_app();
     let addr = serve_app(app.clone()).await;
@@ -1438,6 +1500,67 @@ async fn compat_gateway_suppresses_guild_create_without_guilds_intent() {
     assert!(
         filtered.is_err(),
         "guild create should require GUILDS intent"
+    );
+}
+
+#[tokio::test]
+async fn compat_gateway_suppresses_guild_update_without_guilds_intent() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(
+        &app,
+        "compat-gateway-guild-update-intents-owner@example.com",
+    )
+    .await;
+    let (organization_id, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "guild-update-intents").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+
+    let updated = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::PATCH,
+            &format!("/spaces/{space_id}"),
+            &owner_token,
+            json!({ "name": "Filtered Guild Update" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), StatusCode::OK);
+
+    let filtered = timeout(Duration::from_millis(250), next_json(&mut socket)).await;
+    assert!(
+        filtered.is_err(),
+        "guild update should require GUILDS intent"
     );
 }
 

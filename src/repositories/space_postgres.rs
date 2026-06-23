@@ -185,6 +185,39 @@ impl SpaceStore for PostgresSpaceStore {
             Ok(())
         }
     }
+
+    async fn update_space(
+        &self,
+        membership: SpaceMembership,
+    ) -> Result<SpaceMembership, SpaceError> {
+        let result = self
+            .db
+            .execute(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+                UPDATE spaces
+                SET name = $3,
+                    slug = $4
+                WHERE id = $1::uuid
+                  AND organization_id = $2::uuid
+                  AND archived_at IS NULL
+                "#,
+                values(vec![
+                    membership.id.to_string(),
+                    membership.organization_id.to_string(),
+                    membership.name.clone(),
+                    membership.slug.clone(),
+                ]),
+            ))
+            .await;
+
+        match result {
+            Ok(result) if result.rows_affected() == 0 => Err(SpaceError::NotFound),
+            Ok(_) => Ok(membership),
+            Err(error) if is_unique_violation(&error) => Err(SpaceError::SlugAlreadyExists),
+            Err(_) => Err(SpaceError::StoreUnavailable),
+        }
+    }
 }
 
 fn space_from_row(row: sea_orm::QueryResult) -> Result<SpaceMembership, SpaceError> {

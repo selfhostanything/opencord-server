@@ -7,6 +7,11 @@ pub struct CreateSpaceRequest {
     pub name: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct PatchSpaceRequest {
+    pub name: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SpaceResponse {
     pub id: String,
@@ -41,5 +46,11 @@ impl From<SpaceMembership> for SpaceResponse {
             name: membership.name,
             role: membership.role,
         }
+    }
+}
+
+impl From<PatchSpaceRequest> for crate::domain::space::SpacePatch {
+    fn from(request: PatchSpaceRequest) -> Self {
+        Self { name: request.name }
     }
 }

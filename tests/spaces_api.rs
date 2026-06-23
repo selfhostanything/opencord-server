@@ -38,7 +38,7 @@ fn bearer_request(method: Method, uri: &str, token: &str, body: Value) -> Reques
         .unwrap()
 }
 
-async fn register_token(app: &axum::Router, email: &str) -> String {
+async fn register(app: &axum::Router, email: &str) -> (String, String) {
     let response = app
         .clone()
         .oneshot(json_request(
@@ -54,10 +54,15 @@ async fn register_token(app: &axum::Router, email: &str) -> String {
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::CREATED);
-    response_json(response).await["session"]["token"]
-        .as_str()
-        .unwrap()
-        .to_owned()
+    let body = response_json(response).await;
+    (
+        body["session"]["token"].as_str().unwrap().to_owned(),
+        body["user"]["id"].as_str().unwrap().to_owned(),
+    )
+}
+
+async fn register_token(app: &axum::Router, email: &str) -> String {
+    register(app, email).await.0
 }
 
 async fn create_organization(app: &axum::Router, token: &str, name: &str) -> String {
@@ -77,6 +82,24 @@ async fn create_organization(app: &axum::Router, token: &str, name: &str) -> Str
         .as_str()
         .unwrap()
         .to_owned()
+}
+
+async fn add_space_member(app: &axum::Router, owner_token: &str, space_id: &str, user_id: &str) {
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/spaces/{space_id}/members"),
+            owner_token,
+            json!({
+                "user_id": user_id,
+                "role": "member"
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
 }
 
 #[tokio::test]
@@ -123,6 +146,99 @@ async fn organization_member_can_create_and_list_spaces() {
     assert_eq!(body["spaces"].as_array().unwrap().len(), 1);
     assert_eq!(body["spaces"][0]["id"], space_id);
     assert_eq!(body["spaces"][0]["role"], "owner");
+}
+
+#[tokio::test]
+async fn space_owner_can_update_space_name_and_slug() {
+    let app = test_app();
+    let token = register_token(&app, "space-update-owner@example.com").await;
+    let organization_id = create_organization(&app, &token, "Space Update Parent").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/spaces"),
+            &token,
+            json!({ "name": "Engineering Draft" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let space_id = response_json(created).await["space"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let updated = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::PATCH,
+            &format!("/spaces/{space_id}"),
+            &token,
+            json!({ "name": "Engineering Stable" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), StatusCode::OK);
+    let body = response_json(updated).await;
+    assert_eq!(body["space"]["id"], space_id);
+    assert_eq!(body["space"]["organization_id"], organization_id);
+    assert_eq!(body["space"]["name"], "Engineering Stable");
+    assert_eq!(body["space"]["slug"], "engineering-stable");
+    assert_eq!(body["membership"]["role"], "owner");
+
+    let list = app
+        .oneshot(bearer_request(
+            Method::GET,
+            &format!("/organizations/{organization_id}/spaces"),
+            &token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(list.status(), StatusCode::OK);
+    let body = response_json(list).await;
+    assert_eq!(body["spaces"].as_array().unwrap().len(), 1);
+    assert_eq!(body["spaces"][0]["id"], space_id);
+    assert_eq!(body["spaces"][0]["name"], "Engineering Stable");
+    assert_eq!(body["spaces"][0]["slug"], "engineering-stable");
+}
+
+#[tokio::test]
+async fn space_update_requires_manage_space() {
+    let app = test_app();
+    let owner_token = register_token(&app, "space-update-denied-owner@example.com").await;
+    let (member_token, member_id) = register(&app, "space-update-denied-member@example.com").await;
+    let organization_id =
+        create_organization(&app, &owner_token, "Space Update Denied Parent").await;
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/spaces"),
+            &owner_token,
+            json!({ "name": "Member Managed" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let space_id = response_json(created).await["space"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+
+    let denied = app
+        .oneshot(bearer_request(
+            Method::PATCH,
+            &format!("/spaces/{space_id}"),
+            &member_token,
+            json!({ "name": "Member Should Not Rename" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

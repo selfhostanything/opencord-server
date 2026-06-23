@@ -155,4 +155,43 @@ impl SpaceStore for MemorySpaceStore {
         member.status = "inactive".to_owned();
         Ok(())
     }
+
+    async fn update_space(
+        &self,
+        membership: SpaceMembership,
+    ) -> Result<SpaceMembership, SpaceError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| SpaceError::StoreUnavailable)?;
+        let Some(previous) = state.spaces_by_id.get(&membership.id).cloned() else {
+            return Err(SpaceError::NotFound);
+        };
+        let next_key = (membership.organization_id, membership.slug.clone());
+
+        if state
+            .space_id_by_org_slug
+            .get(&next_key)
+            .is_some_and(|existing_id| *existing_id != membership.id)
+        {
+            return Err(SpaceError::SlugAlreadyExists);
+        }
+
+        state
+            .space_id_by_org_slug
+            .remove(&(previous.organization_id, previous.slug.clone()));
+        state.space_id_by_org_slug.insert(next_key, membership.id);
+        state.spaces_by_id.insert(
+            membership.id,
+            StoredSpace {
+                id: membership.id,
+                organization_id: membership.organization_id,
+                slug: membership.slug.clone(),
+                name: membership.name.clone(),
+                owner_user_id: previous.owner_user_id,
+            },
+        );
+
+        Ok(membership)
+    }
 }
