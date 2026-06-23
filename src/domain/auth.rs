@@ -251,6 +251,14 @@ impl AuthService {
             .ok_or(AuthError::Unauthorized)
     }
 
+    pub async fn user_by_id(&self, user_id: Uuid) -> Result<Option<AuthUser>, AuthError> {
+        Ok(self
+            .store
+            .find_user_by_id(user_id)
+            .await?
+            .map(AuthUser::from))
+    }
+
     pub async fn configure_oidc_provider(
         &self,
         input: ConfigureOidcProviderInput,

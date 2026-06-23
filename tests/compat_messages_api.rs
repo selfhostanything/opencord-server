@@ -197,6 +197,28 @@ async fn add_space_member(
     assert_eq!(response.status(), StatusCode::CREATED);
 }
 
+async fn create_role(app: &axum::Router, owner_token: &str, space_id: &str, name: &str) -> String {
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/spaces/{space_id}/roles"),
+            owner_token,
+            json!({
+                "name": name,
+                "permissions": ["VIEW_CHANNEL"]
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    response_json(response).await["role"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
 async fn create_uploaded_attachment(app: &axum::Router, token: &str, channel_id: &str) -> String {
     let presigned = app
         .clone()
@@ -233,6 +255,89 @@ async fn create_uploaded_attachment(app: &axum::Router, token: &str, channel_id:
     assert_eq!(upload.status(), StatusCode::OK);
 
     attachment_id
+}
+
+#[tokio::test]
+async fn bot_can_expand_allowed_mentions_through_compat_routes() {
+    let app = test_app();
+    let (owner_token, _) = register(&app, "compat-mention-owner@example.com").await;
+    let (_, mentioned_user_id) = register(&app, "compat-mentioned-user@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "mentions").await;
+    let role_id = create_role(&app, &owner_token, &space_id, "Release Watchers").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &mentioned_user_id, "member").await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id, "member").await;
+
+    let created = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({
+                "content": format!("ping <@{mentioned_user_id}> <@{bot_user_id}> <@&{role_id}> @everyone"),
+                "allowed_mentions": {
+                    "parse": ["everyone"],
+                    "users": [mentioned_user_id],
+                    "roles": [role_id]
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(created.status(), StatusCode::OK);
+    let body = response_json(created).await;
+    let message_id = body["id"].as_str().unwrap().to_owned();
+    assert_eq!(body["mention_everyone"], true);
+    assert_eq!(body["mentions"].as_array().unwrap().len(), 1);
+    assert_eq!(body["mentions"][0]["id"], mentioned_user_id);
+    assert_eq!(body["mentions"][0]["username"], "Compat Test User");
+    assert_eq!(body["mentions"][0]["bot"], false);
+    assert_eq!(body["mention_roles"], json!([role_id]));
+
+    let listed = app
+        .clone()
+        .oneshot(bot_request(
+            Method::GET,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            &bot_token,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(listed.status(), StatusCode::OK);
+    let body = response_json(listed).await;
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["id"], message_id);
+    assert_eq!(body[0]["mention_everyone"], true);
+    assert_eq!(body[0]["mentions"].as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["mentions"][0]["id"], mentioned_user_id);
+    assert_eq!(body[0]["mention_roles"], json!([role_id]));
+
+    let edited = app
+        .clone()
+        .oneshot(bot_request(
+            Method::PATCH,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages/{message_id}"),
+            &bot_token,
+            json!({
+                "content": format!("role only <@{mentioned_user_id}> <@&{role_id}>"),
+                "allowed_mentions": {
+                    "parse": ["roles"]
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(edited.status(), StatusCode::OK);
+    let body = response_json(edited).await;
+    assert_eq!(body["mention_everyone"], false);
+    assert!(body["mentions"].as_array().unwrap().is_empty());
+    assert_eq!(body["mention_roles"], json!([role_id]));
 }
 
 #[tokio::test]

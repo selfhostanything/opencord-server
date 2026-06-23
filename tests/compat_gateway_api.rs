@@ -242,6 +242,28 @@ async fn add_space_member(app: &Router, owner_token: &str, space_id: &str, user_
     assert_eq!(response.status(), StatusCode::CREATED);
 }
 
+async fn create_role(app: &Router, owner_token: &str, space_id: &str, name: &str) -> String {
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/spaces/{space_id}/roles"),
+            owner_token,
+            json!({
+                "name": name,
+                "permissions": ["VIEW_CHANNEL"]
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    response_json(response).await["role"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
 async fn send_message(app: &Router, token: &str, channel_id: &str, content: &str) -> String {
     let response = app
         .clone()
@@ -343,6 +365,39 @@ async fn send_compat_embed_message(
                 "embeds": [embed],
                 "allowed_mentions": {
                     "parse": []
+                }
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    response_json(response).await["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+async fn send_compat_mention_message(
+    app: &Router,
+    bot_token: &str,
+    channel_id: &str,
+    mentioned_user_id: &str,
+    suppressed_user_id: &str,
+    role_id: &str,
+) -> String {
+    let response = app
+        .clone()
+        .oneshot(bot_request(
+            Method::POST,
+            &format!("/api/compat/discord/v10/channels/{channel_id}/messages"),
+            bot_token,
+            json!({
+                "content": format!("ping <@{mentioned_user_id}> <@{suppressed_user_id}> <@&{role_id}> @everyone"),
+                "allowed_mentions": {
+                    "parse": ["everyone"],
+                    "users": [mentioned_user_id],
+                    "roles": [role_id]
                 }
             }),
         ))
@@ -465,6 +520,74 @@ async fn next_json(socket: &mut TestWebSocket) -> Value {
     }
 
     panic!("websocket closed before event")
+}
+
+#[tokio::test]
+async fn compat_gateway_message_create_includes_allowed_mentions() {
+    let app = test_app();
+    let addr = serve_app(app.clone()).await;
+    let (owner_token, _) = register(&app, "compat-gateway-mention-owner@example.com").await;
+    let (_, mentioned_user_id) = register(&app, "compat-gateway-mentioned-user@example.com").await;
+    let (organization_id, space_id, channel_id) =
+        create_space_with_channel(&app, &owner_token, "mention").await;
+    let role_id = create_role(&app, &owner_token, &space_id, "Release Watchers").await;
+    let (bot_token, bot_user_id) = create_bot(&app, &owner_token, &organization_id).await;
+    add_space_member(&app, &owner_token, &space_id, &mentioned_user_id).await;
+    add_space_member(&app, &owner_token, &space_id, &bot_user_id).await;
+
+    let (mut socket, _) = connect_async(format!("ws://{addr}/api/compat/discord/gateway"))
+        .await
+        .expect("connect compatibility gateway");
+    let hello = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("gateway hello");
+    assert_eq!(hello["op"], 10);
+
+    socket
+        .send(WsMessage::Text(
+            json!({
+                "op": 2,
+                "d": {
+                    "token": bot_token,
+                    "intents": 512,
+                    "properties": {}
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .await
+        .expect("send identify");
+    let ready = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("ready dispatch");
+    assert_eq!(ready["t"], "READY");
+
+    let message_id = send_compat_mention_message(
+        &app,
+        &bot_token,
+        &channel_id,
+        &mentioned_user_id,
+        &bot_user_id,
+        &role_id,
+    )
+    .await;
+    let event = timeout(Duration::from_secs(2), next_json(&mut socket))
+        .await
+        .expect("message create dispatch");
+
+    assert_eq!(event["op"], 0);
+    assert_eq!(event["t"], "MESSAGE_CREATE");
+    assert_eq!(event["d"]["id"], message_id);
+    assert_eq!(event["d"]["mention_everyone"], true);
+    assert_eq!(event["d"]["mentions"].as_array().unwrap().len(), 1);
+    assert_eq!(event["d"]["mentions"][0]["id"], mentioned_user_id);
+    assert_eq!(
+        event["d"]["mentions"][0]["username"],
+        "Compat Gateway Test User"
+    );
+    assert_eq!(event["d"]["mentions"][0]["bot"], false);
+    assert_eq!(event["d"]["mention_roles"], json!([role_id]));
 }
 
 #[tokio::test]

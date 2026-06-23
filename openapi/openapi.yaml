@@ -3232,6 +3232,28 @@ components:
           type: string
           minLength: 1
           maxLength: 4000
+        allowed_mentions:
+          type: object
+          description: Recomputes compatibility mention expansion for the edited content.
+          properties:
+            parse:
+              type: array
+              items:
+                type: string
+                enum:
+                  - users
+                  - roles
+                  - everyone
+            users:
+              type: array
+              items:
+                type: string
+                format: uuid
+            roles:
+              type: array
+              items:
+                type: string
+                format: uuid
         username:
           type:
             - string
@@ -3333,7 +3355,26 @@ components:
           description: Basic Discord-shaped embeds are persisted and returned without field-level rendering guarantees.
         allowed_mentions:
           type: object
-          description: Accepted for SDK compatibility; mention expansion is not implemented yet.
+          description: Controls compatibility mention expansion for user, role, and everyone mentions.
+          properties:
+            parse:
+              type: array
+              items:
+                type: string
+                enum:
+                  - users
+                  - roles
+                  - everyone
+            users:
+              type: array
+              items:
+                type: string
+                format: uuid
+            roles:
+              type: array
+              items:
+                type: string
+                format: uuid
         message_reference:
           type: object
           description: Reply metadata for creating a message that references an existing message in the same channel.
@@ -3487,14 +3528,18 @@ components:
           type: boolean
         mention_everyone:
           type: boolean
+          description: True when the message contains @everyone or @here and `allowed_mentions` permits everyone expansion.
         mentions:
           type: array
+          description: Discord-shaped mentioned users after `allowed_mentions` is applied.
           items:
             $ref: "#/components/schemas/CompatUser"
         mention_roles:
           type: array
+          description: Mentioned role IDs after `allowed_mentions` is applied.
           items:
             type: string
+            format: uuid
         attachments:
           type: array
           items:

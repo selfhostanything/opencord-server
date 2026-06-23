@@ -23,6 +23,7 @@ mod m20260623055000_bots;
 mod m20260623060000_incoming_webhooks;
 mod m20260623061000_commands;
 mod m20260623062000_message_embeds;
+mod m20260623063000_message_mentions;
 
 pub struct Migrator;
 
@@ -53,6 +54,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260623060000_incoming_webhooks::Migration),
             Box::new(m20260623061000_commands::Migration),
             Box::new(m20260623062000_message_embeds::Migration),
+            Box::new(m20260623063000_message_mentions::Migration),
         ]
     }
 }

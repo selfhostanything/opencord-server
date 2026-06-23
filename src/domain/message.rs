@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
 use chrono::{SecondsFormat, Utc};
 use serde_json::Value;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::domain::ids;
@@ -15,6 +16,9 @@ pub struct Message {
     pub content: String,
     pub content_format: String,
     pub embeds: Vec<Value>,
+    pub mention_user_ids: Vec<Uuid>,
+    pub mention_role_ids: Vec<Uuid>,
+    pub mention_everyone: bool,
     pub reply_to_message_id: Option<Uuid>,
     pub edited_at: Option<String>,
     pub deleted_at: Option<String>,
@@ -29,6 +33,9 @@ pub struct CreateMessageInput {
     pub content: String,
     pub allow_empty_content: bool,
     pub embeds: Vec<Value>,
+    pub mention_user_ids: Vec<Uuid>,
+    pub mention_role_ids: Vec<Uuid>,
+    pub mention_everyone: bool,
     pub reply_to_message_id: Option<Uuid>,
 }
 
@@ -114,6 +121,9 @@ impl MessageService {
             content,
             allow_empty_content,
             embeds: Vec::new(),
+            mention_user_ids: Vec::new(),
+            mention_role_ids: Vec::new(),
+            mention_everyone: false,
             reply_to_message_id: None,
         })
         .await
@@ -131,6 +141,9 @@ impl MessageService {
             content,
             allow_empty_content,
             embeds,
+            mention_user_ids,
+            mention_role_ids,
+            mention_everyone,
             reply_to_message_id,
         } = input;
         let embeds = normalize_embeds(embeds)?;
@@ -143,6 +156,9 @@ impl MessageService {
             content: normalize_content(content, allow_empty_content)?,
             content_format: "plain".to_owned(),
             embeds,
+            mention_user_ids: normalize_mention_ids(mention_user_ids),
+            mention_role_ids: normalize_mention_ids(mention_role_ids),
+            mention_everyone,
             reply_to_message_id,
             edited_at: None,
             deleted_at: None,
@@ -176,12 +192,23 @@ impl MessageService {
             .ok_or(MessageError::NotFound)
     }
 
-    pub async fn update(
+    pub async fn update(&self, message: Message, content: String) -> Result<Message, MessageError> {
+        self.update_with_mentions(message, content, Vec::new(), Vec::new(), false)
+            .await
+    }
+
+    pub async fn update_with_mentions(
         &self,
         mut message: Message,
         content: String,
+        mention_user_ids: Vec<Uuid>,
+        mention_role_ids: Vec<Uuid>,
+        mention_everyone: bool,
     ) -> Result<Message, MessageError> {
         message.content = normalize_content(content, false)?;
+        message.mention_user_ids = normalize_mention_ids(mention_user_ids);
+        message.mention_role_ids = normalize_mention_ids(mention_role_ids);
+        message.mention_everyone = mention_everyone;
         message.edited_at = Some("now".to_owned());
 
         self.store.update_message(message).await
@@ -217,4 +244,9 @@ fn normalize_embeds(embeds: Vec<Value>) -> Result<Vec<Value>, MessageError> {
     }
 
     Ok(embeds)
+}
+
+fn normalize_mention_ids(ids: Vec<Uuid>) -> Vec<Uuid> {
+    let mut seen = HashSet::new();
+    ids.into_iter().filter(|id| seen.insert(*id)).collect()
 }

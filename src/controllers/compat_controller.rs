@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::controllers::message_controller::{attachment_download_url, message_response};
 use crate::domain::attachment::{Attachment, AttachmentError};
+use crate::domain::auth::{AuthError, AuthUser};
 use crate::domain::bot::{AuthenticatedBot, BotError};
 use crate::domain::channel::{Channel, ChannelError};
 use crate::domain::message::{CreateMessageInput, Message, MessageError};
@@ -117,10 +118,13 @@ pub async fn create_message(
     let CreateCompatMessageRequest {
         content,
         embeds,
-        allowed_mentions: _,
+        allowed_mentions,
         message_reference,
         tts: _,
     } = request;
+    let content = content.unwrap_or_default();
+    let mention_ids =
+        resolve_allowed_mentions(&state, &space, &content, allowed_mentions.as_ref()).await?;
     let referenced_message =
         validate_message_reference(&state, channel.id, message_reference).await?;
     let referenced_attachments =
@@ -134,12 +138,20 @@ pub async fn create_message(
             space_id: Some(channel.space_id),
             channel_id: channel.id,
             author_user_id: bot.bot_user_id,
-            content: content.unwrap_or_default(),
+            content,
             allow_empty_content,
             embeds,
+            mention_user_ids: mention_ids.user_ids,
+            mention_role_ids: mention_ids.role_ids,
+            mention_everyone: mention_ids.everyone,
             reply_to_message_id,
         })
         .await?;
+    let mentions = compat_mentions_for_message(&state, &message, &bot).await?;
+    let referenced_mentions = match referenced_message.as_ref() {
+        Some(message) => compat_mentions_for_message(&state, message, &bot).await?,
+        None => CompatResolvedMentions::default(),
+    };
     state.realtime.publish(RealtimeEvent::channel(
         "message.created",
         channel.organization_id,
@@ -148,9 +160,11 @@ pub async fn create_message(
         serde_json::json!({
             "message": realtime_message_payload(
                 message.clone(),
+                mentions.clone(),
                 referenced_message.clone().map(|message| ReferencedCompatMessage {
                     message,
                     attachments: referenced_attachments.clone(),
+                    mentions: referenced_mentions.clone(),
                 }),
                 &state.config.public_url
             )
@@ -162,9 +176,11 @@ pub async fn create_message(
         Json(compat_message_response(
             message,
             Vec::new(),
+            mentions,
             referenced_message.map(|message| ReferencedCompatMessage {
                 message,
                 attachments: referenced_attachments,
+                mentions: referenced_mentions,
             }),
             &bot,
             &state.config.public_url,
@@ -202,6 +218,10 @@ pub async fn list_messages(
         .list_for_message_ids(&attachment_message_ids)
         .await?;
     let attachments_by_message_id = attachments_by_message_id(attachments);
+    let mut mention_messages = messages.clone();
+    mention_messages.extend(referenced_messages.values().cloned());
+    let mentions_by_message_id =
+        compat_mentions_by_message_id(&state, &mention_messages, &bot).await?;
 
     Ok((
         rate_limit_headers(&rate_limit),
@@ -210,6 +230,10 @@ pub async fn list_messages(
                 .into_iter()
                 .map(|message| {
                     let attachments = attachments_by_message_id
+                        .get(&message.id)
+                        .cloned()
+                        .unwrap_or_default();
+                    let mentions = mentions_by_message_id
                         .get(&message.id)
                         .cloned()
                         .unwrap_or_default();
@@ -222,11 +246,16 @@ pub async fn list_messages(
                                 .get(&referenced_message.id)
                                 .cloned()
                                 .unwrap_or_default(),
+                            mentions: mentions_by_message_id
+                                .get(&referenced_message.id)
+                                .cloned()
+                                .unwrap_or_default(),
                             message: referenced_message,
                         });
                     compat_message_response(
                         message,
                         attachments,
+                        mentions,
                         referenced_message,
                         &bot,
                         &state.config.public_url,
@@ -265,7 +294,23 @@ pub async fn update_message(
             .await?;
     }
 
-    let message = state.messages.update(message, request.content).await?;
+    let mention_ids = resolve_allowed_mentions(
+        &state,
+        &space,
+        &request.content,
+        request.allowed_mentions.as_ref(),
+    )
+    .await?;
+    let message = state
+        .messages
+        .update_with_mentions(
+            message,
+            request.content,
+            mention_ids.user_ids,
+            mention_ids.role_ids,
+            mention_ids.everyone,
+        )
+        .await?;
     let attachments = state
         .attachments
         .list_for_message_ids(&[message.id])
@@ -273,15 +318,22 @@ pub async fn update_message(
     let referenced_message = referenced_message_by_id(&state, message.reply_to_message_id).await?;
     let referenced_attachments =
         attachments_for_message(&state, referenced_message.as_ref()).await?;
+    let mentions = compat_mentions_for_message(&state, &message, &bot).await?;
+    let referenced_mentions = match referenced_message.as_ref() {
+        Some(message) => compat_mentions_for_message(&state, message, &bot).await?,
+        None => CompatResolvedMentions::default(),
+    };
 
     Ok((
         rate_limit_headers(&rate_limit),
         Json(compat_message_response(
             message,
             attachments,
+            mentions,
             referenced_message.map(|message| ReferencedCompatMessage {
                 message,
                 attachments: referenced_attachments,
+                mentions: referenced_mentions,
             }),
             &bot,
             &state.config.public_url,
@@ -329,6 +381,7 @@ pub enum CompatApiError {
     Permission(PermissionError),
     Message(MessageError),
     Attachment(AttachmentError),
+    Auth(AuthError),
     RateLimited(RateLimitDecision),
 }
 
@@ -368,6 +421,12 @@ impl From<AttachmentError> for CompatApiError {
     }
 }
 
+impl From<AuthError> for CompatApiError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+
 impl IntoResponse for CompatApiError {
     fn into_response(self) -> Response {
         if let Self::RateLimited(decision) = self {
@@ -389,6 +448,7 @@ impl IntoResponse for CompatApiError {
             Self::Permission(error) => (error.status_code(), error.message()),
             Self::Message(error) => (error.status_code(), error.message()),
             Self::Attachment(error) => (error.status_code(), error.message()),
+            Self::Auth(error) => (error.status_code(), error.message()),
             Self::RateLimited(_) => unreachable!("rate limited responses are returned above"),
         };
 
@@ -479,11 +539,20 @@ async fn message_in_channel(
 struct ReferencedCompatMessage {
     message: Message,
     attachments: Vec<Attachment>,
+    mentions: CompatResolvedMentions,
+}
+
+#[derive(Clone, Default)]
+struct CompatResolvedMentions {
+    users: Vec<CompatUserResponse>,
+    role_ids: Vec<String>,
+    everyone: bool,
 }
 
 fn compat_message_response(
     message: Message,
     attachments: Vec<Attachment>,
+    mentions: CompatResolvedMentions,
     referenced_message: Option<ReferencedCompatMessage>,
     current_bot: &AuthenticatedBot,
     public_url: &str,
@@ -505,9 +574,9 @@ fn compat_message_response(
         timestamp: message.created_at,
         edited_timestamp: message.edited_at,
         tts: false,
-        mention_everyone: false,
-        mentions: Vec::new(),
-        mention_roles: Vec::new(),
+        mention_everyone: mentions.everyone,
+        mentions: mentions.users,
+        mention_roles: mentions.role_ids,
         attachments: attachments
             .into_iter()
             .map(|attachment| compat_attachment_response(attachment, public_url))
@@ -524,6 +593,7 @@ fn compat_message_response(
             Box::new(compat_message_response(
                 referenced_message.message,
                 referenced_message.attachments,
+                referenced_message.mentions,
                 None,
                 current_bot,
                 public_url,
@@ -561,10 +631,11 @@ fn compat_attachment_response(attachment: Attachment, public_url: &str) -> serde
 
 fn realtime_message_payload(
     message: Message,
+    mentions: CompatResolvedMentions,
     referenced_message: Option<ReferencedCompatMessage>,
     public_url: &str,
 ) -> serde_json::Value {
-    let mut value = realtime_message_value(message, Vec::new(), public_url);
+    let mut value = realtime_message_value(message, Vec::new(), mentions, public_url);
     if let Some(object) = value.as_object_mut()
         && let Some(referenced_message) = referenced_message
     {
@@ -573,6 +644,7 @@ fn realtime_message_payload(
             realtime_message_value(
                 referenced_message.message,
                 referenced_message.attachments,
+                referenced_message.mentions,
                 public_url,
             ),
         );
@@ -583,6 +655,7 @@ fn realtime_message_payload(
 fn realtime_message_value(
     message: Message,
     attachments: Vec<Attachment>,
+    mentions: CompatResolvedMentions,
     public_url: &str,
 ) -> serde_json::Value {
     let embeds = message.embeds.clone();
@@ -590,6 +663,25 @@ fn realtime_message_value(
         .unwrap_or_else(|_| serde_json::json!({}));
     if let Some(object) = value.as_object_mut() {
         object.insert("embeds".to_owned(), serde_json::Value::Array(embeds));
+        object.insert(
+            "mention_everyone".to_owned(),
+            serde_json::Value::Bool(mentions.everyone),
+        );
+        object.insert(
+            "mentions".to_owned(),
+            serde_json::to_value(mentions.users)
+                .unwrap_or_else(|_| serde_json::Value::Array(Vec::new())),
+        );
+        object.insert(
+            "mention_roles".to_owned(),
+            serde_json::Value::Array(
+                mentions
+                    .role_ids
+                    .into_iter()
+                    .map(serde_json::Value::String)
+                    .collect(),
+            ),
+        );
     }
     value
 }
@@ -613,6 +705,212 @@ async fn validate_message_reference(
     Ok(Some(
         message_in_channel(state, message_reference.message_id, channel_id).await?,
     ))
+}
+
+#[derive(Default)]
+struct CompatMentionIds {
+    user_ids: Vec<Uuid>,
+    role_ids: Vec<Uuid>,
+    everyone: bool,
+}
+
+struct AllowedMentionPolicy {
+    parse_users: bool,
+    parse_roles: bool,
+    parse_everyone: bool,
+    explicit_user_ids: HashSet<Uuid>,
+    explicit_role_ids: HashSet<Uuid>,
+}
+
+impl AllowedMentionPolicy {
+    fn allows_user(&self, user_id: Uuid) -> bool {
+        self.parse_users || self.explicit_user_ids.contains(&user_id)
+    }
+
+    fn allows_role(&self, role_id: Uuid) -> bool {
+        self.parse_roles || self.explicit_role_ids.contains(&role_id)
+    }
+}
+
+async fn resolve_allowed_mentions(
+    state: &AppState,
+    space: &SpaceMembership,
+    content: &str,
+    allowed_mentions: Option<&serde_json::Value>,
+) -> Result<CompatMentionIds, CompatApiError> {
+    let policy = allowed_mention_policy(allowed_mentions);
+    let mut mention_ids = CompatMentionIds {
+        everyone: has_everyone_mention(content) && policy.parse_everyone,
+        ..CompatMentionIds::default()
+    };
+
+    for user_id in extract_user_mention_ids(content) {
+        if !policy.allows_user(user_id) || mention_ids.user_ids.contains(&user_id) {
+            continue;
+        }
+
+        if state.spaces.get_for_user(user_id, space.id).await.is_ok()
+            && state.auth.user_by_id(user_id).await?.is_some()
+        {
+            mention_ids.user_ids.push(user_id);
+        }
+    }
+
+    let role_ids_in_space = state
+        .permissions
+        .list_roles_for_space(space.id)
+        .await?
+        .into_iter()
+        .map(|role| role.id)
+        .collect::<HashSet<_>>();
+    for role_id in extract_role_mention_ids(content) {
+        if policy.allows_role(role_id)
+            && role_ids_in_space.contains(&role_id)
+            && !mention_ids.role_ids.contains(&role_id)
+        {
+            mention_ids.role_ids.push(role_id);
+        }
+    }
+
+    Ok(mention_ids)
+}
+
+fn allowed_mention_policy(allowed_mentions: Option<&serde_json::Value>) -> AllowedMentionPolicy {
+    let Some(allowed_mentions) = allowed_mentions else {
+        return AllowedMentionPolicy {
+            parse_users: true,
+            parse_roles: true,
+            parse_everyone: true,
+            explicit_user_ids: HashSet::new(),
+            explicit_role_ids: HashSet::new(),
+        };
+    };
+
+    let parse_values = allowed_mentions
+        .get("parse")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .collect::<HashSet<_>>();
+
+    AllowedMentionPolicy {
+        parse_users: parse_values.contains("users"),
+        parse_roles: parse_values.contains("roles"),
+        parse_everyone: parse_values.contains("everyone"),
+        explicit_user_ids: uuid_set_from_json_array(allowed_mentions.get("users")),
+        explicit_role_ids: uuid_set_from_json_array(allowed_mentions.get("roles")),
+    }
+}
+
+fn uuid_set_from_json_array(value: Option<&serde_json::Value>) -> HashSet<Uuid> {
+    value
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .filter_map(|value| Uuid::parse_str(value).ok())
+        .collect()
+}
+
+async fn compat_mentions_by_message_id(
+    state: &AppState,
+    messages: &[Message],
+    current_bot: &AuthenticatedBot,
+) -> Result<HashMap<Uuid, CompatResolvedMentions>, CompatApiError> {
+    let mut mentions_by_message_id = HashMap::new();
+    for message in messages {
+        mentions_by_message_id.insert(
+            message.id,
+            compat_mentions_for_message(state, message, current_bot).await?,
+        );
+    }
+    Ok(mentions_by_message_id)
+}
+
+async fn compat_mentions_for_message(
+    state: &AppState,
+    message: &Message,
+    current_bot: &AuthenticatedBot,
+) -> Result<CompatResolvedMentions, CompatApiError> {
+    let mut users = Vec::new();
+    for user_id in &message.mention_user_ids {
+        let Some(user) = state.auth.user_by_id(*user_id).await? else {
+            continue;
+        };
+        users.push(compat_user_for_auth_user(user, current_bot));
+    }
+
+    Ok(CompatResolvedMentions {
+        users,
+        role_ids: message
+            .mention_role_ids
+            .iter()
+            .map(Uuid::to_string)
+            .collect(),
+        everyone: message.mention_everyone,
+    })
+}
+
+fn compat_user_for_auth_user(user: AuthUser, current_bot: &AuthenticatedBot) -> CompatUserResponse {
+    if user.id == current_bot.bot_user_id {
+        compat_user_response(current_bot)
+    } else {
+        CompatUserResponse {
+            id: user.id.to_string(),
+            username: user.display_name,
+            bot: false,
+        }
+    }
+}
+
+fn extract_user_mention_ids(content: &str) -> Vec<Uuid> {
+    extract_mention_ids(content, MentionKind::User)
+}
+
+fn extract_role_mention_ids(content: &str) -> Vec<Uuid> {
+    extract_mention_ids(content, MentionKind::Role)
+}
+
+enum MentionKind {
+    User,
+    Role,
+}
+
+fn extract_mention_ids(content: &str, kind: MentionKind) -> Vec<Uuid> {
+    let mut ids = Vec::new();
+    let mut remaining = content;
+
+    while let Some(start) = remaining.find("<@") {
+        let mention = &remaining[start + 2..];
+        let Some(end) = mention.find('>') else {
+            break;
+        };
+
+        let token = &mention[..end];
+        let parsed = match kind {
+            MentionKind::User => token
+                .strip_prefix('!')
+                .unwrap_or(token)
+                .strip_prefix('&')
+                .map(|_| None)
+                .unwrap_or_else(|| Uuid::parse_str(token.strip_prefix('!').unwrap_or(token)).ok()),
+            MentionKind::Role => token
+                .strip_prefix('&')
+                .and_then(|role_id| Uuid::parse_str(role_id).ok()),
+        };
+        if let Some(id) = parsed {
+            ids.push(id);
+        }
+
+        remaining = &mention[end + 1..];
+    }
+
+    ids
+}
+
+fn has_everyone_mention(content: &str) -> bool {
+    content.contains("@everyone") || content.contains("@here")
 }
 
 async fn referenced_messages_by_id(

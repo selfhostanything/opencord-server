@@ -21,6 +21,7 @@ pub struct CompatMessageReferenceRequest {
 #[derive(Debug, Deserialize)]
 pub struct PatchCompatMessageRequest {
     pub content: String,
+    pub allowed_mentions: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Serialize)]

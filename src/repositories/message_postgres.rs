@@ -23,11 +23,13 @@ impl MessageStore for PostgresMessageStore {
                 r#"
                 INSERT INTO messages (
                     id, organization_id, space_id, channel_id, author_user_id,
-                    content, content_format, embeds, reply_to_message_id, created_at
+                    content, content_format, embeds, reply_to_message_id,
+                    mention_user_ids, mention_role_ids, mention_everyone, created_at
                 )
                 VALUES (
                     $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid,
-                    $6, $7, $8::jsonb, $9::uuid, $10::timestamptz
+                    $6, $7, $8::jsonb, $9::uuid,
+                    $10::jsonb, $11::jsonb, $12, $13::timestamptz
                 )
                 "#,
                 message_values(&message),
@@ -119,17 +121,24 @@ impl MessageStore for PostgresMessageStore {
                 r#"
                 UPDATE messages
                 SET content = $2,
+                    mention_user_ids = $3::jsonb,
+                    mention_role_ids = $4::jsonb,
+                    mention_everyone = $5,
                     edited_at = now()
                 WHERE id = $1::uuid
                   AND deleted_at IS NULL
                 RETURNING id::text, organization_id::text, space_id::text, channel_id::text,
                           author_user_id::text, content, content_format, embeds::text,
-                          reply_to_message_id::text, edited_at::text, deleted_at::text,
-                          created_at::text
+                          reply_to_message_id::text, mention_user_ids::text,
+                          mention_role_ids::text, mention_everyone,
+                          edited_at::text, deleted_at::text, created_at::text
                 "#,
                 vec![
                     Value::from(message.id.to_string()),
                     Value::from(message.content.clone()),
+                    Value::from(uuid_json_array(&message.mention_user_ids)),
+                    Value::from(uuid_json_array(&message.mention_role_ids)),
+                    Value::from(message.mention_everyone),
                 ],
             ))
             .await
@@ -227,7 +236,8 @@ fn message_select_sql(where_clause: &str) -> String {
         r#"
         SELECT id::text, organization_id::text, space_id::text, channel_id::text,
                author_user_id::text, content, content_format, embeds::text,
-               reply_to_message_id::text, edited_at::text, deleted_at::text, created_at::text
+               reply_to_message_id::text, mention_user_ids::text, mention_role_ids::text,
+               mention_everyone, edited_at::text, deleted_at::text, created_at::text
         FROM messages
         {where_clause}
         "#
@@ -274,6 +284,17 @@ fn message_from_row(row: sea_orm::QueryResult) -> Result<Message, MessageError> 
             &row.try_get::<String>("", "embeds")
                 .map_err(|_| MessageError::StoreUnavailable)?,
         )?,
+        mention_user_ids: parse_uuid_json_array(
+            &row.try_get::<String>("", "mention_user_ids")
+                .map_err(|_| MessageError::StoreUnavailable)?,
+        )?,
+        mention_role_ids: parse_uuid_json_array(
+            &row.try_get::<String>("", "mention_role_ids")
+                .map_err(|_| MessageError::StoreUnavailable)?,
+        )?,
+        mention_everyone: row
+            .try_get::<bool>("", "mention_everyone")
+            .map_err(|_| MessageError::StoreUnavailable)?,
         reply_to_message_id,
         edited_at: row
             .try_get::<Option<String>>("", "edited_at")
@@ -302,10 +323,27 @@ fn message_values(message: &Message) -> Vec<Value> {
         Value::from(message.content_format.clone()),
         Value::from(serde_json::Value::Array(message.embeds.clone()).to_string()),
         Value::from(message.reply_to_message_id.map(|id| id.to_string())),
+        Value::from(uuid_json_array(&message.mention_user_ids)),
+        Value::from(uuid_json_array(&message.mention_role_ids)),
+        Value::from(message.mention_everyone),
         Value::from(message.created_at.clone()),
     ]
 }
 
 fn parse_embeds(value: &str) -> Result<Vec<serde_json::Value>, MessageError> {
     serde_json::from_str(value).map_err(|_| MessageError::StoreUnavailable)
+}
+
+fn parse_uuid_json_array(value: &str) -> Result<Vec<Uuid>, MessageError> {
+    let values =
+        serde_json::from_str::<Vec<String>>(value).map_err(|_| MessageError::StoreUnavailable)?;
+    values
+        .into_iter()
+        .map(|value| Uuid::parse_str(&value).map_err(|_| MessageError::StoreUnavailable))
+        .collect()
+}
+
+fn uuid_json_array(ids: &[Uuid]) -> String {
+    serde_json::to_string(&ids.iter().map(Uuid::to_string).collect::<Vec<_>>())
+        .unwrap_or_else(|_| "[]".to_owned())
 }

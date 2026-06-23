@@ -247,6 +247,8 @@ fn compat_message_from_value(
         .get("referenced_message")
         .and_then(|referenced_message| compat_message_from_value(referenced_message, current_bot))
         .map(Box::new);
+    let mentions = compat_mentions_from_event(message.get("mentions"));
+    let mention_roles = compat_mention_roles_from_event(message.get("mention_roles"));
 
     Some(CompatMessageResponse {
         id: message.get("id")?.as_str()?.to_owned(),
@@ -267,9 +269,12 @@ fn compat_message_from_value(
             .and_then(|value| value.as_str())
             .map(str::to_owned),
         tts: false,
-        mention_everyone: false,
-        mentions: Vec::new(),
-        mention_roles: Vec::new(),
+        mention_everyone: message
+            .get("mention_everyone")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        mentions,
+        mention_roles,
         attachments,
         embeds,
         message_reference,
@@ -328,6 +333,39 @@ fn compat_attachment_from_event(attachment: &Value) -> Option<Value> {
     }
 
     Some(value)
+}
+
+fn compat_mentions_from_event(mentions: Option<&Value>) -> Vec<CompatUserResponse> {
+    mentions
+        .and_then(Value::as_array)
+        .map(|mentions| {
+            mentions
+                .iter()
+                .filter_map(compat_mention_from_event)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn compat_mention_from_event(mention: &Value) -> Option<CompatUserResponse> {
+    Some(CompatUserResponse {
+        id: mention.get("id")?.as_str()?.to_owned(),
+        username: mention.get("username")?.as_str()?.to_owned(),
+        bot: mention.get("bot").and_then(Value::as_bool).unwrap_or(false),
+    })
+}
+
+fn compat_mention_roles_from_event(mention_roles: Option<&Value>) -> Vec<String> {
+    mention_roles
+        .and_then(Value::as_array)
+        .map(|mention_roles| {
+            mention_roles
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn compat_interaction_from_event(

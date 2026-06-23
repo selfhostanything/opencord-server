@@ -183,8 +183,10 @@ as Discord-shaped attachment metadata in compatibility list responses and
 gateway dispatches. Compatibility message create accepts same-channel
 `message_reference` replies and returns reply metadata through REST and gateway;
 reply payloads also include a hydrated Discord-shaped `referenced_message` when
-the referenced message is still available. Compatibility file upload, mention
-expansion, and components remain future work.
+the referenced message is still available. `allowed_mentions` now controls
+Discord-shaped user, role, and everyone mention expansion in compatibility REST
+create/list/edit and gateway payloads. Compatibility file upload and components
+remain future work.
 
 ## Enterprise OIDC
 
