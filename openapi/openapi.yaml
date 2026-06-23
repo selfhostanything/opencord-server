@@ -599,6 +599,8 @@ paths:
         MESSAGE_DELETE, and INTERACTION_CREATE events visible to the bot user.
         Message create, update, and delete dispatches require the Discord
         `GUILD_MESSAGES` intent.
+        Channel and guild-create dispatches require `GUILDS`; guild-member-add
+        dispatches require `GUILD_MEMBERS`.
       responses:
         "101":
           description: WebSocket protocol switch

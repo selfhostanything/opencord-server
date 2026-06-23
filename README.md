@@ -439,6 +439,8 @@ RESUME by `session_id`, acknowledges heartbeats, and dispatches CHANNEL_CREATE,
 CHANNEL_UPDATE, GUILD_CREATE, GUILD_MEMBER_ADD, MESSAGE_CREATE, MESSAGE_UPDATE,
 and MESSAGE_DELETE for resources visible to the bot user. Message create,
 update, and delete dispatches require the Discord `GUILD_MESSAGES` intent.
+Channel and guild-create dispatches require `GUILDS`; guild-member-add
+dispatches require `GUILD_MEMBERS`.
 
 `POST /api/compat/discord/v10/applications/{application_id}/guilds/{space_id}/commands`
 registers a space-scoped chat input command for the current bot application.

@@ -24,6 +24,8 @@ const OP_INVALID_SESSION: i32 = 9;
 const OP_HELLO: i32 = 10;
 const OP_HEARTBEAT_ACK: i32 = 11;
 const HEARTBEAT_INTERVAL_MS: u64 = 45_000;
+const INTENT_GUILDS: u64 = 1 << 0;
+const INTENT_GUILD_MEMBERS: u64 = 1 << 1;
 const INTENT_GUILD_MESSAGES: u64 = 1 << 9;
 
 #[derive(Debug, Deserialize)]
@@ -140,6 +142,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "channel.created"
+                    && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
                 {
                     let Some(channel) = compat_channel_from_event(&event) else {
@@ -151,6 +154,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "channel.updated"
+                    && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
                 {
                     let Some(channel) = compat_channel_from_event(&event) else {
@@ -162,6 +166,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "space.bot.invited"
+                    && has_intent(active_intents, INTENT_GUILDS)
                     && can_bot_receive_event(&state, bot, &event).await
                 {
                     let Some(guild) = compat_guild_create_from_event(&event) else {
@@ -173,6 +178,7 @@ async fn handle_gateway_socket(state: AppState, mut socket: WebSocket) {
                     }
                     update_active_session_sequence(&state, active_session_id.as_deref(), sequence);
                 } else if event.event_type == "space.member.added"
+                    && has_intent(active_intents, INTENT_GUILD_MEMBERS)
                     && can_bot_receive_event(&state, bot, &event).await
                 {
                     let Some(member) = compat_guild_member_from_event(&event) else {
