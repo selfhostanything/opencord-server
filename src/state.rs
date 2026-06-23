@@ -8,6 +8,7 @@ use crate::domain::audit::{AuditService, AuditStore};
 use crate::domain::auth::{AuthService, AuthStore};
 use crate::domain::channel::{ChannelService, ChannelStore};
 use crate::domain::media::MediaControlService;
+use crate::domain::meeting::{MeetingService, MeetingStore};
 use crate::domain::message::{MessageService, MessageStore};
 use crate::domain::metrics::MediaMetrics;
 use crate::domain::organization::{OrganizationService, OrganizationStore};
@@ -23,6 +24,8 @@ use crate::repositories::auth_memory::MemoryAuthStore;
 use crate::repositories::auth_postgres::PostgresAuthStore;
 use crate::repositories::channel_memory::MemoryChannelStore;
 use crate::repositories::channel_postgres::PostgresChannelStore;
+use crate::repositories::meeting_memory::MemoryMeetingStore;
+use crate::repositories::meeting_postgres::PostgresMeetingStore;
 use crate::repositories::message_memory::MemoryMessageStore;
 use crate::repositories::message_postgres::PostgresMessageStore;
 use crate::repositories::organization_memory::MemoryOrganizationStore;
@@ -42,6 +45,7 @@ pub struct AppState {
     pub spaces: Arc<SpaceService>,
     pub channels: Arc<ChannelService>,
     pub messages: Arc<MessageService>,
+    pub meetings: Arc<MeetingService>,
     pub attachments: Arc<AttachmentService>,
     pub audit: Arc<AuditService>,
     pub permissions: Arc<PermissionService>,
@@ -61,6 +65,7 @@ impl AppState {
                 spaces: Arc::new(MemorySpaceStore::default()),
                 channels: Arc::new(MemoryChannelStore::default()),
                 messages: Arc::new(MemoryMessageStore::default()),
+                meetings: Arc::new(MemoryMeetingStore::default()),
                 attachments: Arc::new(MemoryAttachmentStore::default()),
                 audit: Arc::new(MemoryAuditStore::default()),
                 permissions: Arc::new(MemoryPermissionStore::default()),
@@ -78,6 +83,7 @@ impl AppState {
                 spaces: Arc::new(PostgresSpaceStore::new(db.clone())),
                 channels: Arc::new(PostgresChannelStore::new(db.clone())),
                 messages: Arc::new(PostgresMessageStore::new(db.clone())),
+                meetings: Arc::new(PostgresMeetingStore::new(db.clone())),
                 attachments: Arc::new(PostgresAttachmentStore::new(db.clone())),
                 audit: Arc::new(PostgresAuditStore::new(db.clone())),
                 permissions: Arc::new(PostgresPermissionStore::new(db.clone())),
@@ -94,6 +100,7 @@ impl AppState {
             spaces: Arc::new(SpaceService::new(stores.spaces)),
             channels: Arc::new(ChannelService::new(stores.channels)),
             messages: Arc::new(MessageService::new(stores.messages)),
+            meetings: Arc::new(MeetingService::new(stores.meetings)),
             attachments: Arc::new(AttachmentService::new(stores.attachments)),
             audit: Arc::new(AuditService::new(stores.audit)),
             permissions: Arc::new(PermissionService::new(stores.permissions)),
@@ -111,6 +118,7 @@ pub struct AppStores {
     pub spaces: Arc<dyn SpaceStore>,
     pub channels: Arc<dyn ChannelStore>,
     pub messages: Arc<dyn MessageStore>,
+    pub meetings: Arc<dyn MeetingStore>,
     pub attachments: Arc<dyn AttachmentStore>,
     pub audit: Arc<dyn AuditStore>,
     pub permissions: Arc<dyn PermissionStore>,

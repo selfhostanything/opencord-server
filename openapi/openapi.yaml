@@ -337,6 +337,140 @@ paths:
           description: Missing or invalid bearer session
         "404":
           description: Organization not found for this user
+  /organizations/{organization_id}/meetings:
+    post:
+      summary: Create a scheduled meeting inside an organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMeetingRequest"
+      responses:
+        "201":
+          description: Created meeting with attendees and reminders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingResourceResponse"
+        "400":
+          description: Invalid schedule, attendee, reminder, or meeting context
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Missing channel visibility for the meeting context
+        "404":
+          description: Organization or meeting context not found for this user
+    get:
+      summary: List meetings visible to the current user inside an organization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: organization_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Visible meetings for the organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingListResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Organization not found for this user
+  /meetings/{meeting_id}:
+    get:
+      summary: Return one meeting visible to the current user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: meeting_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Meeting with attendees and reminders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "404":
+          description: Meeting not found for this user
+    patch:
+      summary: Update a scheduled meeting
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: meeting_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchMeetingRequest"
+      responses:
+        "200":
+          description: Updated meeting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingResourceResponse"
+        "400":
+          description: Invalid meeting patch
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Current user cannot manage this meeting
+        "404":
+          description: Meeting not found for this user
+    delete:
+      summary: Cancel a scheduled meeting
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: meeting_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Cancelled meeting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingResourceResponse"
+        "401":
+          description: Missing or invalid bearer session
+        "403":
+          description: Current user cannot manage this meeting
+        "404":
+          description: Meeting not found for this user
   /spaces/{space_id}/channels:
     post:
       summary: Create a text or voice channel inside a space
@@ -1129,6 +1263,273 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Organization"
+    CreateMeetingRequest:
+      type: object
+      required:
+        - title
+        - starts_at
+        - ends_at
+      properties:
+        space_id:
+          type: string
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 4000
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+          default: UTC
+        attendees:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateMeetingAttendee"
+        reminders:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateMeetingReminder"
+    PatchMeetingRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type:
+            - string
+            - "null"
+          maxLength: 4000
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+    CreateMeetingAttendee:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        role:
+          type: string
+          enum:
+            - host
+            - required
+            - optional
+    CreateMeetingReminder:
+      type: object
+      required:
+        - channel
+        - offset_minutes
+      properties:
+        recipient_user_id:
+          type: string
+          format: uuid
+        recipient_email:
+          type: string
+          format: email
+        channel:
+          type: string
+          enum:
+            - in_app
+            - push
+            - email
+        offset_minutes:
+          type: integer
+          minimum: 0
+    Meeting:
+      type: object
+      required:
+        - id
+        - organization_id
+        - created_by_user_id
+        - title
+        - status
+        - starts_at
+        - ends_at
+        - timezone
+        - join_slug
+        - attendees
+        - reminders
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        space_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        channel_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        created_by_user_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type:
+            - string
+            - "null"
+        status:
+          type: string
+          enum:
+            - scheduled
+            - cancelled
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        join_slug:
+          type: string
+        cancelled_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        attendees:
+          type: array
+          items:
+            $ref: "#/components/schemas/MeetingAttendee"
+        reminders:
+          type: array
+          items:
+            $ref: "#/components/schemas/MeetingReminder"
+    MeetingAttendee:
+      type: object
+      required:
+        - id
+        - meeting_id
+        - role
+        - response_status
+      properties:
+        id:
+          type: string
+          format: uuid
+        meeting_id:
+          type: string
+          format: uuid
+        user_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        email:
+          type:
+            - string
+            - "null"
+          format: email
+        display_name:
+          type:
+            - string
+            - "null"
+        role:
+          type: string
+          enum:
+            - host
+            - required
+            - optional
+        response_status:
+          type: string
+          enum:
+            - needs_action
+            - accepted
+            - declined
+            - tentative
+    MeetingReminder:
+      type: object
+      required:
+        - id
+        - meeting_id
+        - channel
+        - offset_minutes
+        - scheduled_for
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        meeting_id:
+          type: string
+          format: uuid
+        recipient_user_id:
+          type:
+            - string
+            - "null"
+          format: uuid
+        recipient_email:
+          type:
+            - string
+            - "null"
+          format: email
+        channel:
+          type: string
+          enum:
+            - in_app
+            - push
+            - email
+        offset_minutes:
+          type: integer
+          minimum: 0
+        scheduled_for:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - pending
+            - sent
+            - failed
+            - cancelled
+    MeetingResourceResponse:
+      type: object
+      required:
+        - meeting
+      properties:
+        meeting:
+          $ref: "#/components/schemas/Meeting"
+    MeetingListResponse:
+      type: object
+      required:
+        - meetings
+      properties:
+        meetings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Meeting"
     CreateSpaceRequest:
       type: object
       required:

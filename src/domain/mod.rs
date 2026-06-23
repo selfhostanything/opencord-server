@@ -4,6 +4,7 @@ pub mod auth;
 pub mod channel;
 pub mod ids;
 pub mod media;
+pub mod meeting;
 pub mod message;
 pub mod metrics;
 pub mod organization;
