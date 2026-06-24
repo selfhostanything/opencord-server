@@ -13,6 +13,11 @@ Important local rules:
 - Do not use CI as the inner development loop. Push after local tests, format,
   clippy, Docker/Compose checks, and contract checks have already passed or
   after documenting a real local blocker.
+- Do not mute the Mac host output during media tests unless the user explicitly
+  asks for silent execution. Browser-level, emulator-level, or app-scoped audio
+  muting is allowed when it does not change the host output mute state. This
+  supersedes older Phase 10 prompts or goal notes that required host output
+  muting.
 - Use UUIDv7 for all native UUID identifiers.
 - Use SeaORM migrations for schema changes.
 - Use `timescale/timescaledb:2.28.1-pg18-oss` for local TimescaleDB/PostgreSQL.

@@ -228,6 +228,17 @@ impl AppState {
             commands,
         }
     }
+
+    pub fn clear_rate_limits(&self) -> usize {
+        self.auth_register_rate_limits.clear()
+            + self.auth_login_rate_limits.clear()
+            + self.message_create_rate_limits.clear()
+            + self.attachment_presign_rate_limits.clear()
+            + self.attachment_upload_rate_limits.clear()
+            + self.webhook_execution_rate_limits.clear()
+            + self.compat_rest_rate_limits.clear()
+            + self.compat_gateway_identify_rate_limits.clear()
+    }
 }
 
 pub struct AppStores {

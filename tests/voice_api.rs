@@ -218,6 +218,7 @@ async fn owner_joins_voice_channel_and_gateway_emits_participant_joined() {
     assert_eq!(body["media"]["channel_id"], channel_id);
     assert_eq!(body["media"]["participant_identity"], user_id);
     assert_eq!(body["media"]["grants"]["can_publish_audio"], true);
+    assert_eq!(body["media"]["grants"]["can_publish_screen"], true);
     assert_eq!(body["media"]["grants"]["can_subscribe"], true);
 
     let event = timeout(Duration::from_secs(2), next_json(&mut socket))

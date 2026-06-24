@@ -91,14 +91,56 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  coturn:
+    profiles: ["turn"]
+    image: coturn/coturn:4.14-debian
+    command:
+      [
+        "-n",
+        "--log-file=stdout",
+        "--lt-cred-mech",
+        "--user",
+        "opencord:opencord-turn-password",
+        "--realm",
+        "opencord.local",
+        "--listening-port=3478",
+        "--min-port=49160",
+        "--max-port=49200",
+        "--fingerprint",
+        "--allowed-peer-ip=10.0.0.0-10.255.255.255",
+        "--allowed-peer-ip=172.16.0.0-172.31.255.255",
+        "--allowed-peer-ip=192.168.0.0-192.168.255.255",
+        "--allow-loopback-peers",
+        "--server-relay",
+        "--no-multicast-peers",
+      ]
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp"
+
   livekit:
     profiles: ["media"]
     image: livekit/livekit-server:v1.13
-    command: --dev --bind 0.0.0.0
+    command: --dev --bind 0.0.0.0 --node-ip ${OPENCORD_LIVEKIT_NODE_IP:-127.0.0.1} --rtc.enable_loopback_candidate
     ports:
       - "7880:7880"
       - "7881:7881"
       - "7882:7882/udp"
+
+  livekit-turn:
+    profiles: ["turn"]
+    image: livekit/livekit-server:v1.13
+    command: --config /etc/livekit/livekit-turn.yaml
+    volumes:
+      - ../livekit/livekit-turn.yaml:/etc/livekit/livekit-turn.yaml:ro
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    depends_on:
+      coturn:
+        condition: service_started
 
   api:
     profiles: ["app"]

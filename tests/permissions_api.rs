@@ -1,7 +1,8 @@
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
 use opencord_server::config::AppConfig;
-use opencord_server::routes::api_router;
+use opencord_server::routes::{api_router, api_router_with_state};
+use opencord_server::state::AppState;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -10,6 +11,14 @@ fn test_app() -> axum::Router {
         version: "test-version".to_owned(),
         public_url: "https://chat.example.com".to_owned(),
     })
+}
+
+fn test_app_with_state() -> (axum::Router, AppState) {
+    let state = AppState::in_memory(AppConfig {
+        version: "test-version".to_owned(),
+        public_url: "https://chat.example.com".to_owned(),
+    });
+    (api_router_with_state(state.clone()), state)
 }
 
 async fn response_json(response: axum::response::Response) -> Value {
@@ -117,6 +126,33 @@ async fn create_space_with_channel(
     (organization_id, space_id, channel_id)
 }
 
+async fn create_voice_channel(
+    app: &axum::Router,
+    owner_token: &str,
+    space_id: &str,
+    suffix: &str,
+) -> String {
+    let response = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/spaces/{space_id}/channels"),
+            owner_token,
+            json!({
+                "name": format!("permission-voice-{suffix}"),
+                "kind": "voice"
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    response_json(response).await["channel"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
 async fn add_space_member(app: &axum::Router, owner_token: &str, space_id: &str, user_id: &str) {
     let response = app
         .clone()
@@ -209,6 +245,95 @@ async fn set_member_override(
         .unwrap();
 
     assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn voice_permission_revocation_publishes_media_boundary_event() {
+    let (app, state) = test_app_with_state();
+    let (owner_token, _) = register(&app, "permission-media-owner@example.com").await;
+    let (member_token, member_id) = register(&app, "permission-media-member@example.com").await;
+    let (_, space_id, _) = create_space_with_channel(&app, &owner_token, "media-revoke").await;
+    let channel_id = create_voice_channel(&app, &owner_token, &space_id, "media-revoke").await;
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+    let voice_role = create_role(
+        &app,
+        &owner_token,
+        &space_id,
+        "Voice Members",
+        json!(["CONNECT_VOICE", "SPEAK", "SHARE_SCREEN"]),
+    )
+    .await;
+    assign_role(&app, &owner_token, &space_id, &voice_role, &member_id).await;
+
+    let joined = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/voice/channels/{channel_id}/join"),
+            &member_token,
+            json!({ "self_mute": false, "self_deaf": false }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(joined.status(), StatusCode::CREATED);
+
+    let mut events = state.realtime.subscribe();
+    set_member_override(
+        &app,
+        &owner_token,
+        &channel_id,
+        &member_id,
+        json!([]),
+        json!(["CONNECT_VOICE", "SPEAK", "SHARE_SCREEN"]),
+    )
+    .await;
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+        .await
+        .expect("media permission event")
+        .expect("realtime event");
+    assert_eq!(event.event_type, "media.permission_revoked");
+    assert_eq!(event.scope.channel_id.as_deref(), Some(channel_id.as_str()));
+    assert_eq!(event.data["target_kind"], "member");
+    assert_eq!(event.data["target_id"], member_id);
+    assert_eq!(event.data["action"], "disconnect");
+    assert_eq!(event.data["grants"]["can_publish_audio"], false);
+    assert_eq!(event.data["grants"]["can_publish_screen"], false);
+    assert_eq!(event.data["grants"]["can_subscribe"], true);
+}
+
+#[tokio::test]
+async fn voice_publish_permission_revocation_keeps_subscription_grant() {
+    let (app, state) = test_app_with_state();
+    let (owner_token, _) = register(&app, "permission-media-owner-screen@example.com").await;
+    let (_, member_id) = register(&app, "permission-media-member-screen@example.com").await;
+    let (_, space_id, _) =
+        create_space_with_channel(&app, &owner_token, "media-screen-revoke").await;
+    let channel_id =
+        create_voice_channel(&app, &owner_token, &space_id, "media-screen-revoke").await;
+    add_space_member(&app, &owner_token, &space_id, &member_id).await;
+
+    let mut events = state.realtime.subscribe();
+    set_member_override(
+        &app,
+        &owner_token,
+        &channel_id,
+        &member_id,
+        json!([]),
+        json!(["SHARE_SCREEN"]),
+    )
+    .await;
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+        .await
+        .expect("media permission event")
+        .expect("realtime event");
+    assert_eq!(event.event_type, "media.permission_revoked");
+    assert_eq!(event.data["action"], "restrict_publish");
+    assert_eq!(event.data["revoked"]["share_screen"], true);
+    assert_eq!(event.data["grants"]["can_publish_audio"], true);
+    assert_eq!(event.data["grants"]["can_publish_screen"], false);
+    assert_eq!(event.data["grants"]["can_subscribe"], true);
 }
 
 #[tokio::test]

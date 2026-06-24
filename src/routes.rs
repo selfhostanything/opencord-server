@@ -6,11 +6,11 @@ use crate::config::AppConfig;
 use crate::controllers::{
     attachment_controller, audit_controller, auth_controller, billing_controller, bot_controller,
     calendar_controller, channel_controller, command_controller, compat_controller,
-    compat_gateway_controller, data_export_controller, discovery_controller, health_controller,
-    media_controller, meeting_controller, message_controller, metrics_controller,
-    organization_controller, permission_controller, push_controller, realtime_controller,
-    retention_controller, scim_controller, space_controller, usage_controller, voice_controller,
-    webhook_controller,
+    compat_gateway_controller, data_export_controller, dev_controller, discovery_controller,
+    health_controller, media_controller, meeting_controller, message_controller,
+    metrics_controller, organization_controller, permission_controller, push_controller,
+    realtime_controller, retention_controller, scim_controller, space_controller, usage_controller,
+    voice_controller, webhook_controller,
 };
 use crate::http::cors::browser_cors;
 use crate::http::request_id::request_observability;
@@ -26,6 +26,7 @@ pub fn api_router_with_state(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(health_controller::health))
         .route("/metrics", get(metrics_controller::prometheus))
+        .route("/dev/rate-limits/reset", post(dev_controller::reset_rate_limits))
         .route("/ws", get(realtime_controller::websocket))
         .route("/join/{join_slug}", get(meeting_controller::resolve_join))
         .route(
@@ -231,6 +232,10 @@ pub fn api_router_with_state(state: AppState) -> Router {
         .route(
             "/meetings/{meeting_id}/invite.ics",
             get(meeting_controller::invite_ics),
+        )
+        .route(
+            "/meetings/{meeting_id}/media/token",
+            post(meeting_controller::create_media_token),
         )
         .route(
             "/meetings/{meeting_id}/calendar/google/sync",

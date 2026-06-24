@@ -9,6 +9,7 @@ pub mod command_controller;
 pub mod compat_controller;
 pub mod compat_gateway_controller;
 pub mod data_export_controller;
+pub mod dev_controller;
 pub mod discovery_controller;
 pub mod health_controller;
 pub mod media_controller;

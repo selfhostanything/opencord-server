@@ -363,6 +363,90 @@ async fn meeting_join_url_resolves_to_visible_meeting() {
 }
 
 #[tokio::test]
+async fn visible_meeting_can_issue_livekit_media_token() {
+    let app = test_app();
+    let (token, user_id) = register(&app, "meeting-media-owner@example.com").await;
+    let organization_id = create_organization(&app, &token, "Meeting Media Parent").await;
+    let space_id = create_space(&app, &token, &organization_id, "Meeting Media Space").await;
+    let channel_id = create_channel(&app, &token, &space_id, "Meeting Media Chat").await;
+
+    let created = app
+        .clone()
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/organizations/{organization_id}/meetings"),
+            &token,
+            json!({
+                "space_id": space_id,
+                "channel_id": channel_id,
+                "title": "Media Working Session",
+                "starts_at": "2026-06-24T09:00:00Z",
+                "ends_at": "2026-06-24T09:30:00Z",
+                "timezone": "UTC"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let created = response_json(created).await;
+    let meeting_id = created["meeting"]["id"].as_str().unwrap();
+
+    let response = app
+        .oneshot(bearer_request(
+            Method::POST,
+            &format!("/meetings/{meeting_id}/media/token"),
+            &token,
+            json!({
+                "can_publish_audio": true,
+                "can_publish_video": true,
+                "can_publish_screen": true,
+                "can_subscribe": true
+            }),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = response_json(response).await;
+    let media = &body["media"];
+    assert_eq!(media["provider"], "livekit");
+    assert_eq!(media["server_url"], "ws://localhost:7880");
+    assert_eq!(media["room_type"], "meeting_room");
+    assert_eq!(media["organization_id"], organization_id);
+    assert_eq!(media["space_id"], space_id);
+    assert_eq!(media["channel_id"], channel_id);
+    assert_eq!(media["meeting_id"], meeting_id);
+    assert_eq!(
+        media["room_name"],
+        format!("opencord_meeting_{}", meeting_id.replace('-', ""))
+    );
+    assert_eq!(media["participant_identity"], user_id);
+    assert_eq!(media["grants"]["can_publish_audio"], true);
+    assert_eq!(media["grants"]["can_publish_video"], true);
+    assert_eq!(media["grants"]["can_publish_screen"], true);
+    assert_eq!(media["grants"]["can_subscribe"], true);
+
+    let payload = decode_jwt_payload(media["participant_token"].as_str().unwrap());
+    assert_eq!(payload["sub"], user_id);
+    assert_eq!(payload["video"]["room"], media["room_name"]);
+    assert_eq!(payload["video"]["roomJoin"], true);
+    assert_eq!(payload["video"]["canPublish"], true);
+    assert_eq!(payload["video"]["canSubscribe"], true);
+    assert_eq!(
+        payload["video"]["canPublishSources"],
+        json!(["microphone", "camera", "screen_share", "screen_share_audio"])
+    );
+    assert_eq!(
+        payload["attributes"]["opencord.organization_id"],
+        organization_id
+    );
+    assert_eq!(payload["attributes"]["opencord.space_id"], space_id);
+    assert_eq!(payload["attributes"]["opencord.channel_id"], channel_id);
+    assert_eq!(payload["attributes"]["opencord.meeting_id"], meeting_id);
+    assert_eq!(payload["attributes"]["opencord.room_type"], "meeting_room");
+}
+
+#[tokio::test]
 async fn meeting_invite_ics_contains_schedule_attendee_and_join_url() {
     let app = test_app();
     let (token, _) = register(&app, "meeting-ics-owner@example.com").await;
@@ -456,4 +540,40 @@ async fn meeting_create_validates_schedule() {
         response_json(response).await["error"]["message"],
         "meeting end time must be after start time"
     );
+}
+
+fn decode_jwt_payload(token: &str) -> Value {
+    let payload = token
+        .split('.')
+        .nth(1)
+        .expect("token should have a payload segment");
+    let bytes = decode_base64_url(payload);
+    serde_json::from_slice(&bytes).expect("JWT payload should be JSON")
+}
+
+fn decode_base64_url(input: &str) -> Vec<u8> {
+    let mut output = Vec::new();
+    let mut accumulator = 0_u32;
+    let mut bits = 0_u8;
+
+    for byte in input.bytes() {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'-' => 62,
+            b'_' => 63,
+            b'=' => continue,
+            _ => panic!("invalid base64url byte"),
+        } as u32;
+
+        accumulator = (accumulator << 6) | value;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            output.push(((accumulator >> bits) & 0xff) as u8);
+        }
+    }
+
+    output
 }

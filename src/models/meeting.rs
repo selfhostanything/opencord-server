@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::domain::media::MediaTokenGrants;
 use crate::domain::meeting::{
     MeetingAttendee, MeetingBundle, MeetingPatch, MeetingReminder, NewMeetingAttendee,
     NewMeetingReminder,
@@ -28,6 +29,14 @@ pub struct PatchMeetingRequest {
     pub starts_at: Option<String>,
     pub ends_at: Option<String>,
     pub timezone: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateMeetingMediaTokenRequest {
+    pub can_publish_audio: Option<bool>,
+    pub can_publish_video: Option<bool>,
+    pub can_publish_screen: Option<bool>,
+    pub can_subscribe: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -129,6 +138,17 @@ impl From<CreateMeetingReminderRequest> for NewMeetingReminder {
             recipient_email: request.recipient_email,
             channel: request.channel,
             offset_minutes: request.offset_minutes,
+        }
+    }
+}
+
+impl CreateMeetingMediaTokenRequest {
+    pub fn grants(&self) -> MediaTokenGrants {
+        MediaTokenGrants {
+            can_publish_audio: self.can_publish_audio.unwrap_or(false),
+            can_publish_video: self.can_publish_video.unwrap_or(false),
+            can_publish_screen: self.can_publish_screen.unwrap_or(false),
+            can_subscribe: self.can_subscribe.unwrap_or(true),
         }
     }
 }

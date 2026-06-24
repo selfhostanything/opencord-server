@@ -24,12 +24,18 @@ pub async fn create_room_token(
     let token = bearer_token(&headers)?;
     let user = state.auth.user_for_token(token).await?;
     let room_type = MediaRoomType::parse(&request.room_type)?;
+    if room_type != MediaRoomType::VoiceChannel {
+        return Err(MediaError::InvalidInput(
+            "meeting_room media tokens must use the meeting media endpoint",
+        )
+        .into());
+    }
     let organization_id = parse_uuid(
         &request.organization_id,
         "valid organization_id is required",
     )?;
-    let space_id = parse_uuid(&request.space_id, "valid space_id is required")?;
-    let channel_id = parse_uuid(&request.channel_id, "valid channel_id is required")?;
+    let space_id = parse_required_uuid(&request.space_id, "valid space_id is required")?;
+    let channel_id = parse_required_uuid(&request.channel_id, "valid channel_id is required")?;
     let grants = request.grants();
     grants.validate()?;
 
@@ -80,8 +86,9 @@ pub async fn create_room_token(
     let media = state.media.issue_room_token(IssueMediaRoomToken {
         room_type,
         organization_id,
-        space_id,
-        channel_id,
+        space_id: Some(space_id),
+        channel_id: Some(channel_id),
+        meeting_id: None,
         participant_user_id: user.id,
         grants,
     })?;
@@ -155,4 +162,11 @@ impl IntoResponse for MediaApiError {
 
 fn parse_uuid(value: &str, message: &'static str) -> Result<Uuid, MediaError> {
     Uuid::parse_str(value).map_err(|_| MediaError::InvalidInput(message))
+}
+
+fn parse_required_uuid(value: &Option<String>, message: &'static str) -> Result<Uuid, MediaError> {
+    value
+        .as_deref()
+        .ok_or(MediaError::InvalidInput(message))
+        .and_then(|value| parse_uuid(value, message))
 }

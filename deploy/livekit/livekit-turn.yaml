@@ -1,0 +1,22 @@
+port: 7880
+log_level: debug
+
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  enable_loopback_candidate: true
+  turn_servers:
+    - host: localhost
+      port: 3478
+      protocol: udp
+      username: opencord
+      credential: opencord-turn-password
+    - host: localhost
+      port: 3478
+      protocol: tcp
+      username: opencord
+      credential: opencord-turn-password
+
+keys:
+  devkey: secret

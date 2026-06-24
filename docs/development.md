@@ -131,7 +131,26 @@ url: ws://localhost:7880
 api key: devkey
 api secret: secret
 ports: 7880/tcp, 7881/tcp, 7882/udp
+node IP: OPENCORD_LIVEKIT_NODE_IP, defaulting to 127.0.0.1
 ```
+
+On macOS Docker/OrbStack, WebRTC UDP may fail if LiveKit advertises loopback
+from inside the container. Set `OPENCORD_LIVEKIT_NODE_IP` to the active host
+LAN address before running `make dev-media`, for example:
+
+```bash
+OPENCORD_LIVEKIT_NODE_IP="$(ipconfig getifaddr en0)" make dev-media
+```
+
+If browser media still connects to signaling but ICE never selects a working
+UDP pair, run the local-only host-network LiveKit target instead:
+
+```bash
+make dev-media-hostnet
+```
+
+This uses the same pinned `livekit/livekit-server:v1.13` image with Docker host
+networking and is intended for same-machine media verification only.
 
 TURN/coturn is not required for same-machine media development. Use
 [`docs/coturn.md`](coturn.md) when testing relay fallback or production media

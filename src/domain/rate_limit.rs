@@ -131,6 +131,16 @@ impl FixedWindowRateLimiter {
             reset_after_seconds,
         }
     }
+
+    pub fn clear(&self) -> usize {
+        let mut state = self
+            .state
+            .lock()
+            .expect("rate limiter mutex should not be poisoned");
+        let cleared = state.len();
+        state.clear();
+        cleared
+    }
 }
 
 pub fn compat_rest_bot_bucket(application_id: Uuid) -> String {
@@ -163,4 +173,22 @@ pub fn attachment_upload_bucket(user_id: Uuid) -> String {
 
 fn normalized_email_key(email: &str) -> String {
     email.trim().to_ascii_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::FixedWindowRateLimiter;
+
+    #[test]
+    fn clear_resets_fixed_window_buckets() {
+        let limiter = FixedWindowRateLimiter::new(1, Duration::from_secs(60));
+        assert!(limiter.check("phase10").allowed);
+        assert!(!limiter.check("phase10").allowed);
+
+        assert_eq!(limiter.clear(), 1);
+
+        assert!(limiter.check("phase10").allowed);
+    }
 }

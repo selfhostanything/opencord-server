@@ -10,8 +10,8 @@ use crate::domain::auth::AuthError;
 use crate::domain::channel::ChannelError;
 use crate::domain::organization::OrganizationError;
 use crate::domain::permission::{
-    ChannelPermissionOverride, Permission, PermissionError, PermissionTargetKind, Role,
-    RoleAssignment, permission_names,
+    CONNECT_VOICE, ChannelPermissionOverride, Permission, PermissionError, PermissionTargetKind,
+    Role, RoleAssignment, SHARE_SCREEN, SPEAK, VIEW_CHANNEL, permission_names,
 };
 use crate::domain::realtime::RealtimeEvent;
 use crate::domain::space::{SpaceError, SpaceMembership};
@@ -288,10 +288,51 @@ pub async fn set_channel_override(
             }),
         })
         .await?;
+    publish_media_permission_revocation(&state, &channel, &permission_override);
 
     Ok(Json(ChannelPermissionOverrideResourceResponse {
         permission_override: ChannelPermissionOverrideResponse::from(permission_override),
     }))
+}
+
+fn publish_media_permission_revocation(
+    state: &AppState,
+    channel: &crate::domain::channel::Channel,
+    permission_override: &ChannelPermissionOverride,
+) {
+    let deny = permission_override.deny_bitset;
+    let revoked_view = deny & VIEW_CHANNEL != 0;
+    let revoked_connect = deny & CONNECT_VOICE != 0;
+    let revoked_speak = deny & SPEAK != 0;
+    let revoked_screen = deny & SHARE_SCREEN != 0;
+    if !(revoked_view || revoked_connect || revoked_speak || revoked_screen) {
+        return;
+    }
+
+    let must_disconnect = revoked_view || revoked_connect;
+    state.realtime.publish(RealtimeEvent::channel(
+        "media.permission_revoked",
+        channel.organization_id,
+        channel.space_id,
+        channel.id,
+        json!({
+            "channel_id": channel.id.to_string(),
+            "target_kind": permission_override.target_kind.as_str(),
+            "target_id": permission_override.target_id.to_string(),
+            "action": if must_disconnect { "disconnect" } else { "restrict_publish" },
+            "revoked": {
+                "view_channel": revoked_view,
+                "connect_voice": revoked_connect,
+                "speak": revoked_speak,
+                "share_screen": revoked_screen
+            },
+            "grants": {
+                "can_publish_audio": !revoked_speak,
+                "can_publish_screen": !revoked_screen,
+                "can_subscribe": !revoked_view
+            }
+        }),
+    ));
 }
 
 #[derive(Debug)]

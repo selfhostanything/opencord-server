@@ -9,6 +9,7 @@ use crate::domain::auth::{AuthError, AuthUser};
 use crate::domain::calendar::meeting_invite_ics;
 use crate::domain::calendar_sync::CalendarSyncError;
 use crate::domain::channel::ChannelError;
+use crate::domain::media::{IssueMediaRoomToken, MediaError, MediaRoomType};
 use crate::domain::meeting::{MeetingBundle, MeetingError};
 use crate::domain::organization::{OrganizationError, OrganizationMembership};
 use crate::domain::permission::{Permission, PermissionError};
@@ -16,9 +17,10 @@ use crate::domain::space::SpaceError;
 use crate::http::session::bearer_token;
 use crate::models::auth::{ErrorDetail, ErrorResponse};
 use crate::models::calendar::{CalendarEventResourceResponse, CalendarEventResponse};
+use crate::models::media::{MediaRoomTokenResourceResponse, MediaRoomTokenResponse};
 use crate::models::meeting::{
-    CreateMeetingRequest, MeetingListResponse, MeetingResourceResponse, MeetingResponse,
-    PatchMeetingRequest,
+    CreateMeetingMediaTokenRequest, CreateMeetingRequest, MeetingListResponse,
+    MeetingResourceResponse, MeetingResponse, PatchMeetingRequest,
 };
 use crate::state::AppState;
 
@@ -127,6 +129,45 @@ pub async fn invite_ics(
     );
 
     Ok((response_headers, body))
+}
+
+pub async fn create_media_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(meeting_id): Path<Uuid>,
+    Json(request): Json<CreateMeetingMediaTokenRequest>,
+) -> Result<(StatusCode, Json<MediaRoomTokenResourceResponse>), MeetingApiError> {
+    let token = bearer_token(&headers)?;
+    let user = state.auth.user_for_token(token).await?;
+    let meeting = state.meetings.get(meeting_id).await?;
+    require_read_meeting(&state, &user, &meeting).await?;
+    if meeting.meeting.status != "scheduled" {
+        return Err(MediaError::InvalidInput(
+            "meeting media is unavailable for cancelled meetings",
+        )
+        .into());
+    }
+
+    let grants = request.grants();
+    grants.validate()?;
+    enforce_meeting_media_permissions(&state, &user, &meeting, grants).await?;
+
+    let media = state.media.issue_room_token(IssueMediaRoomToken {
+        room_type: MediaRoomType::MeetingRoom,
+        organization_id: meeting.meeting.organization_id,
+        space_id: meeting.meeting.space_id,
+        channel_id: meeting.meeting.channel_id,
+        meeting_id: Some(meeting.meeting.id),
+        participant_user_id: user.id,
+        grants,
+    })?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(MediaRoomTokenResourceResponse {
+            media: MediaRoomTokenResponse::from(media),
+        }),
+    ))
 }
 
 pub async fn resolve_join(
@@ -332,6 +373,70 @@ async fn can_read_meeting(
         .await?)
 }
 
+async fn enforce_meeting_media_permissions(
+    state: &AppState,
+    user: &AuthUser,
+    meeting: &MeetingBundle,
+    grants: crate::domain::media::MediaTokenGrants,
+) -> Result<(), MeetingApiError> {
+    let Some(space_id) = meeting.meeting.space_id else {
+        if meeting.meeting.channel_id.is_some() {
+            return Err(
+                MediaError::InvalidInput("meeting channel requires space_id for media").into(),
+            );
+        }
+        return Ok(());
+    };
+
+    let space = state.spaces.get_for_user(user.id, space_id).await?;
+    if space.organization_id != meeting.meeting.organization_id {
+        return Err(MediaError::InvalidInput(
+            "meeting media space must belong to the meeting organization",
+        )
+        .into());
+    }
+
+    let Some(channel_id) = meeting.meeting.channel_id else {
+        return Ok(());
+    };
+    let channel = state.channels.get(channel_id).await?;
+    if channel.organization_id != meeting.meeting.organization_id || channel.space_id != space_id {
+        return Err(MediaError::InvalidInput(
+            "meeting media channel must belong to the meeting organization and space",
+        )
+        .into());
+    }
+
+    state
+        .permissions
+        .require_channel(user.id, &space, &channel, Permission::ViewChannel)
+        .await?;
+    state
+        .permissions
+        .require_channel(user.id, &space, &channel, Permission::ConnectVoice)
+        .await?;
+    if grants.can_publish_audio {
+        state
+            .permissions
+            .require_channel(user.id, &space, &channel, Permission::Speak)
+            .await?;
+    }
+    if grants.can_publish_video {
+        state
+            .permissions
+            .require_channel(user.id, &space, &channel, Permission::UseVideo)
+            .await?;
+    }
+    if grants.can_publish_screen {
+        state
+            .permissions
+            .require_channel(user.id, &space, &channel, Permission::ShareScreen)
+            .await?;
+    }
+
+    Ok(())
+}
+
 fn require_meeting_manager(
     user: &AuthUser,
     organization: &OrganizationMembership,
@@ -351,6 +456,7 @@ fn require_meeting_manager(
 pub enum MeetingApiError {
     Auth(AuthError),
     Calendar(CalendarSyncError),
+    Media(MediaError),
     Organization(OrganizationError),
     Space(SpaceError),
     Channel(ChannelError),
@@ -367,6 +473,12 @@ impl From<AuthError> for MeetingApiError {
 impl From<CalendarSyncError> for MeetingApiError {
     fn from(error: CalendarSyncError) -> Self {
         Self::Calendar(error)
+    }
+}
+
+impl From<MediaError> for MeetingApiError {
+    fn from(error: MediaError) -> Self {
+        Self::Media(error)
     }
 }
 
@@ -405,6 +517,7 @@ impl IntoResponse for MeetingApiError {
         let (status, code, message) = match self {
             Self::Auth(error) => (error.status_code(), error.code(), error.message()),
             Self::Calendar(error) => (error.status_code(), error.code(), error.message()),
+            Self::Media(error) => (error.status_code(), error.code(), error.message()),
             Self::Organization(error) => (error.status_code(), error.code(), error.message()),
             Self::Space(error) => (error.status_code(), error.code(), error.message()),
             Self::Channel(error) => (error.status_code(), error.code(), error.message()),

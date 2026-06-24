@@ -62,19 +62,24 @@ async fn join_inner(
         .permissions
         .can_in_channel(user.id, &space, &channel, Permission::Speak)
         .await?;
+    let can_share_screen = state
+        .permissions
+        .can_in_channel(user.id, &space, &channel, Permission::ShareScreen)
+        .await?;
     let self_mute = request.self_mute();
     let self_deaf = request.self_deaf();
     let grants = MediaTokenGrants {
         can_publish_audio: can_speak && !self_mute,
         can_publish_video: false,
-        can_publish_screen: false,
+        can_publish_screen: can_share_screen,
         can_subscribe: true,
     };
     let media = state.media.issue_room_token(IssueMediaRoomToken {
         room_type: MediaRoomType::VoiceChannel,
         organization_id: channel.organization_id,
-        space_id: channel.space_id,
-        channel_id: channel.id,
+        space_id: Some(channel.space_id),
+        channel_id: Some(channel.id),
+        meeting_id: None,
         participant_user_id: user.id,
         grants,
     })?;

@@ -44,14 +44,16 @@ impl MediaControlConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MediaRoomType {
     VoiceChannel,
+    MeetingRoom,
 }
 
 impl MediaRoomType {
     pub fn parse(value: &str) -> Result<Self, MediaError> {
         match value.trim().to_ascii_lowercase().as_str() {
             "voice_channel" => Ok(Self::VoiceChannel),
+            "meeting_room" => Ok(Self::MeetingRoom),
             _ => Err(MediaError::InvalidInput(
-                "media room_type must be voice_channel",
+                "media room_type must be voice_channel or meeting_room",
             )),
         }
     }
@@ -59,12 +61,14 @@ impl MediaRoomType {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::VoiceChannel => "voice_channel",
+            Self::MeetingRoom => "meeting_room",
         }
     }
 
     fn room_prefix(self) -> &'static str {
         match self {
             Self::VoiceChannel => "voice",
+            Self::MeetingRoom => "meeting",
         }
     }
 }
@@ -117,8 +121,9 @@ impl MediaTokenGrants {
 pub struct IssueMediaRoomToken {
     pub room_type: MediaRoomType,
     pub organization_id: Uuid,
-    pub space_id: Uuid,
-    pub channel_id: Uuid,
+    pub space_id: Option<Uuid>,
+    pub channel_id: Option<Uuid>,
+    pub meeting_id: Option<Uuid>,
     pub participant_user_id: Uuid,
     pub grants: MediaTokenGrants,
 }
@@ -131,8 +136,9 @@ pub struct MediaRoomToken {
     pub room_type: MediaRoomType,
     pub room_name: String,
     pub organization_id: Uuid,
-    pub space_id: Uuid,
-    pub channel_id: Uuid,
+    pub space_id: Option<Uuid>,
+    pub channel_id: Option<Uuid>,
+    pub meeting_id: Option<Uuid>,
     pub participant_identity: String,
     pub participant_token: String,
     pub expires_at: DateTime<Utc>,
@@ -190,7 +196,7 @@ impl MediaControlService {
 
         let issued_at = Utc::now();
         let expires_at = issued_at + Duration::seconds(self.config.token_ttl_seconds);
-        let room_name = room_name(request.room_type, request.channel_id);
+        let room_name = room_name(&request)?;
         let participant_identity = request.participant_user_id.to_string();
         let participant_token = self.sign_livekit_token(
             &room_name,
@@ -209,6 +215,7 @@ impl MediaControlService {
             organization_id: request.organization_id,
             space_id: request.space_id,
             channel_id: request.channel_id,
+            meeting_id: request.meeting_id,
             participant_identity,
             participant_token,
             expires_at,
@@ -236,6 +243,32 @@ impl MediaControlService {
             video["canPublishSources"] = json!(request.grants.publish_sources());
         }
 
+        let mut attributes = serde_json::Map::from_iter([
+            (
+                "opencord.organization_id".to_owned(),
+                json!(request.organization_id.to_string()),
+            ),
+            (
+                "opencord.room_type".to_owned(),
+                json!(request.room_type.as_str()),
+            ),
+        ]);
+        if let Some(space_id) = request.space_id {
+            attributes.insert("opencord.space_id".to_owned(), json!(space_id.to_string()));
+        }
+        if let Some(channel_id) = request.channel_id {
+            attributes.insert(
+                "opencord.channel_id".to_owned(),
+                json!(channel_id.to_string()),
+            );
+        }
+        if let Some(meeting_id) = request.meeting_id {
+            attributes.insert(
+                "opencord.meeting_id".to_owned(),
+                json!(meeting_id.to_string()),
+            );
+        }
+
         let payload = json!({
             "iss": self.config.livekit_api_key,
             "sub": participant_identity,
@@ -243,12 +276,7 @@ impl MediaControlService {
             "exp": expires_at.timestamp(),
             "video": video,
             "metadata": "",
-            "attributes": {
-                "opencord.organization_id": request.organization_id.to_string(),
-                "opencord.space_id": request.space_id.to_string(),
-                "opencord.channel_id": request.channel_id.to_string(),
-                "opencord.room_type": request.room_type.as_str(),
-            },
+            "attributes": attributes,
         });
 
         sign_jwt(
@@ -259,12 +287,21 @@ impl MediaControlService {
     }
 }
 
-fn room_name(room_type: MediaRoomType, channel_id: Uuid) -> String {
-    format!(
+fn room_name(request: &IssueMediaRoomToken) -> Result<String, MediaError> {
+    let subject_id = match request.room_type {
+        MediaRoomType::VoiceChannel => request.channel_id.ok_or(MediaError::InvalidInput(
+            "voice_channel media token requires channel_id",
+        ))?,
+        MediaRoomType::MeetingRoom => request.meeting_id.ok_or(MediaError::InvalidInput(
+            "meeting_room media token requires meeting_id",
+        ))?,
+    };
+
+    Ok(format!(
         "opencord_{}_{}",
-        room_type.room_prefix(),
-        channel_id.simple()
-    )
+        request.room_type.room_prefix(),
+        subject_id.simple()
+    ))
 }
 
 fn sign_jwt(header: Value, payload: Value, secret: &str) -> Result<String, MediaError> {
